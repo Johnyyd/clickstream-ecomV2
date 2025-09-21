@@ -7,15 +7,15 @@ def setup_test_user():
     # Create test user
     user = {
         "_id": ObjectId(),
-        "username": "test_user",
-        "email": "test@example.com",
-        "password_hash": hash_password("test123"),
+        "username": "alice",
+        "email": "alice@example.com",
+        "password_hash": hash_password("alice123"),
         "role": "user",
         "created_at": datetime.utcnow()
     }
     
     # Check if user exists
-    existing = users_col().find_one({"username": "test_user"})
+    existing = users_col().find_one({"username": "alice"})
     if existing:
         print("Test user already exists")
         return existing

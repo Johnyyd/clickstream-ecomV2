@@ -34,6 +34,19 @@ def create_session(user_id):
     })
     return token
 
+def login_user(username, password):
+    """Login user with username and password"""
+    user = users_col().find_one({"username": username})
+    if not user:
+        return None, "User not found"
+    
+    if not verify_password(password, user["password_hash"]):
+        return None, "Invalid password"
+    
+    # Create session
+    token = create_session(user["_id"])
+    return {"user": user, "token": token}, "Login successful"
+
 def get_user_by_token(token):
     s = sessions_col().find_one({"token": token, "expires_at": {"$gt": datetime.utcnow()}})
     if not s:

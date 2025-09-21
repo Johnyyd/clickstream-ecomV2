@@ -26,3 +26,4 @@ def events_col(): return get_db().events
 def analyses_col(): return get_db().analyses
 def sessions_col(): return get_db().sessions
 def api_keys_col(): return get_db().api_keys
+def products_col(): return get_db().products

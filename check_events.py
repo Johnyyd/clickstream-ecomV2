@@ -8,5 +8,5 @@ print(f"\nTotal events in database: {count}")
 # Xem mẫu 3 events đầu tiên
 if count > 0:
     print("\nSample events:")
-    for event in events_col().find().limit(3):
+    for event in events_col().find().limit(10):
         pprint(event)

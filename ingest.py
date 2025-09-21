@@ -2,6 +2,7 @@
 from db import events_col
 from datetime import datetime
 import uuid
+import time
 
 def ingest_event(event_json):
     """
@@ -12,7 +13,8 @@ def ingest_event(event_json):
       "page": "/home",
       "event_type": "pageview",
       "properties": {...},
-      "user_id": "<optional user id string>"
+      "user_id": "<optional user id string>",
+      "session_id": "<optional session id string>"
     }
     """
     ts = event_json.get("timestamp")
@@ -20,14 +22,26 @@ def ingest_event(event_json):
         ts = datetime.utcfromtimestamp(ts)
     else:
         ts = datetime.utcnow()
+    
+    # Ensure user_id and session_id are properly handled
+    user_id = event_json.get("user_id")
+    session_id = event_json.get("session_id")
+    
+    # If user_id is provided but session_id is not, create a consistent session_id
+    if user_id and not session_id:
+        if hasattr(user_id, '__str__'):  # If it's ObjectId or has string representation
+            session_id = f"session_{str(user_id)[-6:]}_{int(time.time())}"
+        else:
+            session_id = f"session_{user_id}_{int(time.time())}"
+    
     doc = {
         "client_id": event_json.get("client_id", str(uuid.uuid4())),
         "timestamp": ts,
         "page": event_json.get("page"),
         "event_type": event_json.get("event_type","pageview"),
         "properties": event_json.get("properties", {}),
-        "user_id": event_json.get("user_id"),
-        "session_id": event_json.get("session_id") or str(uuid.uuid4())
+        "user_id": user_id,  # Keep as-is (ObjectId or string)
+        "session_id": session_id or str(uuid.uuid4())
     }
     res = events_col().insert_one(doc)
     return res.inserted_id

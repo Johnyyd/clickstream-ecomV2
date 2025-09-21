@@ -4,14 +4,24 @@ from datetime import datetime
 from collections import Counter, defaultdict
 import json
 
-def simple_sessionize_and_counts(limit=None):
+def simple_sessionize_and_counts(limit=None, user_id=None):
     """Simple analysis without Spark for small datasets"""
     try:
         print("\n=== Starting Simple Analysis ===")
         print(f"Limit parameter: {limit}")
+        if user_id:
+            print(f"Filtering by user_id: {user_id}")
         
         # Load events from MongoDB
         q = {}
+        if user_id is not None:
+            # Events may store user_id as ObjectId or string; filter for both
+            try:
+                from bson import ObjectId
+                oid = ObjectId(str(user_id))
+                q["$or"] = [{"user_id": oid}, {"user_id": str(user_id)}]
+            except Exception:
+                q["user_id"] = str(user_id)
         cursor = events_col().find(q).sort("timestamp", 1)
         if limit:
             cursor = cursor.limit(limit)

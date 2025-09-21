@@ -154,6 +154,11 @@ class SimpleHandler(BaseHTTPRequestHandler):
         # Ingest event
         if path == "/api/ingest":
             try:
+                # If caller is authenticated, attach user_id when absent
+                token = self.headers.get("Authorization")
+                user = get_user_by_token(token) if token else None
+                if user and not data.get("user_id"):
+                    data["user_id"] = user["_id"]
                 eid = ingest_event(data)
                 self._set_headers(201)
                 self.wfile.write(json.dumps({"event_id": str(eid)}).encode())

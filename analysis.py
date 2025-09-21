@@ -8,11 +8,18 @@ from datetime import datetime, timedelta
 from collections import Counter, defaultdict
 import statistics
 
-def calculate_detailed_metrics(limit=None):
+def calculate_detailed_metrics(limit=None, user_id=None):
     """Calculate detailed metrics for deeper analysis"""
     try:
         # Load events from MongoDB
         q = {}
+        if user_id is not None:
+            # Support both ObjectId and string stored user_id
+            try:
+                oid = ObjectId(str(user_id))
+                q["$or"] = [{"user_id": oid}, {"user_id": str(user_id)}]
+            except Exception:
+                q["user_id"] = str(user_id)
         cursor = events_col().find(q).sort("timestamp", 1)
         if limit:
             cursor = cursor.limit(limit)
@@ -250,7 +257,7 @@ def run_analysis(user_id, params):
     # 1. Run basic analysis
     try:
         print("Running basic analysis...")
-        spark_summary = simple_sessionize_and_counts(limit=params.get("limit"))
+        spark_summary = simple_sessionize_and_counts(limit=params.get("limit"), user_id=user_id)
         print("Basic analysis completed successfully")
     except Exception as e:
         print(f"Error in basic analysis: {str(e)}")
@@ -268,7 +275,7 @@ def run_analysis(user_id, params):
     # 2. Run detailed analysis
     try:
         print("Running detailed analysis...")
-        detailed_metrics = calculate_detailed_metrics(limit=params.get("limit"))
+        detailed_metrics = calculate_detailed_metrics(limit=params.get("limit"), user_id=user_id)
         print("Detailed analysis completed successfully")
     except Exception as e:
         print(f"Error in detailed analysis: {str(e)}")

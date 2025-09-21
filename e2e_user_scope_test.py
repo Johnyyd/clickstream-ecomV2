@@ -50,9 +50,9 @@ def get(path, headers=None):
 
 
 def main():
-    username = "e2e_user"
-    email = "e2e_user@example.com"
-    password = "e2e_pass"
+    username = "alice"
+    email = "alice@example.com"
+    password = "alice123"
 
     print("1) Signup (ignore if already exists)...")
     code, resp = post("/api/signup", {"username": username, "email": email, "password": password})

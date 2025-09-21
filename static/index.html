@@ -19,7 +19,29 @@
         <div id="controls">
             <button id="simulateBtn">Simulate Events (10)</button>
             <button id="analyzeBtn">Run Analysis</button>
-            <pre id="output"></pre>
+            <div class="key-controls">
+                <h2>OpenRouter API Key</h2>
+                <input id="openrouterKey" placeholder="Paste your OpenRouter API key" />
+                <button id="saveKeyBtn">Save Key</button>
+                <button id="checkKeyBtn">Check Key</button>
+                <pre id="keyStatus"></pre>
+            </div>
+            <div id="results" class="results">
+                <h2>Summary</h2>
+                <pre id="summary"></pre>
+
+                <h2>Python Analysis - Detailed Metrics</h2>
+                <pre id="pythonDetails"></pre>
+
+                <h2>LLM Insights (Parsed)</h2>
+                <pre id="llmParsed"></pre>
+
+                <details>
+                    <summary>LLM Raw Response</summary>
+                    <pre id="llmRaw"></pre>
+                </details>
+            </div>
+            <pre id="output" class="status-output"></pre>
         </div>
     </div>
     <script src="dashboard.js"></script>

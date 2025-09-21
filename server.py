@@ -5,7 +5,7 @@ from urllib.parse import urlparse, parse_qs
 from ingest import ingest_event
 from auth import create_user, create_session, get_user_by_token, verify_password, hash_password
 from analysis import run_analysis
-from db import users_col, analyses_col
+from db import users_col, analyses_col, api_keys_col
 from bson import ObjectId
 from datetime import datetime
 
@@ -120,6 +120,35 @@ class SimpleHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(items, default=str).encode())
             return
 
+        # API endpoint: GET /api/openrouter/key -> check key status (masked)
+        if path == "/api/openrouter/key":
+            token = self.headers.get("Authorization")
+            user = get_user_by_token(token) if token else None
+            if not user:
+                self._set_headers(401)
+                self.wfile.write(b'{"error":"unauthenticated"}')
+                return
+            try:
+                doc = api_keys_col().find_one({"user_id": user["_id"], "provider": "openrouter"})
+                if not doc:
+                    self._set_headers(200)
+                    self.wfile.write(json.dumps({"exists": False, "provider": "openrouter"}).encode())
+                    return
+                key = doc.get("key_encrypted", "")
+                masked = ("*" * max(0, len(key) - 4)) + key[-4:] if key else ""
+                self._set_headers(200)
+                self.wfile.write(json.dumps({
+                    "exists": True,
+                    "provider": "openrouter",
+                    "masked_key": masked,
+                    "updated_at": doc.get("updated_at") and doc["updated_at"].isoformat()
+                }).encode())
+                return
+            except Exception as e:
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+                return
+
         self._set_headers(404)
         self.wfile.write(b'{"error":"not found"}')
 
@@ -184,6 +213,34 @@ class SimpleHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"status":"ok","analysis": {"_id": str(rec.get("_id", ""))}}).encode())
             except Exception as e:
                 print(f"API Analysis - Error: {e}")
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+            return
+
+        # Set or update OpenRouter API key for current user
+        if path == "/api/openrouter/key":
+            token = self.headers.get("Authorization")
+            user = get_user_by_token(token) if token else None
+            if not user:
+                self._set_headers(401)
+                self.wfile.write(b'{"error":"unauthenticated"}')
+                return
+            api_key = data.get("api_key")
+            if not api_key:
+                self._set_headers(400)
+                self.wfile.write(b'{"error":"api_key required"}')
+                return
+            try:
+                # Upsert key for provider openrouter
+                now = datetime.utcnow()
+                api_keys_col().update_one(
+                    {"user_id": user["_id"], "provider": "openrouter"},
+                    {"$set": {"key_encrypted": api_key, "updated_at": now}, "$setOnInsert": {"created_at": now}},
+                    upsert=True
+                )
+                self._set_headers(200)
+                self.wfile.write(json.dumps({"status": "ok"}).encode())
+            except Exception as e:
                 self._set_headers(500)
                 self.wfile.write(json.dumps({"error": str(e)}).encode())
             return

@@ -89,8 +89,14 @@ def call_openrouter(api_key: str, prompt: str, model: str = "x-ai/grok-4-fast:fr
     }
 
     last_err = None
-    # Build list of endpoints to try
-    endpoints = [OPENROUTER_ENV_ENDPOINT] if OPENROUTER_ENV_ENDPOINT else list(OPENROUTER_DEFAULT_ENDPOINTS)
+    # Build list of endpoints to try (env first, then defaults), de-duplicated
+    endpoints_raw = ([OPENROUTER_ENV_ENDPOINT] if OPENROUTER_ENV_ENDPOINT else []) + OPENROUTER_DEFAULT_ENDPOINTS
+    seen = set()
+    endpoints = []
+    for ep in endpoints_raw:
+        if ep and ep not in seen:
+            endpoints.append(ep)
+            seen.add(ep)
 
     for endpoint in endpoints:
         for attempt in range(retries + 1):

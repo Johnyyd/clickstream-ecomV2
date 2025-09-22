@@ -63,7 +63,7 @@ def _safe_json_parse(text: str):
         return None
 
 
-def call_openrouter(api_key: str, prompt: str, model: str = "x-ai/grok-4-fast:free", max_tokens: int = 900, temperature: float = 0.2, retries: int = 2, timeout: int = 45):
+def call_openrouter(api_key: str, prompt: str, model: str = "x-ai/grok-4-fast:free", max_tokens: int = 900, temperature: float = 0.0, retries: int = 2, timeout: int = 45):
     """
     Call OpenRouter to transform analysis metrics into structured, actionable JSON.
 
@@ -86,6 +86,8 @@ def call_openrouter(api_key: str, prompt: str, model: str = "x-ai/grok-4-fast:fr
         "messages": _build_messages(prompt),
         "max_tokens": max_tokens,
         "temperature": temperature,
+        # Hint models to return strict JSON if supported by the provider
+        "response_format": {"type": "json_object"},
     }
 
     last_err = None

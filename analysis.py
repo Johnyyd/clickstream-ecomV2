@@ -8,6 +8,50 @@ from datetime import datetime, timedelta
 from collections import Counter, defaultdict
 import statistics
 
+def _coerce_llm_parsed(parsed, spark_summary, detailed_metrics, generated_insights):
+    """Ensure LLM parsed output has required keys and fill sensible defaults.
+
+    Required keys:
+      - executive_summary: str
+      - key_insights: [str]
+      - recommendations: [str]
+      - decisions: [str]
+      - next_best_actions: [str]
+      - risk_alerts: [str]
+      - kpis: { total_events, total_sessions, bounce_rate, avg_session_duration_seconds }
+    """
+    if not isinstance(parsed, dict):
+        parsed = {}
+
+    basic = detailed_metrics.get("basic_metrics", {}) if isinstance(detailed_metrics, dict) else {}
+    total_events = basic.get("total_events", spark_summary.get("total_events", 0)) if isinstance(spark_summary, dict) else 0
+    total_sessions = basic.get("total_sessions", spark_summary.get("sessions", 0)) if isinstance(spark_summary, dict) else 0
+    bounce_rate = basic.get("bounce_rate", 0)
+    avg_sess = basic.get("avg_session_duration_seconds", 0)
+
+    def _list_or_default(val, default):
+        return val if isinstance(val, list) else list(default)
+
+    # Fall back to generated Python insights
+    py_key_insights = generated_insights.get("key_findings", []) if isinstance(generated_insights, dict) else []
+    py_recs = generated_insights.get("recommendations", []) if isinstance(generated_insights, dict) else []
+
+    coerced = {
+        "executive_summary": parsed.get("executive_summary") or "Automated summary not provided by LLM.",
+        "key_insights": _list_or_default(parsed.get("key_insights"), py_key_insights),
+        "recommendations": _list_or_default(parsed.get("recommendations"), py_recs),
+        "decisions": _list_or_default(parsed.get("decisions"), []),
+        "next_best_actions": _list_or_default(parsed.get("next_best_actions"), []),
+        "risk_alerts": _list_or_default(parsed.get("risk_alerts"), []),
+        "kpis": {
+            "total_events": (parsed.get("kpis") or {}).get("total_events", total_events),
+            "total_sessions": (parsed.get("kpis") or {}).get("total_sessions", total_sessions),
+            "bounce_rate": (parsed.get("kpis") or {}).get("bounce_rate", bounce_rate),
+            "avg_session_duration_seconds": (parsed.get("kpis") or {}).get("avg_session_duration_seconds", avg_sess),
+        }
+    }
+    return coerced
+
 def calculate_detailed_metrics(limit=None, user_id=None):
     """Calculate detailed metrics for deeper analysis"""
     try:
@@ -346,6 +390,11 @@ def run_analysis(user_id, params):
         try:
             print("Calling OpenRouter API...")
             llm_response = call_openrouter(api_key, prompt)
+            # Enrich/validate parsed payload if present
+            if isinstance(llm_response, dict) and llm_response.get("status") == "ok":
+                parsed = llm_response.get("parsed")
+                coerced = _coerce_llm_parsed(parsed, spark_summary, detailed_metrics, insights)
+                llm_response["parsed"] = coerced
             analysis_record["openrouter_output"] = llm_response
             print("LLM analysis completed successfully")
         except Exception as e:

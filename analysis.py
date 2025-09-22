@@ -43,9 +43,6 @@ def _coerce_llm_parsed(parsed, spark_summary, detailed_metrics, generated_insigh
         "decisions": _list_or_default(parsed.get("decisions"), []),
         "next_best_actions": _list_or_default(parsed.get("next_best_actions"), []),
         "risk_alerts": _list_or_default(parsed.get("risk_alerts"), []),
-        "system_optimizations": _list_or_default(parsed.get("system_optimizations"), []),
-        "product_recommendations": _list_or_default(parsed.get("product_recommendations"), []),
-        "feature_recommendations": _list_or_default(parsed.get("feature_recommendations"), []),
         "kpis": {
             "total_events": (parsed.get("kpis") or {}).get("total_events", total_events),
             "total_sessions": (parsed.get("kpis") or {}).get("total_sessions", total_sessions),
@@ -54,46 +51,6 @@ def _coerce_llm_parsed(parsed, spark_summary, detailed_metrics, generated_insigh
         }
     }
     return coerced
-
-def _build_llm_payload(spark_summary, detailed_metrics, insights):
-    """Build a concise payload for the LLM to reduce token usage while preserving signal."""
-    basic = (detailed_metrics or {}).get("basic_metrics", {})
-    page_analysis = (detailed_metrics or {}).get("page_analysis", {})
-    event_analysis = (detailed_metrics or {}).get("event_analysis", {})
-    time_analysis = (detailed_metrics or {}).get("time_analysis", {})
-    funnel_analysis = (detailed_metrics or {}).get("funnel_analysis", {})
-
-    top_pages = page_analysis.get("top_pages", [])[:10]
-    top_event_types = event_analysis.get("top_event_types", [])[:10]
-    low_conv_funnels = {
-        name: data for name, data in funnel_analysis.items()
-        if isinstance(data, dict) and data.get("conversion", 1) < 0.1
-    }
-
-    return {
-        "spark_summary": {
-            "total_events": (spark_summary or {}).get("total_events", 0),
-            "sessions": (spark_summary or {}).get("sessions", 0),
-            "top_pages": (spark_summary or {}).get("top_pages", [])[:5],
-            "funnel_home_to_product": (spark_summary or {}).get("funnel_home_to_product", 0),
-        },
-        "basic_metrics": {
-            "total_events": basic.get("total_events", 0),
-            "total_sessions": basic.get("total_sessions", 0),
-            "unique_users": basic.get("unique_users", 0),
-            "avg_session_duration_seconds": basic.get("avg_session_duration_seconds", 0),
-            "avg_pages_per_session": basic.get("avg_pages_per_session", 0),
-            "bounce_rate": basic.get("bounce_rate", 0),
-        },
-        "top_pages": top_pages,
-        "top_event_types": top_event_types,
-        "time_peaks": {
-            "peak_hour": time_analysis.get("peak_hour"),
-            "peak_day": time_analysis.get("peak_day"),
-        },
-        "low_conversion_funnels": low_conv_funnels,
-        "python_insights": insights or {},
-    }
 
 def calculate_detailed_metrics(limit=None, user_id=None):
     """Calculate detailed metrics for deeper analysis"""
@@ -413,19 +370,26 @@ def run_analysis(user_id, params):
         print("Found OpenRouter API key, proceeding with LLM analysis")
         api_key = key_doc["key_encrypted"]
         
-        # Build a concise, structured payload to reduce token usage and guide the model
-        compact_payload = _build_llm_payload(spark_summary, detailed_metrics, insights)
-        prompt = (
-            "You are given summarized clickstream analytics. Respond ONLY with strict JSON matching the requested schema.\n"
-            "Base your optimizations on observed user actions and funnels.\n"
-            f"Inputs: {json.dumps(compact_payload, default=str)}\n"
-            "Provide executive_summary, key_insights, recommendations, decisions, next_best_actions, risk_alerts, "
-            "system_optimizations, product_recommendations, feature_recommendations, and kpis."
-        )
+        # Prepare enhanced prompt with detailed metrics
+        prompt = f"""
+        I have comprehensive clickstream analysis results:
+        
+        Basic Summary: {json.dumps(spark_summary, default=str)}
+        
+        Detailed Metrics: {json.dumps(detailed_metrics, default=str, indent=2)}
+        
+        Please provide:
+        1) Executive summary (3-4 sentences)
+        2) Key insights and patterns
+        3) Conversion funnel analysis
+        4) User behavior insights
+        5) Recommendations for improvement
+        6) Suggested next analysis steps
+        """
         
         try:
             print("Calling OpenRouter API...")
-            llm_response = call_openrouter(api_key, prompt, max_tokens=2000)
+            llm_response = call_openrouter(api_key, prompt)
             # Enrich/validate parsed payload if present
             if isinstance(llm_response, dict) and llm_response.get("status") == "ok":
                 parsed = llm_response.get("parsed")

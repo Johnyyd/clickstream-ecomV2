@@ -23,9 +23,6 @@ def _build_messages(prompt: str) -> list:
         "  'decisions': [str],\n"
         "  'next_best_actions': [str],\n"
         "  'risk_alerts': [str],\n"
-        "  'system_optimizations': [str],  // concrete improvements to clickstream pipeline, tracking, UI flows based on observed user actions\n"
-        "  'product_recommendations': [str],  // suggested products or bundles tailored to observed behaviors\n"
-        "  'feature_recommendations': [str],  // suggested app features or experiments to build\n"
         "  'kpis': {\n"
         "    'total_events': number,\n"
         "    'total_sessions': number,\n"
@@ -40,8 +37,6 @@ def _build_messages(prompt: str) -> list:
             "content": (
                 "You are a senior product analytics copilot. "
                 "Your job: read structured clickstream metrics and output clear, actionable business guidance. "
-                "Base your optimization proposals on observed user actions and funnels. "
-                "Propose concrete clickstream system/UX improvements and targeted product/feature recommendations. "
                 "Always be concise and decisive."
             ),
         },

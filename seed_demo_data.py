@@ -17,6 +17,7 @@ from db import users_col, products_col, get_db
 from ingest import ingest_event
 from simulate_clickstream import seed_products, PRODUCTS
 from auth import create_user
+from seed_realistic_data import ensure_products as ensure_products_real, ensure_users as ensure_users_real, seed_for_users as seed_for_users_real
 
 
 PAGES = [
@@ -208,31 +209,33 @@ def seed_for_users(user_ids: List[ObjectId], days: int, sessions_per_user: int, 
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Seed richer demo data for analysis")
+    print("[DEPRECATED] seed_demo_data.py is now a thin wrapper. Please use seed_realistic_data.py directly.")
+    parser = argparse.ArgumentParser(description="Seed demo data (delegates to seed_realistic_data)")
     parser.add_argument("--username", type=str, default=None, help="Seed only for this username (create if missing)")
-    parser.add_argument("--user-count", type=int, default=5, help="Number of users to seed if --username not provided")
-    parser.add_argument("--days", type=int, default=7, help="Number of days back to generate sessions for")
-    parser.add_argument("--sessions-per-user", type=int, default=10, help="Number of sessions per user per day")
+    parser.add_argument("--user-count", type=int, default=5, help="Number of users when --username not provided")
+    parser.add_argument("--days", type=int, default=7, help="Days back to generate")
+    parser.add_argument("--sessions-per-user", type=int, default=10, help="Sessions per user per day")
     parser.add_argument("--avg-events", type=int, default=8, help="Average events per session")
+    parser.add_argument("--seed-products", action="store_true", help="Seed products first if empty")
 
     args = parser.parse_args()
 
-    print("Seeding products...")
-    product_total = ensure_products()
-    print(f" -> Products available: {product_total}")
-
-    print("Ensuring users...")
-    uids = ensure_users(args.username, args.user_count)
-    print(f" -> Users targeted: {len(uids)}")
+    # Ensure products and users via canonical utilities
+    product_total = ensure_products_real(args.seed_products)
+    print(f"Products available: {product_total}")
+    if args.username:
+        uids = ensure_users_real(args.username, 1)
+    else:
+        uids = ensure_users_real(None, args.user_count)
 
     print(
-        f"Generating data for days={args.days}, sessions_per_user={args.sessions_per_user}, avg_events={args.avg_events}"
+        f"Generating data via seed_realistic_data: days={args.days}, sessions_per_user={args.sessions_per_user}, avg_events={args.avg_events}"
     )
-    total_events_est = seed_for_users(uids, args.days, args.sessions_per_user, args.avg_events)
+    total_events_est = seed_for_users_real(uids, args.days, args.sessions_per_user, args.avg_events, False)
 
-    print("\n✅ Seeding complete.")
+    print("\n✅ Seeding complete (delegated).")
     print(f"Estimated events inserted: ~{total_events_est}")
-    print("You can now login as one of these users and run /api/analyze to see user-scoped insights.")
+    print("Use seed_realistic_data.py for full control and docs.")
 
 
 if __name__ == "__main__":

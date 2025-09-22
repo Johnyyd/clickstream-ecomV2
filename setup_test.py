@@ -40,6 +40,6 @@ if __name__ == "__main__":
     print("\n=== Setting up test data ===")
     user = setup_test_user()
     print("\nTest user credentials:")
-    print("Username: test_user")
-    print("Password: test123")
+    print("Username: alice")
+    print("Password: alice123")
     print("\nYou can now login with these credentials on the dashboard.")

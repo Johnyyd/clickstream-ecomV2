@@ -1,5 +1,5 @@
 # ingest.py
-from db import events_col
+from db import events_col, sessions_col
 from datetime import datetime
 import uuid
 import time
@@ -44,4 +44,30 @@ def ingest_event(event_json):
         "session_id": session_id or str(uuid.uuid4())
     }
     res = events_col().insert_one(doc)
+
+    # Upsert session document so sessions are persisted in DB
+    try:
+        sessions_col().update_one(
+            {"session_id": doc["session_id"]},
+            {
+                "$setOnInsert": {
+                    "session_id": doc["session_id"],
+                    "user_id": user_id,
+                    "client_id": doc.get("client_id"),
+                    "created_at": ts,
+                    "first_event_at": ts,
+                    "pages": [],
+                },
+                "$max": {"last_event_at": ts},
+                "$min": {"first_event_at": ts},
+                "$inc": {"event_count": 1},
+                # For a lightweight trace of pages (optional, capped by client)
+                # We avoid $addToSet here to keep cost low; can be enabled if needed.
+            },
+            upsert=True,
+        )
+    except Exception:
+        # Do not block ingestion if session upsert fails
+        pass
+
     return res.inserted_id

@@ -23,6 +23,8 @@ def _build_messages(prompt: str) -> list:
         "  'decisions': [str],\n"
         "  'next_best_actions': [str],\n"
         "  'risk_alerts': [str],\n"
+        "  'recommendations_for_user': [str],\n"
+        "  'recommendations_for_user_products': [ { 'product_id': str, 'name': str, 'reason': str } ],\n"
         "  'kpis': {\n"
         "    'total_events': number,\n"
         "    'total_sessions': number,\n"
@@ -35,9 +37,9 @@ def _build_messages(prompt: str) -> list:
         {
             "role": "system",
             "content": (
-                "You are a senior product analytics copilot. "
-                "Your job: read structured clickstream metrics and output clear, actionable business guidance. "
-                "Always be concise and decisive."
+                "You are a senior product analyst."
+"Your job: Read structured clickstream statistics and provide clear, actionable business guidance. Make recommendations for products, features, etc. to customers based on clickstream statistics and database"
+"Always be concise and decisive."
             ),
         },
         {
@@ -63,7 +65,7 @@ def _safe_json_parse(text: str):
         return None
 
 
-def call_openrouter(api_key: str, prompt: str, model: str = "x-ai/grok-4-fast:free", max_tokens: int = 900, temperature: float = 0.0, retries: int = 2, timeout: int = 45):
+def call_openrouter(api_key: str, prompt: str, model: str = "deepseek/deepseek-chat-v3.1:free", max_tokens: int = 900, temperature: float = 0.0, retries: int = 2, timeout: int = 45):
     """
     Call OpenRouter to transform analysis metrics into structured, actionable JSON.
 
@@ -73,6 +75,11 @@ def call_openrouter(api_key: str, prompt: str, model: str = "x-ai/grok-4-fast:fr
     - raw: dict | None     (raw provider JSON)
     - error: str | None
     """
+    # Allow the model to be overridden by environment variable
+    env_model = os.environ.get("OPENROUTER_MODEL")
+    if env_model:
+        model = env_model
+
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",

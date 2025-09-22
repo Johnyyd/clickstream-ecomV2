@@ -1,7 +1,7 @@
 # analysis.py
 from simple_analysis import simple_sessionize_and_counts
 from openrouter_client import call_openrouter
-from db import analyses_col, api_keys_col, events_col
+from db import analyses_col, api_keys_col, events_col, products_col, users_col
 from bson import ObjectId
 import json
 from datetime import datetime, timedelta
@@ -36,10 +36,21 @@ def _coerce_llm_parsed(parsed, spark_summary, detailed_metrics, generated_insigh
     py_key_insights = generated_insights.get("key_findings", []) if isinstance(generated_insights, dict) else []
     py_recs = generated_insights.get("recommendations", []) if isinstance(generated_insights, dict) else []
 
+    # Prefer explicit user-facing recs if provided by the LLM, otherwise fall back to Python-generated recs
+    recs_for_user = None
+    try:
+        if isinstance(parsed, dict):
+            rfu = parsed.get("recommendations_for_user")
+            if isinstance(rfu, list):
+                recs_for_user = rfu
+    except Exception:
+        pass
+
     coerced = {
         "executive_summary": parsed.get("executive_summary") or "Automated summary not provided by LLM.",
         "key_insights": _list_or_default(parsed.get("key_insights"), py_key_insights),
         "recommendations": _list_or_default(parsed.get("recommendations"), py_recs),
+        "recommendations_for_user": _list_or_default(recs_for_user, py_recs),
         "decisions": _list_or_default(parsed.get("decisions"), []),
         "next_best_actions": _list_or_default(parsed.get("next_best_actions"), []),
         "risk_alerts": _list_or_default(parsed.get("risk_alerts"), []),
@@ -51,6 +62,49 @@ def _coerce_llm_parsed(parsed, spark_summary, detailed_metrics, generated_insigh
         }
     }
     return coerced
+
+def _coerce_product_recs(product_recs, product_index):
+    """Validate and normalize product recommendations list.
+    product_recs: list of {product_id, name, reason}
+    product_index: dict of str(ObjectId) -> product dict
+    """
+    out = []
+    if not isinstance(product_recs, list):
+        return out
+    for item in product_recs:
+        if not isinstance(item, dict):
+            continue
+        pid = str(item.get("product_id", ""))
+        reason = str(item.get("reason", "")) if item.get("reason") else "Recommended based on browsing and purchase intent."
+        prod = product_index.get(pid)
+        if not prod:
+            continue
+        out.append({
+            "product_id": pid,
+            "name": prod.get("name"),
+            "category": prod.get("category"),
+            "price": prod.get("price"),
+            "tags": prod.get("tags", []),
+            "reason": reason
+        })
+    return out
+
+def _build_user_context(detailed_metrics):
+    """Summarize user behavior context from detailed_metrics for the LLM prompt."""
+    try:
+        basic = detailed_metrics.get("basic_metrics", {})
+        funnels = detailed_metrics.get("funnel_analysis", {})
+        top_pages = detailed_metrics.get("page_analysis", {}).get("top_pages", [])
+        top_events = detailed_metrics.get("event_analysis", {}).get("top_event_types", [])
+        ctx = {
+            "basic": basic,
+            "funnels": funnels,
+            "top_pages": top_pages[:10],
+            "top_events": top_events[:10],
+        }
+        return ctx
+    except Exception:
+        return {}
 
 def calculate_detailed_metrics(limit=None, user_id=None):
     """Calculate detailed metrics for deeper analysis"""
@@ -64,6 +118,19 @@ def calculate_detailed_metrics(limit=None, user_id=None):
                 q["$or"] = [{"user_id": oid}, {"user_id": str(user_id)}]
             except Exception:
                 q["user_id"] = str(user_id)
+        # Exclude flagged noisy data and known demo sources
+        base_filters = {
+            "flag.noisy": {"$ne": True},
+            "$or": [
+                {"properties.source": {"$exists": False}},
+                {"properties.source": {"$nin": ["simulation", "basic_sim", "seed_demo"]}},
+            ],
+        }
+        if q:
+            q = {"$and": [q, base_filters]}
+        else:
+            q = base_filters
+
         cursor = events_col().find(q).sort("timestamp", 1)
         if limit:
             cursor = cursor.limit(limit)
@@ -362,6 +429,34 @@ def run_analysis(user_id, params):
         }
     }
 
+    # Preload products and build indices for recommendation validation
+    try:
+        product_docs = list(products_col().find({}, {"name": 1, "category": 1, "price": 1, "tags": 1}))
+    except Exception:
+        product_docs = []
+    product_index = {str(p.get("_id")): p for p in product_docs}
+    # Prepare a trimmed catalog snapshot for the prompt to keep it concise
+    catalog_for_prompt = [
+        {
+            "_id": str(p.get("_id")),
+            "name": p.get("name"),
+            "category": p.get("category"),
+            "price": p.get("price"),
+            "tags": p.get("tags", []),
+        }
+        for p in product_docs[:50]
+    ]
+
+    # Build lightweight user context for LLM
+    user_ctx = _build_user_context(detailed_metrics)
+
+    # Load user's previous recommendation history (if any)
+    try:
+        user_doc = users_col().find_one({"_id": ObjectId(user_id)}, {"product_recommendations": 1})
+        history = (user_doc or {}).get("product_recommendations", [])
+    except Exception:
+        history = []
+
     # 5. Check for OpenRouter API key for LLM analysis
     print("Checking for OpenRouter API key...")
     key_doc = api_keys_col().find_one({"user_id": ObjectId(user_id), "provider": "openrouter"})
@@ -372,19 +467,23 @@ def run_analysis(user_id, params):
         
         # Prepare enhanced prompt with detailed metrics
         prompt = f"""
-        I have comprehensive clickstream analysis results:
-        
+        I have comprehensive clickstream analysis results and a product catalog.
+
         Basic Summary: {json.dumps(spark_summary, default=str)}
-        
-        Detailed Metrics: {json.dumps(detailed_metrics, default=str, indent=2)}
-        
-        Please provide:
-        1) Executive summary (3-4 sentences)
-        2) Key insights and patterns
-        3) Conversion funnel analysis
-        4) User behavior insights
-        5) Recommendations for improvement
-        6) Suggested next analysis steps
+
+        Detailed Metrics: {json.dumps(detailed_metrics, default=str)[:4000]}
+
+        User Context (summarized): {json.dumps(user_ctx, default=str)}
+
+        Product Catalog (subset): {json.dumps(catalog_for_prompt, default=str)}
+
+        Previous Recommendation History: {json.dumps(history[-3:], default=str)}
+
+        Your task:
+        - Provide executive summary and key insights.
+        - Provide actionable recommendations for the business.
+        - Provide the best recommendations for the user (3-5 sentences) using the catalog items only.
+        - IMPORTANT: Also provide a structured list 'recommendations_for_user_products' with up to 5 items strictly from the catalog subset using their _id as product_id, plus name and a short reason.
         """
         
         try:
@@ -394,7 +493,29 @@ def run_analysis(user_id, params):
             if isinstance(llm_response, dict) and llm_response.get("status") == "ok":
                 parsed = llm_response.get("parsed")
                 coerced = _coerce_llm_parsed(parsed, spark_summary, detailed_metrics, insights)
+                # Validate product recommendations
+                product_recs = []
+                try:
+                    product_recs = parsed.get("recommendations_for_user_products", []) if isinstance(parsed, dict) else []
+                except Exception:
+                    product_recs = []
+                product_recs = _coerce_product_recs(product_recs, product_index)
+                coerced["recommendations_for_user_products"] = product_recs
                 llm_response["parsed"] = coerced
+                # Also store top-level for easy querying
+                analysis_record["product_recommendations"] = product_recs
+                # Update user profile history for cross-session availability
+                if product_recs:
+                    try:
+                        users_col().update_one(
+                            {"_id": ObjectId(user_id)},
+                            {"$push": {"product_recommendations": {
+                                "created_at": datetime.utcnow(),
+                                "items": product_recs
+                            }}}
+                        )
+                    except Exception:
+                        pass
             analysis_record["openrouter_output"] = llm_response
             print("LLM analysis completed successfully")
         except Exception as e:

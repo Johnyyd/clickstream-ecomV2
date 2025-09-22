@@ -22,6 +22,19 @@ def simple_sessionize_and_counts(limit=None, user_id=None):
                 q["$or"] = [{"user_id": oid}, {"user_id": str(user_id)}]
             except Exception:
                 q["user_id"] = str(user_id)
+        # Exclude flagged noisy data and known demo sources
+        base_filters = {
+            "flag.noisy": {"$ne": True},
+            "$or": [
+                {"properties.source": {"$exists": False}},
+                {"properties.source": {"$nin": ["simulation", "basic_sim", "seed_demo"]}},
+            ],
+        }
+        if q:
+            q = {"$and": [q, base_filters]}
+        else:
+            q = base_filters
+
         cursor = events_col().find(q).sort("timestamp", 1)
         if limit:
             cursor = cursor.limit(limit)

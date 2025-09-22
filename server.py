@@ -5,7 +5,7 @@ from urllib.parse import urlparse, parse_qs
 from ingest import ingest_event
 from auth import create_user, create_session, get_user_by_token, verify_password, hash_password
 from analysis import run_analysis
-from db import users_col, analyses_col, api_keys_col
+from db import users_col, analyses_col, api_keys_col, products_col
 from bson import ObjectId
 from datetime import datetime
 
@@ -51,7 +51,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
                     self._set_headers(403)
                     self.wfile.write(b'{"error":"forbidden"}')
                     return
-                    
+                       
                 if os.path.exists(file_path):
                     ctype = "text/html" if file_path.endswith(".html") else "text/css" if file_path.endswith(".css") else "application/javascript"
                     self._set_headers(200, content_type=ctype)
@@ -143,6 +143,69 @@ class SimpleHandler(BaseHTTPRequestHandler):
                     "masked_key": masked,
                     "updated_at": doc.get("updated_at") and doc["updated_at"].isoformat()
                 }).encode())
+                return
+            except Exception as e:
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+                return
+
+        # API endpoint: GET /api/recommendations -> latest product recommendations for current user
+        if path == "/api/recommendations":
+            token = self.headers.get("Authorization")
+            user = get_user_by_token(token) if token else None
+            if not user:
+                self._set_headers(401)
+                self.wfile.write(b'{"error":"unauthenticated"}')
+                return
+            try:
+                # Try to get latest analysis with product_recommendations
+                last = analyses_col().find({"user_id": user["_id"], "product_recommendations": {"$exists": True, "$ne": []}}).sort("created_at", -1).limit(1)
+                last = list(last)
+                items = []
+                if last:
+                    items = last[0].get("product_recommendations", [])
+                # If none, fallback to user's history
+                if not items:
+                    udoc = users_col().find_one({"_id": user["_id"]}, {"product_recommendations": 1}) or {}
+                    history = udoc.get("product_recommendations", [])
+                    if history:
+                        # latest history entry
+                        items = (history[-1] or {}).get("items", [])
+
+                # enrich with current product details to ensure fresh data
+                ids = [i.get("product_id") for i in items if i.get("product_id")]
+                prod_map = {}
+                if ids:
+                    # Convert IDs to ObjectId where possible
+                    obj_ids = []
+                    for pid in ids:
+                        try:
+                            obj_ids.append(ObjectId(str(pid)))
+                        except Exception:
+                            pass
+                    if obj_ids:
+                        for p in products_col().find({"_id": {"$in": obj_ids}}):
+                            prod_map[str(p["_id"])] = {
+                                "name": p.get("name"),
+                                "category": p.get("category"),
+                                "price": p.get("price"),
+                                "tags": p.get("tags", [])
+                            }
+                result_items = []
+                for i in items:
+                    pid = str(i.get("product_id"))
+                    enriched = {
+                        "product_id": pid,
+                        "name": i.get("name") or (prod_map.get(pid) or {}).get("name"),
+                        "category": i.get("category") or (prod_map.get(pid) or {}).get("category"),
+                        "price": i.get("price") or (prod_map.get(pid) or {}).get("price"),
+                        "tags": i.get("tags") or (prod_map.get(pid) or {}).get("tags", []),
+                        "reason": i.get("reason", "")
+                    }
+                    result_items.append(enriched)
+
+                self._set_headers(200)
+                self.wfile.write(json.dumps({"items": result_items}).encode())
                 return
             except Exception as e:
                 self._set_headers(500)

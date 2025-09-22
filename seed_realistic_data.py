@@ -1,0 +1,245 @@
+"""
+seed_realistic_data.py
+
+Seed realistic, customer-like data into MongoDB while preserving the current schema.
+- Uses ingest_event() to ensure event documents match production schema
+- Generates plausible funnels and timings
+- Spreads traffic across hours/days and multiple users
+- Grounds product interactions on the products catalog
+
+Usage examples (PowerShell):
+  # Seed 7 days of data for 25 users, ~5 sessions/day, ~7 events/session
+  venv/Scripts/python.exe seed_realistic_data.py --days 7 --user-count 25 --sessions-per-user 5 --avg-events 7
+
+  # Seed for one specific user (created if missing)
+  venv/Scripts/python.exe seed_realistic_data.py --username alice --days 5 --sessions-per-user 3 --avg-events 6
+
+Notes:
+- Adds a harmless marker in properties.source = "realistic_seed" to help optional filtering. Schema remains compatible.
+- If your products collection is empty, run seed_products.py first or pass --seed-products.
+"""
+from __future__ import annotations
+
+import argparse
+import random
+from datetime import datetime, timedelta
+from typing import List, Optional
+
+from bson import ObjectId
+
+from db import users_col, products_col
+from ingest import ingest_event
+from auth import create_user
+
+PAGES = ["/home", "/category", "/search", "/product", "/cart", "/checkout"]
+
+
+def ensure_products(seed_products_first: bool) -> int:
+    if seed_products_first:
+        # Try user's updated seeder first (seed_more_products), then fallback
+        try:
+            from seed_products import seed_more_products as sp
+            sp()
+        except Exception:
+            try:
+                from seed_products import seed_products as sp2
+                sp2()
+            except Exception:
+                pass
+    return products_col().count_documents({})
+
+
+def ensure_users(target_username: Optional[str], count: int) -> List[ObjectId]:
+    ids: List[ObjectId] = []
+    if target_username:
+        u = users_col().find_one({"username": target_username})
+        if not u:
+            email = f"{target_username}@example.com"
+            pw = f"{target_username}123"
+            uid = create_user(target_username, email, pw)
+            u = users_col().find_one({"_id": uid})
+        ids.append(u["_id"])  # type: ignore[index]
+        return ids
+
+    # Reuse existing users; top up with new ones until reaching 'count'
+    existing = list(users_col().find({}, {"_id": 1, "username": 1}))
+    pool = [u["_id"] for u in existing]
+    idx = 1
+    while len(pool) < count:
+        uname = f"customer{idx:03d}"
+        idx += 1
+        try:
+            uid = create_user(uname, f"{uname}@example.com", f"{uname}123")
+            pool.append(uid)
+        except Exception:
+            u = users_col().find_one({"username": uname})
+            if u:
+                pool.append(u["_id"])  # type: ignore[index]
+    return pool[:count]
+
+
+def emit_event(user_id, session_id, ts, page, event_type, props=None):
+    ev = {
+        "user_id": user_id,  # keep as ObjectId
+        "session_id": session_id,
+        "timestamp": int(ts),  # epoch seconds as ingest_event supports
+        "page": page,
+        "event_type": event_type,
+        "properties": {"source": "realistic_seed", **(props or {})},
+    }
+    ingest_event(ev)
+
+
+def realistic_product(products):
+    # Weighted by rough popularity: computers/phones more popular
+    weights = []
+    for p in products:
+        cat = p.get("category")
+        if cat in ("computer", "phone"):
+            w = 4
+        elif cat in ("shoes", "shirt", "pants"):
+            w = 2
+        else:
+            w = 1
+        weights.append(w)
+    return random.choices(products, weights=weights, k=1)[0]
+
+
+def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int, products: list[dict]):
+    """Generate a realistic session with plausible navigation and conversion behavior."""
+    sid = f"session_{str(user_id)[-6:]}_{start_ts}"
+    current_ts = start_ts
+
+    # First event: home
+    emit_event(user_id, sid, current_ts, "/home", "pageview", {"referrer": random.choice(["direct","email","social","ads"])})
+
+    viewed_product_ids: list[str] = []
+    cart = []
+
+    # Events count ~ N(avg, 2)
+    n_events = max(3, random.randint(avg_events - 2, avg_events + 2))
+
+    for i in range(1, n_events):
+        # spacing 15s..4m
+        current_ts += random.randint(15, 240)
+        r = random.random()
+
+        if r < 0.35:  # category/search discoverability
+            if random.random() < 0.55:
+                category = random.choice([p.get("category") for p in products])
+                emit_event(user_id, sid, current_ts, "/category", "pageview", {"category": category})
+            else:
+                term = random.choice(["laptop","phone","coffee","shoes","shirt","pizza","sushi"]) 
+                emit_event(user_id, sid, current_ts, "/search", "search", {"search_term": term})
+        elif r < 0.70:  # view product
+            p = realistic_product(products)
+            viewed_product_ids.append(str(p["_id"]))
+            emit_event(
+                user_id,
+                sid,
+                current_ts,
+                f"/product/{p['_id']}",
+                "pageview",
+                {
+                    "product_id": str(p["_id"]),
+                    "product_name": p["name"],
+                    "product_category": p["category"],
+                    "product_price": p["price"],
+                },
+            )
+        elif r < 0.88:  # add to cart
+            if viewed_product_ids:
+                prod_id = random.choice(viewed_product_ids)
+                p = next((pp for pp in products if str(pp["_id"]) == prod_id), None)
+                if p:
+                    cart.append(p)
+                    emit_event(
+                        user_id,
+                        sid,
+                        current_ts,
+                        "/cart",
+                        "add_to_cart",
+                        {
+                            "product_id": str(p["_id"]),
+                            "product_name": p["name"],
+                            "product_price": p["price"],
+                            "quantity": 1,
+                        },
+                    )
+            else:
+                emit_event(user_id, sid, current_ts, "/home", "pageview")
+        else:  # checkout / purchase
+            if cart and random.random() < 0.65:
+                total = sum(item["price"] for item in cart)
+                emit_event(
+                    user_id,
+                    sid,
+                    current_ts,
+                    "/checkout",
+                    "purchase",
+                    {
+                        "cart_items": len(cart),
+                        "total_amount": round(total, 2),
+                        "payment_method": random.choice(["credit_card","paypal","apple_pay"]),
+                        "order_id": f"order_{random.randint(1000,9999)}",
+                    },
+                )
+                cart.clear()
+            else:
+                emit_event(user_id, sid, current_ts, random.choice(["/home","/category","/search"]), "pageview")
+
+
+def seed_for_users(user_ids: List[ObjectId], days: int, sessions_per_user: int, avg_events: int, seed_products_first: bool):
+    product_count = ensure_products(seed_products_first)
+    if product_count == 0:
+        print("No products found. Please seed products first.")
+        return 0
+    products = list(products_col().find({}))
+
+    now = datetime.utcnow()
+    total_est = 0
+    for uid in user_ids:
+        # Define user persona for conversion/engagement variety
+        persona = random.choice([
+            {"name": "browser", "extra_sessions": 0, "avg_events": avg_events - 1},
+            {"name": "shopper", "extra_sessions": 2, "avg_events": avg_events},
+            {"name": "buyer", "extra_sessions": 1, "avg_events": avg_events + 1},
+            {"name": "returning", "extra_sessions": 3, "avg_events": avg_events},
+        ])
+
+        for d in range(days):
+            base_day = now - timedelta(days=d)
+            for s in range(sessions_per_user + persona["extra_sessions"]):
+                hour = random.choice([8,9,10,11,13,14,15,19,20,21])
+                minute = random.randint(0,59)
+                second = random.randint(0,59)
+                dt = base_day.replace(hour=hour, minute=minute, second=second, microsecond=0)
+                start_ts = int(dt.timestamp())
+                generate_session_for_user(uid, start_ts, persona["avg_events"], products)
+                total_est += persona["avg_events"]
+    return total_est
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Seed realistic customer-like data")
+    parser.add_argument("--username", type=str, default=None, help="Seed only for this username (create if missing)")
+    parser.add_argument("--user-count", type=int, default=25, help="Number of users when --username not provided")
+    parser.add_argument("--days", type=int, default=7, help="Days back to generate")
+    parser.add_argument("--sessions-per-user", type=int, default=5, help="Sessions per user per day")
+    parser.add_argument("--avg-events", type=int, default=7, help="Average events per session")
+    parser.add_argument("--seed-products", action="store_true", help="Seed products first if empty")
+
+    args = parser.parse_args()
+
+    if args.username:
+        user_ids = ensure_users(args.username, 1)
+    else:
+        user_ids = ensure_users(None, args.user_count)
+
+    print(f"Seeding realistic data for {len(user_ids)} users...")
+    est = seed_for_users(user_ids, args.days, args.sessions_per_user, args.avg_events, args.seed_products)
+    print(f"✅ Estimated events inserted: ~{est}")
+
+
+if __name__ == "__main__":
+    main()

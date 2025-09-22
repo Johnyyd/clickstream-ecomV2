@@ -10,6 +10,7 @@ const saveKeyBtn = document.getElementById('saveKeyBtn');
 const checkKeyBtn = document.getElementById('checkKeyBtn');
 const openrouterKeyInput = document.getElementById('openrouterKey');
 const keyStatus = document.getElementById('keyStatus');
+const recsEl = document.getElementById('recs');
 
 let token = null;
 
@@ -28,6 +29,8 @@ loginBtn.onclick = async () => {
     document.getElementById('controls').style.display = 'block';
     // After login, check current key
     try { await checkKey(); } catch(e) {}
+    // Also load latest recommendations if any
+    try { await loadRecommendations(); } catch(e) {}
   } else {
     output.innerText = JSON.stringify(j);
   }
@@ -109,6 +112,8 @@ analyzeBtn.onclick = async () => {
       }
 
       output.innerText = "Analysis completed.";
+      // Refresh recommendations panel based on the new analysis
+      try { await loadRecommendations(); } catch(e) {}
     } else {
       output.innerText = JSON.stringify(result, null, 2);
     }

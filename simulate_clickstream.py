@@ -7,22 +7,67 @@ from datetime import datetime, timedelta
 
 # Product data for realistic clickstream simulation
 PRODUCTS = [
-    {"name": "Laptop Dell XPS 13", "category": "computer", "price": 1200, "tags": ["electronics","laptop"]},
-    {"name": "MacBook Pro 14", "category": "computer", "price": 2000, "tags": ["electronics","laptop"]},
-    {"name": "iPhone 15", "category": "phone", "price": 999, "tags": ["electronics","mobile"]},
-    {"name": "Samsung Galaxy S23", "category": "phone", "price": 899, "tags": ["electronics","mobile"]},
-    {"name": "Pepsi Can", "category": "drink", "price": 1.5, "tags": ["beverage","cold"]},
-    {"name": "Espresso Coffee", "category": "drink", "price": 3.0, "tags": ["beverage","hot"]},
-    {"name": "Pizza Margherita", "category": "food", "price": 10, "tags": ["meal","fastfood"]},
-    {"name": "Sushi Set", "category": "food", "price": 15, "tags": ["meal","japanese"]},
-    {"name": "RayBan Sunglasses", "category": "glasses", "price": 150, "tags": ["fashion","accessory"]},
-    {"name": "Reading Glasses", "category": "glasses", "price": 50, "tags": ["vision","accessory"]},
-    {"name": "Blue Jeans", "category": "pants", "price": 40, "tags": ["clothing","casual"]},
-    {"name": "Formal Trousers", "category": "pants", "price": 60, "tags": ["clothing","formal"]},
-    {"name": "Nike Air Shoes", "category": "shoes", "price": 120, "tags": ["clothing","sport"]},
-    {"name": "Leather Boots", "category": "shoes", "price": 180, "tags": ["clothing","casual"]},
-    {"name": "T-Shirt White", "category": "shirt", "price": 20, "tags": ["clothing","casual"]},
-    {"name": "Formal Shirt", "category": "shirt", "price": 35, "tags": ["clothing","formal"]},
+    # ---- Computers ----
+        {"name": "Lenovo ThinkPad X1", "category": "computer", "price": 1500, "tags": ["electronics","laptop"]},
+        {"name": "Asus ROG Strix", "category": "computer", "price": 1800, "tags": ["electronics","gaming","laptop"]},
+        {"name": "HP Spectre x360", "category": "computer", "price": 1400, "tags": ["electronics","laptop"]},
+        {"name": "Microsoft Surface Laptop 5", "category": "computer", "price": 1600, "tags": ["electronics","portable"]},
+        {"name": "Acer Aspire 7", "category": "computer", "price": 900, "tags": ["electronics","budget"]},
+        {"name": "Alienware M16", "category": "computer", "price": 2200, "tags": ["electronics","gaming"]},
+        
+        # ---- Phones ----
+        {"name": "Google Pixel 8", "category": "phone", "price": 799, "tags": ["electronics","mobile"]},
+        {"name": "OnePlus 11", "category": "phone", "price": 699, "tags": ["electronics","mobile"]},
+        {"name": "Xiaomi Mi 13", "category": "phone", "price": 650, "tags": ["electronics","mobile"]},
+        {"name": "Oppo Find X6", "category": "phone", "price": 720, "tags": ["electronics","mobile"]},
+        {"name": "Sony Xperia 5 V", "category": "phone", "price": 950, "tags": ["electronics","camera"]},
+        {"name": "Nokia G60", "category": "phone", "price": 400, "tags": ["electronics","budget"]},
+        
+        # ---- Drinks ----
+        {"name": "Coca Cola Bottle", "category": "drink", "price": 2.0, "tags": ["beverage","cold"]},
+        {"name": "Green Tea", "category": "drink", "price": 2.5, "tags": ["beverage","hot"]},
+        {"name": "Latte Coffee", "category": "drink", "price": 3.5, "tags": ["beverage","hot"]},
+        {"name": "Orange Juice", "category": "drink", "price": 2.8, "tags": ["beverage","fruit"]},
+        {"name": "Mineral Water", "category": "drink", "price": 1.0, "tags": ["beverage","cold"]},
+        {"name": "Energy Drink Monster", "category": "drink", "price": 2.2, "tags": ["beverage","energy"]},
+        
+        # ---- Food ----
+        {"name": "Burger Beef", "category": "food", "price": 8, "tags": ["meal","fastfood"]},
+        {"name": "Pasta Carbonara", "category": "food", "price": 12, "tags": ["meal","italian"]},
+        {"name": "Steak Medium Rare", "category": "food", "price": 25, "tags": ["meal","western"]},
+        {"name": "Chicken Curry", "category": "food", "price": 14, "tags": ["meal","asian"]},
+        {"name": "Fried Rice", "category": "food", "price": 9, "tags": ["meal","asian"]},
+        {"name": "Salmon Sushi Roll", "category": "food", "price": 18, "tags": ["meal","japanese"]},
+        {"name": "Vegan Salad Bowl", "category": "food", "price": 11, "tags": ["meal","healthy"]},
+        
+        # ---- Glasses ----
+        {"name": "Oakley Sport Glasses", "category": "glasses", "price": 120, "tags": ["fashion","sport"]},
+        {"name": "Gucci Designer Glasses", "category": "glasses", "price": 350, "tags": ["fashion","luxury"]},
+        {"name": "Blue Light Blocking Glasses", "category": "glasses", "price": 80, "tags": ["vision","work"]},
+        {"name": "Kids Reading Glasses", "category": "glasses", "price": 30, "tags": ["vision","kids"]},
+        
+        # ---- Pants ----
+        {"name": "Cargo Pants Green", "category": "pants", "price": 50, "tags": ["clothing","casual"]},
+        {"name": "Jogger Pants Black", "category": "pants", "price": 45, "tags": ["clothing","sport"]},
+        {"name": "Slim Fit Jeans", "category": "pants", "price": 55, "tags": ["clothing","casual"]},
+        {"name": "Khaki Pants Beige", "category": "pants", "price": 65, "tags": ["clothing","formal"]},
+        
+        # ---- Shoes ----
+        {"name": "Adidas Ultraboost", "category": "shoes", "price": 160, "tags": ["clothing","sport"]},
+        {"name": "Converse Chuck Taylor", "category": "shoes", "price": 70, "tags": ["clothing","casual"]},
+        {"name": "Puma Running Shoes", "category": "shoes", "price": 95, "tags": ["clothing","sport"]},
+        {"name": "Reebok Classic", "category": "shoes", "price": 85, "tags": ["clothing","casual"]},
+        {"name": "Timberland Boots", "category": "shoes", "price": 200, "tags": ["clothing","outdoor"]},
+        
+        # ---- Shirts ----
+        {"name": "Polo Shirt Blue", "category": "shirt", "price": 25, "tags": ["clothing","casual"]},
+        {"name": "Hoodie Black", "category": "shirt", "price": 45, "tags": ["clothing","casual"]},
+        {"name": "Sweater Grey", "category": "shirt", "price": 40, "tags": ["clothing","casual"]},
+        {"name": "Flannel Shirt Red", "category": "shirt", "price": 30, "tags": ["clothing","casual"]},
+        {"name": "Silk Shirt", "category": "shirt", "price": 70, "tags": ["clothing","luxury"]},
+        {"name": "Denim Jacket", "category": "shirt", "price": 80, "tags": ["clothing","casual"]},
+        {"name": "Winter Coat", "category": "shirt", "price": 120, "tags": ["clothing","outerwear"]},
+        {"name": "Trench Coat", "category": "shirt", "price": 150, "tags": ["clothing","formal"]},
 ]
 
 # Enhanced pages with product-specific pages

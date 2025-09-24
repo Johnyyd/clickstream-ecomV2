@@ -315,7 +315,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
                     return p
                 items = [clean(p) for p in items]
                 self._set_headers(200)
-                self.wfile.write(json.dumps({"items": items, "total": total, "limit": limit, "offset": offset}).encode())
+                self.wfile.write(json.dumps({"items": items, "total": total, "limit": limit, "offset": offset}, default=str).encode())
                 return
             except Exception as e:
                 self._set_headers(500)
@@ -353,7 +353,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
                 if not p.get("image_url"):
                     p["image_url"] = "/static/images/placeholder.svg"
                 self._set_headers(200)
-                self.wfile.write(json.dumps(p).encode())
+                self.wfile.write(json.dumps(p, default=str).encode())
                 return
             except Exception as e:
                 self._set_headers(500)
@@ -399,7 +399,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
                     if not p.get("image_url"):
                         p["image_url"] = "/static/images/placeholder.svg"
                 self._set_headers(200)
-                self.wfile.write(json.dumps({"items": items, "total": total, "limit": limit, "offset": offset}).encode())
+                self.wfile.write(json.dumps({"items": items, "total": total, "limit": limit, "offset": offset}, default=str).encode())
                 return
             except Exception as e:
                 self._set_headers(500)

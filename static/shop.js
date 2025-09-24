@@ -122,7 +122,7 @@ const Shop = (() => {
     const img = p.image_url || '/static/images/placeholder.svg';
     return `
       <div class="card">
-        <img src="${img}" alt="${p.name}" />
+        <img src="${img}" alt="${p.name}" onerror="this.onerror=null;this.src='/static/images/placeholder.svg'" />
         <div class="card-body">
           <div class="card-title">${p.name}</div>
           <div class="card-meta">${p.category} • ${fmtPrice(p.price)}</div>
@@ -324,7 +324,7 @@ const Shop = (() => {
     el.innerHTML = `
       <nav class="breadcrumbs"><a href="/home">Home</a> <span>/</span> <a href="/category?category=${encodeURIComponent(p.category || '')}">${p.category || 'All'}</a> <span>/</span> <span>${p.name}</span></nav>
       <div class="product">
-        <img src="${img}" alt="${p.name}" />
+        <img src="${img}" alt="${p.name}" onerror="this.onerror=null;this.src='/static/images/placeholder.svg'" />
         <div class="product-info">
           <h1>${p.name}</h1>
           <div class="price">${fmtPrice(p.price)}</div>

@@ -19,11 +19,28 @@
   </header>
   <main class="container">
     <h1>Featured Products</h1>
+    <div id="categoryFilters" class="category-filters"></div>
+    <div id="homeSort" class="category-filters"></div>
     <div id="productGrid" class="grid"></div>
+    <div class="toolbar-row">
+      <button id="homeLoadMore" class="btn">Load more</button>
+      <span id="homeInfo" class="text-muted"></span>
+    </div>
   </main>
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="/home">Home</a>
+        <a href="/search">Search</a>
+        <a href="/cart">Cart</a>
+      </div>
+      <div class="text-muted">© EcomV2</div>
+    </div>
+  </footer>
   <script src="/static/shop.js"></script>
   <script>
     Shop.initNav();
+    Shop.renderCategories();
     Shop.loadFeaturedProducts();
   </script>
 </body>

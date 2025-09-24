@@ -57,9 +57,23 @@ class SimpleHandler(BaseHTTPRequestHandler):
                 return
 
         # Serve static assets under /static/* including images
-        if path == "/" or path.startswith("/static/") or path.endswith((".html", ".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg")):
+        # Pretty product URL: /p/<slug> should serve product.html
+        if path.startswith("/p/"):
+            try:
+                file_path = os.path.join(STATIC_DIR, "product.html")
+                self._set_headers(200, content_type="text/html")
+                with open(file_path, "rb") as f:
+                    self.wfile.write(f.read())
+                return
+            except Exception:
+                pass
+        if path == "/" or path.startswith("/static/") or path.endswith((".html", ".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg")) or path == "/dashboard":
             try:
                 if path == "/":
+                    # Default storefront home
+                    file_path = os.path.join(STATIC_DIR, "home.html")
+                elif path == "/dashboard":
+                    # Legacy dashboard
                     file_path = os.path.join(STATIC_DIR, "index.html")
                 else:
                     rel = path.lstrip("/")
@@ -242,15 +256,57 @@ class SimpleHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}).encode())
                 return
 
-        # API endpoint: GET /api/products -> list products (optionally by category)
+        # API endpoint: GET /api/products -> list products (filters: category, price range, tags; pagination+sorting)
         if path == "/api/products":
             try:
                 query = parse_qs(parsed.query)
                 q = {}
                 if "category" in query:
                     q["category"] = query["category"][0]
-                limit = int(query.get("limit", [50])[0])
-                items = list(products_col().find(q).limit(limit))
+                # price range
+                price = {}
+                if "min_price" in query:
+                    try:
+                        price["$gte"] = float(query["min_price"][0])
+                    except Exception:
+                        pass
+                if "max_price" in query:
+                    try:
+                        price["$lte"] = float(query["max_price"][0])
+                    except Exception:
+                        pass
+                if price:
+                    q["price"] = price
+                # tags (comma separated)
+                if "tags" in query:
+                    tags_raw = query["tags"][0]
+                    tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
+                    if tags:
+                        q["tags"] = {"$in": tags}
+
+                # pagination
+                limit = max(1, min(100, int(query.get("limit", [12])[0])))
+                offset = max(0, int(query.get("offset", [0])[0]))
+
+                # sorting
+                sort_key = query.get("sort", [""])[0]
+                sort_spec = None
+                if sort_key == "price_asc":
+                    sort_spec = ("price", 1)
+                elif sort_key == "price_desc":
+                    sort_spec = ("price", -1)
+                elif sort_key == "name_asc":
+                    sort_spec = ("name", 1)
+                elif sort_key == "name_desc":
+                    sort_spec = ("name", -1)
+                elif sort_key == "created_desc":
+                    sort_spec = ("created_at", -1)
+
+                cur = products_col().find(q)
+                if sort_spec:
+                    cur = cur.sort([sort_spec])
+                total = cur.count() if hasattr(cur, 'count') else products_col().count_documents(q)
+                items = list(cur.skip(offset).limit(limit))
                 def clean(p):
                     p["_id"] = str(p["_id"])
                     # ensure image_url
@@ -259,7 +315,20 @@ class SimpleHandler(BaseHTTPRequestHandler):
                     return p
                 items = [clean(p) for p in items]
                 self._set_headers(200)
-                self.wfile.write(json.dumps({"items": items}).encode())
+                self.wfile.write(json.dumps({"items": items, "total": total, "limit": limit, "offset": offset}).encode())
+                return
+            except Exception as e:
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+                return
+
+        # API endpoint: GET /api/categories -> list distinct categories
+        if path == "/api/categories":
+            try:
+                cats = products_col().distinct("category")
+                cats = sorted([c for c in cats if isinstance(c, str)])
+                self._set_headers(200)
+                self.wfile.write(json.dumps({"items": cats}).encode())
                 return
             except Exception as e:
                 self._set_headers(500)
@@ -269,8 +338,13 @@ class SimpleHandler(BaseHTTPRequestHandler):
         # API endpoint: GET /api/product/<id> -> single product by id
         if path.startswith("/api/product/"):
             try:
-                pid = path.split("/")[-1]
-                p = products_col().find_one({"_id": ObjectId(pid)})
+                # slug route: /api/product/slug/<slug>
+                if "/slug/" in path:
+                    slug = path.split("/slug/")[-1]
+                    p = products_col().find_one({"slug": slug})
+                else:
+                    pid = path.split("/")[-1]
+                    p = products_col().find_one({"_id": ObjectId(pid)})
                 if not p:
                     self._set_headers(404)
                     self.wfile.write(b'{"error":"not found"}')
@@ -286,7 +360,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}).encode())
                 return
 
-        # API endpoint: GET /api/search?q=...
+        # API endpoint: GET /api/search?q=... (supports pagination and sorting similar to /api/products)
         if path.startswith("/api/search"):
             try:
                 query = parse_qs(parsed.query)
@@ -298,13 +372,34 @@ class SimpleHandler(BaseHTTPRequestHandler):
                         {"category": {"$regex": q, "$options": "i"}},
                         {"tags": {"$elemMatch": {"$regex": q, "$options": "i"}}},
                     ]}
-                items = list(products_col().find(filter_q).limit(50))
+                # pagination
+                limit = max(1, min(100, int(query.get("limit", [12])[0])))
+                offset = max(0, int(query.get("offset", [0])[0]))
+                # sorting
+                sort_key = query.get("sort", [""])[0]
+                sort_spec = None
+                if sort_key == "price_asc":
+                    sort_spec = ("price", 1)
+                elif sort_key == "price_desc":
+                    sort_spec = ("price", -1)
+                elif sort_key == "name_asc":
+                    sort_spec = ("name", 1)
+                elif sort_key == "name_desc":
+                    sort_spec = ("name", -1)
+                elif sort_key == "created_desc":
+                    sort_spec = ("created_at", -1)
+
+                cur = products_col().find(filter_q)
+                if sort_spec:
+                    cur = cur.sort([sort_spec])
+                total = cur.count() if hasattr(cur, 'count') else products_col().count_documents(filter_q)
+                items = list(cur.skip(offset).limit(limit))
                 for p in items:
                     p["_id"] = str(p["_id"])
                     if not p.get("image_url"):
                         p["image_url"] = "/static/images/placeholder.svg"
                 self._set_headers(200)
-                self.wfile.write(json.dumps({"items": items}).encode())
+                self.wfile.write(json.dumps({"items": items, "total": total, "limit": limit, "offset": offset}).encode())
                 return
             except Exception as e:
                 self._set_headers(500)

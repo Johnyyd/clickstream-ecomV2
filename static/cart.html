@@ -16,13 +16,33 @@
     </nav>
   </header>
   <main class="container">
+    <nav class="breadcrumbs"><a href="/home">Home</a> <span>/</span> <span>Cart</span></nav>
     <h1>Your Cart</h1>
     <div id="cartItems" class="cart-items"></div>
+    <div class="totals">
+      <div class="row"><span>Subtotal</span><span id="cartSubtotal">$0.00</span></div>
+      <div class="row"><span>Tax (10%)</span><span id="cartTax">$0.00</span></div>
+      <div class="row"><span>Shipping</span><span id="cartShipping">$0.00</span></div>
+      <div class="row grand"><span>Total</span><span id="cartTotal">$0.00</span></div>
+    </div>
     <div class="cart-summary">
-      <div>Total: <strong id="cartTotal">$0.00</strong></div>
-      <a href="/checkout" class="btn-primary">Proceed to Checkout</a>
+      <div class="text-muted">Updated automatically when quantities change</div>
+      <div class="toolbar-row">
+        <button id="clearCart" class="btn">Clear Cart</button>
+        <a href="/checkout" class="btn-primary">Proceed to Checkout</a>
+      </div>
     </div>
   </main>
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="/home">Home</a>
+        <a href="/search">Search</a>
+        <a href="/cart">Cart</a>
+      </div>
+      <div class="text-muted">© EcomV2</div>
+    </div>
+  </footer>
   <script src="/static/shop.js"></script>
   <script>
     Shop.initNav();

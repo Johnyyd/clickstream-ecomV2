@@ -1,5 +1,4 @@
 # analysis.py
-from simple_analysis import simple_sessionize_and_counts
 from openrouter_client import call_openrouter
 from db import analyses_col, api_keys_col, events_col, products_col, users_col
 from bson import ObjectId

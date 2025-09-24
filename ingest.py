@@ -26,13 +26,16 @@ def ingest_event(event_json):
     # Ensure user_id and session_id are properly handled
     user_id = event_json.get("user_id")
     session_id = event_json.get("session_id")
-    
+
     # If user_id is provided but session_id is not, create a consistent session_id
     if user_id and not session_id:
-        if hasattr(user_id, '__str__'):  # If it's ObjectId or has string representation
+        if hasattr(user_id, '__str__'):
             session_id = f"session_{str(user_id)[-6:]}_{int(time.time())}"
         else:
             session_id = f"session_{user_id}_{int(time.time())}"
+    # Normalize to string for consistent keying in both events and sessions
+    if session_id is not None:
+        session_id = str(session_id)
     
     doc = {
         "client_id": event_json.get("client_id", str(uuid.uuid4())),

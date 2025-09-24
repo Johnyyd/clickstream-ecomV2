@@ -1,103 +1,31 @@
 # simulate_clickstream.py
 from ingest import ingest_event
-from db import get_db, users_col, sessions_col
+from db import get_db, users_col, sessions_col, products_col
 from bson import ObjectId
 import random, time
 from datetime import datetime, timedelta
-
-# Product data for realistic clickstream simulation
-PRODUCTS = [
-    # ---- Computers ----
-        {"name": "Lenovo ThinkPad X1", "category": "computer", "price": 1500, "tags": ["electronics","laptop"]},
-        {"name": "Asus ROG Strix", "category": "computer", "price": 1800, "tags": ["electronics","gaming","laptop"]},
-        {"name": "HP Spectre x360", "category": "computer", "price": 1400, "tags": ["electronics","laptop"]},
-        {"name": "Microsoft Surface Laptop 5", "category": "computer", "price": 1600, "tags": ["electronics","portable"]},
-        {"name": "Acer Aspire 7", "category": "computer", "price": 900, "tags": ["electronics","budget"]},
-        {"name": "Alienware M16", "category": "computer", "price": 2200, "tags": ["electronics","gaming"]},
-        
-        # ---- Phones ----
-        {"name": "Google Pixel 8", "category": "phone", "price": 799, "tags": ["electronics","mobile"]},
-        {"name": "OnePlus 11", "category": "phone", "price": 699, "tags": ["electronics","mobile"]},
-        {"name": "Xiaomi Mi 13", "category": "phone", "price": 650, "tags": ["electronics","mobile"]},
-        {"name": "Oppo Find X6", "category": "phone", "price": 720, "tags": ["electronics","mobile"]},
-        {"name": "Sony Xperia 5 V", "category": "phone", "price": 950, "tags": ["electronics","camera"]},
-        {"name": "Nokia G60", "category": "phone", "price": 400, "tags": ["electronics","budget"]},
-        
-        # ---- Drinks ----
-        {"name": "Coca Cola Bottle", "category": "drink", "price": 2.0, "tags": ["beverage","cold"]},
-        {"name": "Green Tea", "category": "drink", "price": 2.5, "tags": ["beverage","hot"]},
-        {"name": "Latte Coffee", "category": "drink", "price": 3.5, "tags": ["beverage","hot"]},
-        {"name": "Orange Juice", "category": "drink", "price": 2.8, "tags": ["beverage","fruit"]},
-        {"name": "Mineral Water", "category": "drink", "price": 1.0, "tags": ["beverage","cold"]},
-        {"name": "Energy Drink Monster", "category": "drink", "price": 2.2, "tags": ["beverage","energy"]},
-        
-        # ---- Food ----
-        {"name": "Burger Beef", "category": "food", "price": 8, "tags": ["meal","fastfood"]},
-        {"name": "Pasta Carbonara", "category": "food", "price": 12, "tags": ["meal","italian"]},
-        {"name": "Steak Medium Rare", "category": "food", "price": 25, "tags": ["meal","western"]},
-        {"name": "Chicken Curry", "category": "food", "price": 14, "tags": ["meal","asian"]},
-        {"name": "Fried Rice", "category": "food", "price": 9, "tags": ["meal","asian"]},
-        {"name": "Salmon Sushi Roll", "category": "food", "price": 18, "tags": ["meal","japanese"]},
-        {"name": "Vegan Salad Bowl", "category": "food", "price": 11, "tags": ["meal","healthy"]},
-        
-        # ---- Glasses ----
-        {"name": "Oakley Sport Glasses", "category": "glasses", "price": 120, "tags": ["fashion","sport"]},
-        {"name": "Gucci Designer Glasses", "category": "glasses", "price": 350, "tags": ["fashion","luxury"]},
-        {"name": "Blue Light Blocking Glasses", "category": "glasses", "price": 80, "tags": ["vision","work"]},
-        {"name": "Kids Reading Glasses", "category": "glasses", "price": 30, "tags": ["vision","kids"]},
-        
-        # ---- Pants ----
-        {"name": "Cargo Pants Green", "category": "pants", "price": 50, "tags": ["clothing","casual"]},
-        {"name": "Jogger Pants Black", "category": "pants", "price": 45, "tags": ["clothing","sport"]},
-        {"name": "Slim Fit Jeans", "category": "pants", "price": 55, "tags": ["clothing","casual"]},
-        {"name": "Khaki Pants Beige", "category": "pants", "price": 65, "tags": ["clothing","formal"]},
-        
-        # ---- Shoes ----
-        {"name": "Adidas Ultraboost", "category": "shoes", "price": 160, "tags": ["clothing","sport"]},
-        {"name": "Converse Chuck Taylor", "category": "shoes", "price": 70, "tags": ["clothing","casual"]},
-        {"name": "Puma Running Shoes", "category": "shoes", "price": 95, "tags": ["clothing","sport"]},
-        {"name": "Reebok Classic", "category": "shoes", "price": 85, "tags": ["clothing","casual"]},
-        {"name": "Timberland Boots", "category": "shoes", "price": 200, "tags": ["clothing","outdoor"]},
-        
-        # ---- Shirts ----
-        {"name": "Polo Shirt Blue", "category": "shirt", "price": 25, "tags": ["clothing","casual"]},
-        {"name": "Hoodie Black", "category": "shirt", "price": 45, "tags": ["clothing","casual"]},
-        {"name": "Sweater Grey", "category": "shirt", "price": 40, "tags": ["clothing","casual"]},
-        {"name": "Flannel Shirt Red", "category": "shirt", "price": 30, "tags": ["clothing","casual"]},
-        {"name": "Silk Shirt", "category": "shirt", "price": 70, "tags": ["clothing","luxury"]},
-        {"name": "Denim Jacket", "category": "shirt", "price": 80, "tags": ["clothing","casual"]},
-        {"name": "Winter Coat", "category": "shirt", "price": 120, "tags": ["clothing","outerwear"]},
-        {"name": "Trench Coat", "category": "shirt", "price": 150, "tags": ["clothing","formal"]},
-]
 
 # Enhanced pages with product-specific pages
 pages = ["/home", "/category", "/search", "/checkout", "/cart"]
 session_duration = 1800  # 30 minutes in seconds
 
-def seed_products():
-    """Seed products into MongoDB"""
-    db = get_db()
-    products_collection = db.products
-    
-    # Clear existing products
-    products_collection.delete_many({})
-    
-    # Add products with IDs and timestamps
-    for p in PRODUCTS:
-        p["_id"] = ObjectId()
-        p["created_at"] = datetime.utcnow()
-    
-    products_collection.insert_many(PRODUCTS)
-    print(f"Seeded {len(PRODUCTS)} products into MongoDB")
-    return PRODUCTS
+def ensure_products():
+    """Ensure there are products in MongoDB; seed via seed_products.py if empty."""
+    if products_col().count_documents({}) == 0:
+        try:
+            from seed_products import seed_more_products
+            seed_more_products()
+        except Exception as e:
+            print(f"Failed to seed products: {e}")
+    return list(products_col().find({}))
 
-def get_random_product():
+def get_random_product(products):
     """Get a random product from the products list"""
-    return random.choice(PRODUCTS)
+    return random.choice(products)
 
 def get_products_by_category(category):
-    """Get products filtered by category"""
-    return [p for p in PRODUCTS if p["category"] == category]
+    """Get products filtered by category from DB"""
+    return list(products_col().find({"category": category}))
 
 def get_or_create_test_users():
     """Get existing users or create test users for simulation"""
@@ -260,10 +188,10 @@ def simulate_session(session, num_events=5):
 
 def simulate(num_sessions=20, seed_products_first=True):
     """Simulate clickstream events with product data"""
-    if seed_products_first:
-        print("Seeding products...")
-        seed_products()
-    
+    products = ensure_products()
+    if not products:
+        print("No products available; aborting simulation.")
+        return 0
     print(f"Simulating {num_sessions} sessions...")
     total_events = 0
     
@@ -283,9 +211,10 @@ def simulate(num_sessions=20, seed_products_first=True):
 def simulate_realistic_ecommerce(num_sessions=50):
     """Simulate more realistic e-commerce behavior"""
     print("=== Realistic E-commerce Clickstream Simulation ===")
-    
-    # Seed products first
-    seed_products()
+    products = ensure_products()
+    if not products:
+        print("No products available; aborting simulation.")
+        return 0
     
     # Simulate different types of users
     user_types = [

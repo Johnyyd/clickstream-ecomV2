@@ -38,8 +38,8 @@ def _build_messages(prompt: str) -> list:
             "role": "system",
             "content": (
                 "You are a senior product analyst."
-"Your job: Read structured clickstream statistics and provide clear, actionable business guidance. Make recommendations for products, features, etc. to customers based on clickstream statistics and database"
-"Always be concise and decisive."
+                "Your job: Read structured clickstream statistics and provide clear, actionable business guidance. Make recommendations for products, features, etc. to customers based on clickstream statistics and database"
+                "Always be concise and decisive."
             ),
         },
         {

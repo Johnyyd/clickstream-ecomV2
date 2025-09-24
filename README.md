@@ -22,7 +22,7 @@ Analysis filters exclude noisy sources by default (while preserving schema):
 ```
 & venv\Scripts\Activate.ps1
 $env:MONGO_URI = "mongodb://localhost:27017"   # optional override
-$env:MONGO_DB = "clickstream_db"               # optional override
+$env:MONGO_DB = "clickstream"               # optional override
 ```
 
 ## Seed Products

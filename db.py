@@ -3,7 +3,7 @@ from pymongo import MongoClient
 import os
 
 MONGO_URI = os.environ.get("MONGO_URI","mongodb://localhost:27017")
-DB_NAME = os.environ.get("MONGO_DB","clickstream_db")
+DB_NAME = os.environ.get("MONGO_DB","clickstream")
 
 _client = None
 _db = None

@@ -1,7 +1,18 @@
-from datetime import datetime
+{{ ... }}
 from bson import ObjectId
 from db import get_db
 
+def slugify(name: str) -> str:
+    s = name.lower()
+    # characters to normalize to dashes
+    chars = [" ", "/", "\\", ",", ".", "(", ")", "[", "]", "{", "}", "\'", "\""]
+    for ch in chars:
+        s = s.replace(ch, "-")
+    # collapse multiple dashes
+    while "--" in s:
+        s = s.replace("--", "-")
+    return s.strip("-")
+{{ ... }}
 def seed_more_products():
     more_products = [
         # ---- Computers ----
@@ -71,6 +82,10 @@ def seed_more_products():
     for p in more_products:
         p["_id"] = ObjectId()
         p["created_at"] = datetime.utcnow()
+        # Ensure image_url is present and points to static images
+        slug = slugify(p["name"]) if p.get("name") else str(p["_id"])
+        # default to .jpg; users can drop images into static/images with matching names
+        p["image_url"] = f"/static/images/{slug}.jpg"
     db.products.insert_many(more_products)
     print("Inserted more products:", len(more_products))
 

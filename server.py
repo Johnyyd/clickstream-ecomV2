@@ -35,25 +35,61 @@ class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        if path == "/" or path.endswith((".html", ".css", ".js")):
-            # serve static files
+        # Map pretty storefront routes to static HTML files
+        pretty_routes = {
+            "/home": "home.html",
+            "/category": "category.html",
+            "/search": "search.html",
+            "/product": "product.html",
+            "/cart": "cart.html",
+            "/checkout": "checkout.html",
+        }
+        if path in pretty_routes:
+            file_path = os.path.join(STATIC_DIR, pretty_routes[path])
+            if os.path.exists(file_path):
+                self._set_headers(200, content_type="text/html")
+                with open(file_path, "rb") as f:
+                    self.wfile.write(f.read())
+                return
+            else:
+                self._set_headers(404)
+                self.wfile.write(b'{"error":"not found"}')
+                return
+
+        # Serve static assets under /static/* including images
+        if path == "/" or path.startswith("/static/") or path.endswith((".html", ".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg")):
             try:
                 if path == "/":
                     file_path = os.path.join(STATIC_DIR, "index.html")
                 else:
-                    # Remove leading slash and 'static/' if present
-                    rel = path.lstrip("/").replace("static/", "")
+                    rel = path.lstrip("/")
+                    # allow both /static/foo and /foo to map inside STATIC_DIR
+                    if rel.startswith("static/"):
+                        rel = rel[len("static/"):]
                     file_path = os.path.join(STATIC_DIR, rel)
-                
-                # Kiểm tra path traversal
+
                 file_path = os.path.normpath(file_path)
                 if not file_path.startswith(STATIC_DIR):
                     self._set_headers(403)
                     self.wfile.write(b'{"error":"forbidden"}')
                     return
-                       
+
                 if os.path.exists(file_path):
-                    ctype = "text/html" if file_path.endswith(".html") else "text/css" if file_path.endswith(".css") else "application/javascript"
+                    ctype = "application/octet-stream"
+                    if file_path.endswith(".html"):
+                        ctype = "text/html"
+                    elif file_path.endswith(".css"):
+                        ctype = "text/css"
+                    elif file_path.endswith(".js"):
+                        ctype = "application/javascript"
+                    elif file_path.endswith(".png"):
+                        ctype = "image/png"
+                    elif file_path.endswith((".jpg", ".jpeg")):
+                        ctype = "image/jpeg"
+                    elif file_path.endswith(".gif"):
+                        ctype = "image/gif"
+                    elif file_path.endswith(".svg"):
+                        ctype = "image/svg+xml"
                     self._set_headers(200, content_type=ctype)
                     with open(file_path, "rb") as f:
                         self.wfile.write(f.read())
@@ -62,16 +98,10 @@ class SimpleHandler(BaseHTTPRequestHandler):
                 print(f"Error serving static file: {e}")
                 self._set_headers(500)
                 self.wfile.write(b'{"error":"internal server error"}')
-            if os.path.exists(file_path):
-                ctype = "text/html" if file_path.endswith(".html") else "text/css" if file_path.endswith(".css") else "application/javascript"
-                self._set_headers(200, content_type=ctype)
-                with open(file_path, "rb") as f:
-                    self.wfile.write(f.read())
                 return
-            else:
-                self._set_headers(404)
-                self.wfile.write(b'{"error":"not found"}')
-                return
+            self._set_headers(404)
+            self.wfile.write(b'{"error":"not found"}')
+            return
 
         # API endpoints: /api/analyses
         if path.startswith("/api/analyses"):
@@ -206,6 +236,75 @@ class SimpleHandler(BaseHTTPRequestHandler):
 
                 self._set_headers(200)
                 self.wfile.write(json.dumps({"items": result_items}).encode())
+                return
+            except Exception as e:
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+                return
+
+        # API endpoint: GET /api/products -> list products (optionally by category)
+        if path == "/api/products":
+            try:
+                query = parse_qs(parsed.query)
+                q = {}
+                if "category" in query:
+                    q["category"] = query["category"][0]
+                limit = int(query.get("limit", [50])[0])
+                items = list(products_col().find(q).limit(limit))
+                def clean(p):
+                    p["_id"] = str(p["_id"])
+                    # ensure image_url
+                    if not p.get("image_url"):
+                        p["image_url"] = "/static/images/placeholder.svg"
+                    return p
+                items = [clean(p) for p in items]
+                self._set_headers(200)
+                self.wfile.write(json.dumps({"items": items}).encode())
+                return
+            except Exception as e:
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+                return
+
+        # API endpoint: GET /api/product/<id> -> single product by id
+        if path.startswith("/api/product/"):
+            try:
+                pid = path.split("/")[-1]
+                p = products_col().find_one({"_id": ObjectId(pid)})
+                if not p:
+                    self._set_headers(404)
+                    self.wfile.write(b'{"error":"not found"}')
+                    return
+                p["_id"] = str(p["_id"])
+                if not p.get("image_url"):
+                    p["image_url"] = "/static/images/placeholder.svg"
+                self._set_headers(200)
+                self.wfile.write(json.dumps(p).encode())
+                return
+            except Exception as e:
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+                return
+
+        # API endpoint: GET /api/search?q=...
+        if path.startswith("/api/search"):
+            try:
+                query = parse_qs(parsed.query)
+                q = query.get("q", [""])[0].strip()
+                filter_q = {}
+                if q:
+                    filter_q = {"$or": [
+                        {"name": {"$regex": q, "$options": "i"}},
+                        {"category": {"$regex": q, "$options": "i"}},
+                        {"tags": {"$elemMatch": {"$regex": q, "$options": "i"}}},
+                    ]}
+                items = list(products_col().find(filter_q).limit(50))
+                for p in items:
+                    p["_id"] = str(p["_id"])
+                    if not p.get("image_url"):
+                        p["image_url"] = "/static/images/placeholder.svg"
+                self._set_headers(200)
+                self.wfile.write(json.dumps({"items": items}).encode())
                 return
             except Exception as e:
                 self._set_headers(500)

@@ -1,3 +1,47 @@
+def simple_sessionize_and_counts(limit=None, user_id=None):
+    """Basic, fast analysis over events for quick stats.
+
+    Returns dict with keys: total_events, sessions, events_by_type, top_pages.
+    """
+    try:
+        q = {}
+        if user_id is not None:
+            try:
+                oid = ObjectId(str(user_id))
+                q["$or"] = [{"user_id": oid}, {"user_id": str(user_id)}]
+            except Exception:
+                q["user_id"] = str(user_id)
+
+        cursor = events_col().find(q).sort("timestamp", 1)
+        if limit:
+            cursor = cursor.limit(int(limit))
+
+        total = 0
+        sessions = set()
+        events_by_type = Counter()
+        page_counts = Counter()
+
+        for ev in cursor:
+            total += 1
+            sid = str(ev.get("session_id", ""))
+            if sid:
+                sessions.add(sid)
+            et = str(ev.get("event_type", "pageview"))
+            if et:
+                events_by_type[et] += 1
+            pg = str(ev.get("page", ""))
+            if pg:
+                page_counts[pg] += 1
+
+        return {
+            "total_events": total,
+            "sessions": len(sessions),
+            "events_by_type": dict(events_by_type),
+            "top_pages": page_counts.most_common(10),
+        }
+    except Exception as e:
+        # Return minimal structure so callers don't crash
+        return {"total_events": 0, "sessions": 0, "events_by_type": {}, "top_pages": []}
 # analysis.py
 from openrouter_client import call_openrouter
 from db import analyses_col, api_keys_col, events_col, products_col, users_col

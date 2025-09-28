@@ -5,6 +5,7 @@ from urllib.parse import urlparse, parse_qs
 from ingest import ingest_event
 from auth import create_user, create_session, get_user_by_token, verify_password, hash_password
 from analysis import run_analysis
+from manage_API__key import create_runtime_key
 from db import users_col, analyses_col, api_keys_col, products_col
 from bson import ObjectId
 from datetime import datetime
@@ -51,10 +52,33 @@ class SimpleHandler(BaseHTTPRequestHandler):
                 with open(file_path, "rb") as f:
                     self.wfile.write(f.read())
                 return
-            else:
-                self._set_headers(404)
-                self.wfile.write(b'{"error":"not found"}')
+
+        # Provision a new runtime OpenRouter key using provisioning key
+        if path == "/api/openrouter/provision":
+            token = self.headers.get("Authorization")
+            user = get_user_by_token(token) if token else None
+            if not user:
+                self._set_headers(401)
+                self.wfile.write(b'{"error":"unauthenticated"}')
                 return
+            try:
+                name = (data.get("name") if isinstance(data, dict) else None) or f"runtime-{str(user.get('_id'))[:6]}"
+                limit = (data.get("limit") if isinstance(data, dict) else None)
+                new_key, meta = create_runtime_key(name=name, limit=limit)
+                now = datetime.utcnow()
+                api_keys_col().update_one(
+                    {"user_id": user["_id"], "provider": "openrouter"},
+                    {"$set": {"key_encrypted": new_key, "updated_at": now}, "$setOnInsert": {"created_at": now}},
+                    upsert=True
+                )
+                self._set_headers(200)
+                self.wfile.write(json.dumps({"status": "ok", "meta": meta}).encode())
+            except Exception as e:
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+            return
+
+        
 
         # Serve static assets under /static/* including images
         # Pretty product URL: /p/<slug> should serve product.html

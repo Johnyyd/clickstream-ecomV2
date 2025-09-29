@@ -97,6 +97,306 @@ details > summary {
   cursor: pointer;
 }
 
+/* --- Accessibility --- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Analysis Mode Toggle --- */
+.analysis-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 15px 0;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/* The switch - the box around the slider */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 24px;
+}
+
+/* Hide default HTML checkbox */
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+/* The slider */
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: .4s;
+  border-radius: 24px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+
+input:checked + .slider {
+  background-color: var(--primary);
+}
+
+input:focus + .slider {
+  box-shadow: 0 0 1px var(--primary);
+}
+
+input:checked + .slider:before {
+  transform: translateX(26px);
+}
+
+/* Analysis mode badge */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.badge.spark {
+  background-color: rgba(37, 99, 235, 0.2);
+  color: #3b82f6;
+  border: 1px solid rgba(37, 99, 235, 0.3);
+}
+
+.badge.python {
+  background-color: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+/* --- API Key Management --- */
+.key-controls {
+  margin: 20px 0;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  border-left: 3px solid #4f46e5;
+}
+
+.key-controls h2 {
+  margin-top: 0;
+  color: var(--primary);
+  font-size: 1.1em;
+}
+
+#openrouterKey {
+  width: 100%;
+  max-width: 400px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  margin: 8px 0;
+}
+
+.key-status {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.key-status.success {
+  background-color: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  border-left: 3px solid #10b981;
+}
+
+.key-status.error {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border-left: 3px solid #ef4444;
+}
+
+/* Recommendations */
+#recs {
+  margin: 20px 0;
+}
+
+#recs h3 {
+  color: var(--primary);
+  margin-bottom: 12px;
+}
+
+#recs ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+#recs li {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+#recs li:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+#recs a {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  padding: 12px;
+}
+
+#recs img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+#recs h4 {
+  margin: 8px 0 4px;
+  font-size: 0.95em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#recs p {
+  margin: 0;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+/* --- Analysis Results --- */
+.analysis-results {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 16px;
+  color: var(--text);
+}
+
+.analysis-summary {
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.analysis-summary h3 {
+  margin-top: 0;
+  color: var(--primary);
+}
+
+.recommendations,
+.insights {
+  margin: 20px 0;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  border-left: 3px solid var(--primary);
+}
+
+.recommendations h3,
+.insights h3 {
+  margin-top: 0;
+  color: var(--primary);
+  font-size: 1.1em;
+}
+
+.recommendations ul,
+.insights ul {
+  padding-left: 20px;
+  margin: 8px 0 0 0;
+}
+
+.recommendations li,
+.insights li {
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+/* Raw data section */
+details {
+  margin-top: 20px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+details summary {
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 0;
+  outline: none;
+}
+
+details summary:hover {
+  color: var(--primary);
+}
+
+details pre {
+  margin: 10px 0 0 0;
+  max-height: 300px;
+  overflow: auto;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 12px;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+
+/* Error state */
+.error {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+  padding: 12px;
+  border-radius: 6px;
+  border-left: 3px solid #f87171;
+}
+
+.error pre {
+  margin: 8px 0 0 0;
+  color: #fecaca;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* --- Storefront additions --- */
 .site-header {
   display: flex;

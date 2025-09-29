@@ -1,8 +1,39 @@
 def simple_sessionize_and_counts(limit=None, user_id=None):
     """Basic, fast analysis over events for quick stats.
+    Uses Spark if USE_SPARK is enabled, otherwise falls back to Python implementation.
 
     Returns dict with keys: total_events, sessions, events_by_type, top_pages.
     """
+    if USE_SPARK:
+        try:
+            from spark_jobs import sessionize_and_counts
+            print("Using Spark for analysis...")
+            result = sessionize_and_counts(limit=limit)
+            
+            # Convert Spark result to match the Python implementation's format
+            events_by_type = {}
+            if "events_by_type" in result:
+                events_by_type = result["events_by_type"]
+            
+            top_pages = []
+            if "top_pages" in result:
+                top_pages = [(page, count) for page, count in result["top_pages"].items()]
+            
+            return {
+                "total_events": result.get("total_events", 0),
+                "sessions": result.get("sessions", 0),
+                "events_by_type": events_by_type,
+                "top_pages": top_pages,
+                "funnel_metrics": result.get("funnel_metrics", {}),
+                "conversion_rates": result.get("conversion_rates", {}),
+                "session_metrics": result.get("session_metrics", {})
+            }
+        except Exception as e:
+            print(f"Error in Spark analysis: {str(e)}")
+            print("Falling back to Python implementation...")
+            # Continue to Python implementation as fallback
+    
+    # Python implementation (fallback)
     try:
         q = {}
         if user_id is not None:
@@ -38,11 +69,23 @@ def simple_sessionize_and_counts(limit=None, user_id=None):
             "sessions": len(sessions),
             "events_by_type": dict(events_by_type),
             "top_pages": page_counts.most_common(10),
+            "funnel_metrics": {},
+            "conversion_rates": {},
+            "session_metrics": {}
         }
     except Exception as e:
         # Return minimal structure so callers don't crash
-        return {"total_events": 0, "sessions": 0, "events_by_type": {}, "top_pages": []}
+        return {
+            "total_events": 0, 
+            "sessions": 0, 
+            "events_by_type": {}, 
+            "top_pages": [],
+            "funnel_metrics": {},
+            "conversion_rates": {},
+            "session_metrics": {}
+        }
 # analysis.py
+import os
 from openrouter_client import call_openrouter
 from db import analyses_col, api_keys_col, events_col, products_col, users_col
 from bson import ObjectId
@@ -50,6 +93,9 @@ import json
 from datetime import datetime, timedelta
 from collections import Counter, defaultdict
 import statistics
+
+# Feature flag to enable/disable Spark analysis
+USE_SPARK = os.environ.get('USE_SPARK', 'false').lower() == 'true'
 
 def _coerce_llm_parsed(parsed, spark_summary, detailed_metrics, generated_insights):
     """Ensure LLM parsed output has required keys and fill sensible defaults.
@@ -410,9 +456,9 @@ def run_analysis(user_id, params):
     
     # 1. Run basic analysis
     try:
-        print("Running basic analysis...")
+        print(f"Running {'Spark' if USE_SPARK else 'Python'} analysis...")
         spark_summary = simple_sessionize_and_counts(limit=params.get("limit"), user_id=user_id)
-        print("Basic analysis completed successfully")
+        print(f"Analysis completed successfully (using {'Spark' if USE_SPARK else 'Python'})")
     except Exception as e:
         print(f"Error in basic analysis: {str(e)}")
         error_record = {

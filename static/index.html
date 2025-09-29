@@ -18,7 +18,20 @@
         </div>
         <div id="controls">
             <button id="simulateBtn">Simulate Events (10)</button>
-            <button id="analyzeBtn">Run Analysis</button>
+            <div class="analysis-controls">
+                <button id="analyzeBtn">Run Analysis</button>
+                <div class="toggle-container" role="group" aria-labelledby="analysisModeLabel">
+                    <span id="analysisModeLabel" class="sr-only">Analysis Engine</span>
+                    <label class="switch">
+                        <input type="checkbox" id="useSparkToggle" checked 
+                               aria-checked="true" 
+                               role="switch" 
+                               aria-labelledby="analysisModeLabel">
+                        <span class="slider round"></span>
+                    </label>
+                    <span id="analysisModeText" aria-live="polite">Spark Analysis</span>
+                </div>
+            </div>
             <div class="key-controls">
                 <h2>API Key</h2>
                 <input id="openrouterKey" placeholder="Paste your OpenRouter API key" />
@@ -30,7 +43,7 @@
                 <h2>Summary</h2>
                 <pre id="summary"></pre>
 
-                <h2>Python (Spark) Analysis - Detailed Metrics</h2>
+                <h2>Analysis - Detailed Metrics <span id="analysisModeBadge" class="badge">Spark</span></h2>
                 <pre id="pythonDetails"></pre>
 
                 <h2>LLM Insights (Parsed)</h2>
@@ -47,7 +60,8 @@
             <pre id="output" class="status-output"></pre>
         </div>
     </div>
-    <script src="dashboard.js"></script>
+    <script type="module" src="dashboard.js"></script>
+    <script type="module" src="analysisDisplay.js"></script>
 </body>
 
 </html>

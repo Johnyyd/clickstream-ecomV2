@@ -3,7 +3,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col, window, to_timestamp, unix_timestamp, collect_set,
     coalesce, lit, current_timestamp, create_map, desc, count,
-    size, when
+    size, when, expr, first, last, approx_count_distinct, max as max_, min as min_
 )
 from pyspark.sql.types import (
     StructType, StructField, StringType, TimestampType, 
@@ -81,6 +81,17 @@ events_schema = StructType([
     StructField("properties", MapType(StringType(), StringType()), True)
 ])
 
+# Define schema for simplified analysis
+analysis_schema = StructType([
+    StructField("session_id", StringType(), True),
+    StructField("user_id", StringType(), True),
+    StructField("page", StringType(), True),
+    StructField("page_base", StringType(), True),
+    StructField("event_type", StringType(), True),
+    StructField("timestamp", TimestampType(), True),
+    StructField("properties", MapType(StringType(), StringType()), True)
+])
+
 def load_events_as_list(limit=None):
     try:
         q = {}
@@ -154,23 +165,47 @@ def sessionize_and_counts(limit=None):
             return {"total_events": 0, "sessions": 0, "top_pages": []}
         
         print("\n=== Processing Data ===")
-        # Giảm số lượng cột và đơn giản hóa schema
-        simplified_docs = [{
-            "session_id": str(d.get("session_id", "")) or "unknown",
-            "page": str(d.get("page", "")) or "unknown",
-            "timestamp": d.get("timestamp", datetime.now(pytz.UTC))
-        } for d in docs]
+        # Process documents with standardized page paths and additional fields
+        simplified_docs = []
+        for d in docs:
+            try:
+                page = str(d.get("page", "")).strip()
+                # Standardize product pages to /product/{id} format
+                if page.startswith("/product/") and "/product/" in page and len(page.split("/")) > 2:
+                    # Extract product ID if exists
+                    product_id = page.split("/")[2].split("?")[0].strip()
+                    if product_id:
+                        page = f"/product/{product_id}"
+                        page_base = "/product"
+                    else:
+                        page_base = "/product"
+                # Standardize other page paths
+                elif page.startswith("/category/"):
+                    page_base = "/category"
+                elif page.startswith("/search"):
+                    page_base = "/search"
+                else:
+                    page_base = page.split("?")[0]  # Remove query params
+                
+                simplified_docs.append({
+                    "session_id": str(d.get("session_id", "") or "unknown"),
+                    "user_id": str(d.get("user_id", "") or "unknown"),
+                    "page": page,
+                    "page_base": page_base,
+                    "event_type": str(d.get("event_type", "pageview") or "pageview"),
+                    "timestamp": d.get("timestamp", datetime.now(pytz.UTC)),
+                    "properties": d.get("properties", {})
+                })
+            except Exception as e:
+                print(f"Error processing document: {e}")
+                continue
         
         # Free up memory
         del docs
         print(f"Created {len(simplified_docs)} simplified documents")
         
-        # Tạo DataFrame với schema đơn giản hơn
-        simple_schema = StructType([
-            StructField("session_id", StringType(), True),
-            StructField("page", StringType(), True),
-            StructField("timestamp", TimestampType(), True)
-        ])
+        # Use the predefined analysis schema
+        simple_schema = analysis_schema
         print("Created schema")
         
         # Validate data before creating DataFrame
@@ -217,6 +252,9 @@ def sessionize_and_counts(limit=None):
         # Optimize the DataFrame
         df = df.repartition(4, "session_id")  # Distribute data by session_id
         df.cache()  # Cache for multiple operations
+        
+        # Create a view for SQL queries
+        df.createOrReplaceTempView("events")
         
         print("\n=== Calculating Metrics ===")
         
@@ -275,30 +313,97 @@ def sessionize_and_counts(limit=None):
             
             print(f"\nFound {len(top_pages_list)} top pages")
             
-            # Simplified funnel analysis
+            # Enhanced funnel analysis with multiple steps
             print("\nAnalyzing funnel...")
+            funnel_metrics = {}
+            conversion_rates = {}
+            
             try:
-                # Get home page sessions
-                home_sessions = df.filter(df.page == "/home") \
-                    .select("session_id").distinct()
-                home_count = home_sessions.count()
-                print(f"Sessions with home page: {home_count}")
+                # Define funnel steps with their conditions
+                funnel_steps = [
+                    ("home_visit", "page_base = '/home'"),
+                    ("category_view", "page_base = '/category' OR page_base = '/search'"),
+                    ("product_view", "page_base = '/product' OR page LIKE '/product/%'"),
+                    ("add_to_cart", "event_type = 'add_to_cart' OR page_base = '/cart'"),
+                    ("checkout_start", "page_base = '/checkout' OR event_type = 'checkout_start'"),
+                    ("purchase", "event_type = 'purchase'")
+                ]
                 
-                # Get product page sessions
-                product_sessions = df.filter(df.page == "/product") \
-                    .select("session_id").distinct()
-                product_count = product_sessions.count()
-                print(f"Sessions with product page: {product_count}")
+                # Calculate funnel metrics using SQL for better readability
+                for i, (step_name, condition) in enumerate(funnel_steps):
+                    # For the first step, just count distinct sessions
+                    if i == 0:
+                        query = f"""
+                            SELECT COUNT(DISTINCT session_id) as count
+                            FROM events
+                            WHERE {condition}
+                        """
+                    else:
+                        # For subsequent steps, only count sessions that completed previous steps
+                        prev_conditions = " AND ".join([f"s{i+1}.session_id IS NOT NULL" for i in range(i)])
+                        query = f"""
+                            SELECT COUNT(DISTINCT s{i+1}.session_id) as count
+                            FROM events s{i+1}
+                            INNER JOIN (
+                                SELECT DISTINCT session_id
+                                FROM events
+                                WHERE {funnel_steps[0][1]}
+                            ) s1 ON s1.session_id = s{i+1}.session_id
+                        """
+                        
+                        # Add joins for all previous steps
+                        for j in range(1, i):
+                            query += f"""
+                                INNER JOIN (
+                                    SELECT DISTINCT session_id
+                                    FROM events
+                                    WHERE {funnel_steps[j][1]}
+                                ) s{j+1} ON s{j+1}.session_id = s{i+1}.session_id
+                            """
+                        
+                        # Add condition for current step
+                        query += f"""
+                            WHERE {condition}
+                        """
+                        
+                        # Add conditions to ensure steps happen in order
+                        if i > 0:
+                            for j in range(i):
+                                query += f"""
+                                    AND EXISTS (
+                                        SELECT 1
+                                        FROM events prev
+                                        WHERE prev.session_id = s{i+1}.session_id
+                                        AND prev.timestamp < s{i+1}.timestamp
+                                        AND {funnel_steps[j][1]}
+                                    )
+                                """
+                    
+                    # Execute query and store result
+                    result = spark.sql(query).collect()[0][0]
+                    funnel_metrics[step_name] = result
+                    print(f"{step_name}: {result} sessions")
                 
-                # Find sessions that visited both pages
-                funnel_home_product = home_sessions.intersect(product_sessions).count()
-                print(f"Sessions with both home and product: {funnel_home_product}")
+                # Calculate conversion rates between steps
+                for i in range(1, len(funnel_steps)):
+                    prev_step = funnel_steps[i-1][0]
+                    curr_step = funnel_steps[i][0]
+                    if funnel_metrics.get(prev_step, 0) > 0:
+                        rate = (funnel_metrics.get(curr_step, 0) / funnel_metrics[prev_step]) * 100
+                        conversion_rates[f"{prev_step}_to_{curr_step}"] = f"{rate:.1f}%"
+                
+                print("\nConversion rates between steps:")
+                for step, rate in conversion_rates.items():
+                    print(f"{step}: {rate}")
+                
+                # Store funnel metrics in the result
+                funnel_home_product = funnel_metrics.get('product_view', 0)
                 
             except Exception as e:
                 print(f"Error in funnel analysis: {str(e)}")
                 traceback.print_exc()
-                home_count = 0
-                product_count = 0
+                funnel_metrics = {}
+                conversion_rates = {}
                 funnel_home_product = 0
             
             # Clean up main DataFrame cache
@@ -307,22 +412,77 @@ def sessionize_and_counts(limit=None):
             except:
                 pass
             
-            # Return final results
+            # Enhanced session metrics using SQL
+            print("\nCalculating session metrics...")
+            session_metrics = {}
+            try:
+                # Session duration and events per session
+                session_stats = spark.sql("""
+                    SELECT 
+                        COUNT(*) as total_events,
+                        COUNT(DISTINCT session_id) as total_sessions,
+                        COUNT(DISTINCT user_id) as total_users,
+                        AVG(events_per_session) as avg_events_per_session,
+                        MAX(events_per_session) as max_events_per_session,
+                        PERCENTILE(CAST(events_per_session AS DOUBLE), 0.5) as median_events_per_session,
+                        AVG(session_duration_seconds) as avg_session_duration_seconds,
+                        MAX(session_duration_seconds) as max_session_duration_seconds,
+                        PERCENTILE(CAST(session_duration_seconds AS DOUBLE), 0.5) as median_session_duration_seconds
+                    FROM (
+                        SELECT 
+                            session_id,
+                            user_id,
+                            COUNT(*) as events_per_session,
+                            (UNIX_TIMESTAMP(MAX(timestamp)) - UNIX_TIMESTAMP(MIN(timestamp))) as session_duration_seconds
+                        FROM events
+                        GROUP BY session_id, user_id
+                    ) session_metrics
+                """).collect()[0]
+
+                session_metrics = {
+                    "total_events": session_stats["total_events"],
+                    "total_sessions": session_stats["total_sessions"],
+                    "total_users": session_stats["total_users"],
+                    "avg_events_per_session": round(session_stats["avg_events_per_session"], 2),
+                    "max_events_per_session": session_stats["max_events_per_session"],
+                    "median_events_per_session": round(session_stats["median_events_per_session"], 2),
+                    "avg_session_duration_seconds": round(session_stats["avg_session_duration_seconds"], 2),
+                    "max_session_duration_seconds": session_stats["max_session_duration_seconds"],
+                    "median_session_duration_seconds": round(session_stats["median_session_duration_seconds"], 2)
+                }
+                
+                print("\nSession Metrics:")
+                for k, v in session_metrics.items():
+                    print(f"{k}: {v}")
+                    
+            except Exception as e:
+                print(f"Error calculating session metrics: {str(e)}")
+                traceback.print_exc()
+            
+            # Return final results with enhanced metrics
             return {
                 "total_events": total,
                 "sessions": sessions_count,
+                "unique_users": session_metrics.get("total_users", 0),
                 "top_pages": top_pages_list,
+                "funnel_metrics": funnel_metrics,
+                "conversion_rates": conversion_rates,
+                "session_metrics": session_metrics,
                 "funnel_home_to_product": funnel_home_product
             }
         except Exception as e:
             print(f"Error calculating metrics: {e}")
             traceback.print_exc()
-            # Return using our pre-initialized variables
+            # Return using our pre-initialized variables with all expected fields
             return {
                 "error": str(e),
                 "total_events": total,
                 "sessions": sessions_count,
+                "unique_users": 0,
                 "top_pages": top_pages_list,
+                "funnel_metrics": {},
+                "conversion_rates": {},
+                "session_metrics": {},
                 "funnel_home_to_product": funnel_home_product
             }
         
@@ -330,12 +490,16 @@ def sessionize_and_counts(limit=None):
         print(f"Error in sessionize_and_counts: {str(e)}")
         print("Stack trace:")
         traceback.print_exc()
-        # Return with guaranteed initialized values
+        # Return with guaranteed initialized values including all expected fields
         return {
             "error": str(e),
             "total_events": 0,
             "sessions": 0,
+            "unique_users": 0,
             "top_pages": [],
+            "funnel_metrics": {},
+            "conversion_rates": {},
+            "session_metrics": {},
             "funnel_home_to_product": 0
         }
     finally:

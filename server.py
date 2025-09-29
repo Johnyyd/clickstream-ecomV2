@@ -6,9 +6,13 @@ from ingest import ingest_event
 from auth import create_user, create_session, get_user_by_token, verify_password, hash_password
 from analysis import run_analysis
 from manage_API__key import create_runtime_key
+import os
 from db import users_col, analyses_col, api_keys_col, products_col
 from bson import ObjectId
 from datetime import datetime
+
+# Feature flag to enable/disable Spark analysis
+USE_SPARK = os.environ.get('USE_SPARK', 'false').lower() == 'true'
 
 PORT = int(os.environ.get("PORT", 8000))
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -186,6 +190,15 @@ class SimpleHandler(BaseHTTPRequestHandler):
             items = [clean(i) for i in items]
             self._set_headers(200)
             self.wfile.write(json.dumps(items, default=str).encode())
+            return
+
+        # API endpoint: GET /api/analysis/mode -> check current analysis mode
+        if path == "/api/analysis/mode":
+            self._set_headers(200)
+            self.wfile.write(json.dumps({
+                "mode": "spark" if USE_SPARK else "python",
+                "use_spark": USE_SPARK
+            }).encode())
             return
 
         # API endpoint: GET /api/openrouter/key -> check key status (masked)
@@ -487,6 +500,15 @@ class SimpleHandler(BaseHTTPRequestHandler):
             params = data.get("params", {})
             print(f"API Analysis - User ID: {user['_id']}, Params: {params}")
             try:
+                # Pass the USE_SPARK flag to the analysis function
+                if 'use_spark' in params:
+                    global USE_SPARK
+                    new_use_spark = str(params.get('use_spark')).lower() == 'true'
+                    if new_use_spark != USE_SPARK:
+                        print(f"Changing analysis mode to: {'Spark' if new_use_spark else 'Python'}")
+                        USE_SPARK = new_use_spark
+                
+                print(f"Running analysis with {'Spark' if USE_SPARK else 'Python'}...")
                 rec = run_analysis(str(user["_id"]), params)
                 print(f"API Analysis - Result: {rec.get('spark_summary', {}).get('total_events', 0)} events")
                 self._set_headers(200)

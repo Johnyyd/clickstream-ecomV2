@@ -91,7 +91,13 @@ def create_session():
     """Create a session with consistent ID management"""
     return create_session_with_real_user()
 
-def simulate_session(session, num_events=5):
+def simulate_session(session, num_events=5, products=None):
+    if products is None:
+        products = list(products_col().find({}))
+        if not products:
+            print("Warning: No products found in database. Please run seed_products.py first.")
+            return []
+    
     current_time = session["start_time"]
     events = []
     viewed_products = set()
@@ -130,8 +136,8 @@ def simulate_session(session, num_events=5):
                 properties = {}
         
         elif len(viewed_products) > 0 and random.random() < 0.3:  # 30% chance to view specific product
-            product = get_random_product()
-            viewed_products.add(product["name"])
+            product = get_random_product(products)
+            viewed_products.add(str(product["_id"]))
             page = f"/product/{product['_id']}"
             event_type = "pageview"
             properties = {
@@ -143,8 +149,10 @@ def simulate_session(session, num_events=5):
         
         elif random.random() < 0.2:  # 20% chance to add to cart
             if viewed_products:
-                product_name = random.choice(list(viewed_products))
-                product = next(p for p in PRODUCTS if p["name"] == product_name)
+                product_id = random.choice(list(viewed_products))
+                product = next((p for p in products if str(p["_id"]) == product_id), None)
+                if not product:  # Fallback to random product if not found
+                    product = get_random_product(products)
                 cart_items.append(product)
                 page = "/cart"
                 event_type = "add_to_cart"
@@ -197,7 +205,7 @@ def simulate(num_sessions=20, seed_products_first=True):
     
     for i in range(num_sessions):
         session = create_session()
-        events = simulate_session(session, random.randint(3, 8))
+        events = simulate_session(session, random.randint(3, 8), products=products)
         
         for ev in events:
             ingest_event(ev)
@@ -236,7 +244,7 @@ def simulate_realistic_ecommerce(num_sessions=50):
                 user_type['avg_events'] + 2
             )
             
-            events = simulate_session(session, num_events)
+            events = simulate_session(session, num_events, products=products)
             
             # Apply conversion rate
             if random.random() < user_type['conversion_rate']:

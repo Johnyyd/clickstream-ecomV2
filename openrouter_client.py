@@ -65,7 +65,7 @@ def _safe_json_parse(text: str):
         return None
 
 
-def call_openrouter(api_key: str, prompt: str, model: str = "deepseek/deepseek-chat-v3.1:free", max_tokens: int = 900, temperature: float = 0.0, retries: int = 2, timeout: int = 45):
+def call_openrouter(api_key: str, prompt: str, model: str = "z-ai/glm-4.5-air:free", max_tokens: int = 900, temperature: float = 0.0, retries: int = 2, timeout: int = 45):
     """
     Call OpenRouter to transform analysis metrics into structured, actionable JSON.
 

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import random
+import pytz
 from datetime import datetime, timedelta
 from typing import List, Optional
 
@@ -196,7 +197,7 @@ def seed_for_users(user_ids: List[ObjectId], days: int, sessions_per_user: int, 
         return 0
     products = list(products_col().find({}))
 
-    now = datetime.utcnow()
+    now = datetime.now(pytz.UTC) # error
     total_est = 0
     for uid in user_ids:
         # Define user persona for conversion/engagement variety
@@ -223,7 +224,7 @@ def seed_for_users(user_ids: List[ObjectId], days: int, sessions_per_user: int, 
 def main():
     parser = argparse.ArgumentParser(description="Seed realistic customer-like data")
     parser.add_argument("--username", type=str, default=None, help="Seed only for this username (create if missing)")
-    parser.add_argument("--user-count", type=int, default=25, help="Number of users when --username not provided")
+    parser.add_argument("--user-count", type=int, default=100, help="Number of users when --username not provided")
     parser.add_argument("--days", type=int, default=7, help="Days back to generate")
     parser.add_argument("--sessions-per-user", type=int, default=5, help="Sessions per user per day")
     parser.add_argument("--avg-events", type=int, default=7, help="Average events per session")

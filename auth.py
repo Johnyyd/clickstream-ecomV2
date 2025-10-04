@@ -1,5 +1,6 @@
 # auth.py
 import os, hashlib, secrets, time
+import pytz
 from db import users_col, sessions_col
 from datetime import datetime, timedelta
 
@@ -20,12 +21,12 @@ def create_user(username, email, password):
         "email": email,
         "password_hash": hash_password(password),
         "role": "user",
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(pytz.UTC)
     }).inserted_id
 
 def create_session(user_id):
     token = secrets.token_hex(32)
-    now = datetime.utcnow()
+    now = datetime.now(pytz.UTC)
     sessions_col().insert_one({
         "user_id": user_id,
         "token": token,
@@ -48,7 +49,7 @@ def login_user(username, password):
     return {"user": user, "token": token}, "Login successful"
 
 def get_user_by_token(token):
-    s = sessions_col().find_one({"token": token, "expires_at": {"$gt": datetime.utcnow()}})
+    s = sessions_col().find_one({"token": token, "expires_at": {"$gt": datetime.now(pytz.UTC)}})
     if not s:
         return None
     return users_col().find_one({"_id": s["user_id"]})

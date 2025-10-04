@@ -10,6 +10,7 @@ Usage (PowerShell):
 from __future__ import annotations
 
 import argparse
+import pytz
 from datetime import datetime, timedelta
 from typing import Any, Dict
 
@@ -47,7 +48,7 @@ def main():
 
     q: Dict[str, Any] = {}
     if args.since_days is not None:
-        cutoff = datetime.utcnow() - timedelta(days=args.since_days)
+        cutoff = datetime.now(pytz.UTC) - timedelta(days=args.since_days)
         q["$or"] = [
             {"timestamp": {"$gte": int(cutoff.timestamp())}},
             {"timestamp": {"$gte": cutoff}},

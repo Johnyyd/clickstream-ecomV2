@@ -555,7 +555,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     server_address = ("localhost", PORT)
     httpd = HTTPServer(server_address, SimpleHandler)
-    print(f"Server running on http://localhost:{PORT}")
+    print(f"Server running on http://localhost:{PORT}/dashboard")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

@@ -35,11 +35,8 @@ def get_or_create_test_users():
         print("No users found, creating test users...")
         # Create some test users
         test_users = [
-            {"username": "alice", "email": "alice@example.com", "password": "alice123"},
-            {"username": "bob", "email": "bob@example.com", "password": "bob123"},
-            {"username": "charlie", "email": "charlie@example.com", "password": "charlie123"},
-            {"username": "diana", "email": "diana@example.com", "password": "diana123"},
-            {"username": "eve", "email": "eve@example.com", "password": "eve123"}
+            {"username": "customer001", "email": "customer001@example.com", "password": "customer001123"},
+            
         ]
         
         for user_data in test_users:

@@ -3,6 +3,7 @@ from db import events_col, sessions_col
 from datetime import datetime
 import uuid
 import time
+import pytz
 
 def ingest_event(event_json):
     """
@@ -19,9 +20,9 @@ def ingest_event(event_json):
     """
     ts = event_json.get("timestamp")
     if ts:
-        ts = datetime.utcfromtimestamp(ts)
+        ts = datetime.fromtimestamp(ts, tz=pytz.UTC)
     else:
-        ts = datetime.utcnow()
+        ts = datetime.now(pytz.UTC)
     
     # Ensure user_id and session_id are properly handled
     user_id = event_json.get("user_id")

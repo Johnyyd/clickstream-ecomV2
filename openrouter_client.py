@@ -84,7 +84,7 @@ def call_openrouter(api_key: str, prompt: str, model: str = "z-ai/glm-4.5-air:fr
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
         # Recommended headers per OpenRouter docs (optional but helpful)
-        "HTTP-Referer": os.environ.get("OPENROUTER_HTTP_REFERER", "http://localhost:8000"),
+        "HTTP-Referer": os.environ.get("OPENROUTER_HTTP_REFERER", "http://localhost:8000/dashboard"),
         "X-Title": os.environ.get("OPENROUTER_APP_TITLE", "Clickstream Ecom Dashboard"),
     }
 

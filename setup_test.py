@@ -2,7 +2,7 @@ from db import users_col, api_keys_col
 from auth import hash_password
 from datetime import datetime
 from bson import ObjectId
-
+import pytz
 def setup_test_user():
     # Create test user
     user = {
@@ -11,7 +11,7 @@ def setup_test_user():
         "email": "alice@example.com",
         "password_hash": hash_password("alice123"),
         "role": "user",
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(pytz.UTC)
     }
     
     # Check if user exists
@@ -28,7 +28,7 @@ def setup_test_user():
         "user_id": result.inserted_id,
         "provider": "openrouter",
         "key_encrypted": "test_key",  # In production, this should be properly encrypted
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(pytz.UTC)
     }
     
     key_result = api_keys_col().insert_one(api_key)

@@ -1,6 +1,7 @@
 from bson import ObjectId
 from db import get_db
 from datetime import datetime
+import pytz
 
 def slugify(name: str) -> str:
     s = name.lower()
@@ -80,7 +81,7 @@ def seed_more_products():
     db = get_db()
     for p in more_products:
         p["_id"] = ObjectId()
-        p["created_at"] = datetime.utcnow()
+        p["created_at"] = datetime.now(pytz.UTC)
         # Ensure image_url is present and points to static images
         slug = slugify(p["name"]) if p.get("name") else str(p["_id"])
         p["slug"] = slug

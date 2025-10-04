@@ -93,6 +93,7 @@ import json
 from datetime import datetime, timedelta
 from collections import Counter, defaultdict
 import statistics
+import pytz 
 
 # Feature flag to enable/disable Spark analysis
 USE_SPARK = os.environ.get('USE_SPARK', 'false').lower() == 'true'
@@ -463,7 +464,7 @@ def run_analysis(user_id, params):
         print(f"Error in basic analysis: {str(e)}")
         error_record = {
             "user_id": ObjectId(user_id),
-            "created_at": datetime.utcnow(),
+            "created_at": datetime.now(pytz.UTC),
             "parameters": params,
             "status": "failed",
             "error": str(e)
@@ -487,7 +488,7 @@ def run_analysis(user_id, params):
     # 4. Prepare comprehensive analysis record
     analysis_record = {
         "user_id": ObjectId(user_id),
-        "created_at": datetime.utcnow(),
+        "created_at": datetime.now(pytz.UTC),
         "parameters": params,
         "status": "done",
         
@@ -599,7 +600,7 @@ def run_analysis(user_id, params):
                         users_col().update_one(
                             {"_id": ObjectId(user_id)},
                             {"$push": {"product_recommendations": {
-                                "created_at": datetime.utcnow(),
+                                "created_at": datetime.now(pytz.UTC),
                                 "items": product_recs
                             }}}
                         )

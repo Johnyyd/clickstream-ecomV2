@@ -8,6 +8,7 @@
 import argparse
 import random
 import time
+import pytz 
 from datetime import datetime, timedelta
 from typing import List, Optional
 
@@ -189,7 +190,7 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int)
 
 
 def seed_for_users(user_ids: List[ObjectId], days: int, sessions_per_user: int, avg_events: int):
-    now = datetime.utcnow()
+    now = datetime.now(pytz.UTC)
     total_events = 0
     for uid in user_ids:
         for d in range(days):

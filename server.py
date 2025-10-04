@@ -70,7 +70,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
                 name = (data.get("name") if isinstance(data, dict) else None) or f"runtime-{str(user.get('_id'))[:6]}"
                 limit = (data.get("limit") if isinstance(data, dict) else None)
                 new_key, meta = create_runtime_key(name=name, limit=limit)
-                now = datetime.utcnow()
+                now = datetime.now(pytz.UTC)
                 api_keys_col().update_one(
                     {"user_id": user["_id"], "provider": "openrouter"},
                     {"$set": {"key_encrypted": new_key, "updated_at": now}, "$setOnInsert": {"created_at": now}},
@@ -536,7 +536,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
                 return
             try:
                 # Upsert key for provider openrouter
-                now = datetime.utcnow()
+                now = datetime.now(pytz.UTC)
                 api_keys_col().update_one(
                     {"user_id": user["_id"], "provider": "openrouter"},
                     {"$set": {"key_encrypted": api_key, "updated_at": now}, "$setOnInsert": {"created_at": now}},

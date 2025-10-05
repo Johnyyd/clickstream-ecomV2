@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Clickstream Dashboard</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="/static/styles.css">
 </head>
 
 <body>
@@ -39,6 +39,7 @@
                 <button id="checkKeyBtn">Check Key</button>
                 <pre id="keyStatus"></pre>
             </div>
+            <pre id="output" class="status-output"></pre>
             <div id="results" class="results">
                 <h2>Summary</h2>
                 <pre id="summary"></pre>
@@ -57,11 +58,11 @@
                 <h2>Recommended Products</h2>
                 <div id="recs"></div>
             </div>
-            <pre id="output" class="status-output"></pre>
         </div>
     </div>
-    <script type="module" src="dashboard.js"></script>
-    <script type="module" src="analysisDisplay.js"></script>
+    <script type="module" src="/static/dashboard.js"></script>
+    <script type="module" src="/static/analysisDisplay.js"></script>
+
 </body>
 
 </html>

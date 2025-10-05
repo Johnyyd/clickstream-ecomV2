@@ -27,16 +27,46 @@ class SimpleHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type,Authorization")
         self.end_headers()
 
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin","*")
-        self.send_header("Access-Control-Allow-Methods","GET,POST,OPTIONS")
+        self.send_header("Access-Control-Allow-Methods","GET,POST,DELETE,OPTIONS")
         self.send_header("Access-Control-Allow-Headers","Content-Type,Authorization")
         self.end_headers()
+    
+    def do_DELETE(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+        
+        # Delete OpenRouter API key
+        if path == "/api/openrouter/key":
+            token = self.headers.get("Authorization")
+            user = get_user_by_token(token) if token else None
+            if not user:
+                self._set_headers(401)
+                self.wfile.write(b'{"error":"unauthenticated"}')
+                return
+            try:
+                result = api_keys_col().delete_one({"user_id": user["_id"], "provider": "openrouter"})
+                if result.deleted_count > 0:
+                    print(f"API key deleted for user {user.get('username', user['_id'])}")
+                    self._set_headers(200)
+                    self.wfile.write(json.dumps({"status": "ok", "message": "API key deleted successfully"}).encode())
+                else:
+                    self._set_headers(404)
+                    self.wfile.write(json.dumps({"error": "No API key found to delete"}).encode())
+            except Exception as e:
+                print(f"Error deleting API key: {e}")
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+            return
+        
+        self._set_headers(404)
+        self.wfile.write(b'{"error":"not found"}')
 
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -57,31 +87,6 @@ class SimpleHandler(BaseHTTPRequestHandler):
                 with open(file_path, "rb") as f:
                     self.wfile.write(f.read())
                 return
-
-        # Provision a new runtime OpenRouter key using provisioning key
-        if path == "/api/openrouter/provision":
-            token = self.headers.get("Authorization")
-            user = get_user_by_token(token) if token else None
-            if not user:
-                self._set_headers(401)
-                self.wfile.write(b'{"error":"unauthenticated"}')
-                return
-            try:
-                name = (data.get("name") if isinstance(data, dict) else None) or f"runtime-{str(user.get('_id'))[:6]}"
-                limit = (data.get("limit") if isinstance(data, dict) else None)
-                new_key, meta = create_runtime_key(name=name, limit=limit)
-                now = datetime.now(pytz.UTC)
-                api_keys_col().update_one(
-                    {"user_id": user["_id"], "provider": "openrouter"},
-                    {"$set": {"key_encrypted": new_key, "updated_at": now}, "$setOnInsert": {"created_at": now}},
-                    upsert=True
-                )
-                self._set_headers(200)
-                self.wfile.write(json.dumps({"status": "ok", "meta": meta}).encode())
-            except Exception as e:
-                self._set_headers(500)
-                self.wfile.write(json.dumps({"error": str(e)}).encode())
-            return
 
         
 
@@ -535,6 +540,12 @@ class SimpleHandler(BaseHTTPRequestHandler):
                 self.wfile.write(b'{"error":"api_key required"}')
                 return
             try:
+                # Validate key format (OpenRouter keys should start with sk-or-)
+                if not api_key.startswith("sk-or-"):
+                    self._set_headers(400)
+                    self.wfile.write(json.dumps({"error": "Invalid API key format. OpenRouter keys should start with 'sk-or-'"}).encode())
+                    return
+                
                 # Upsert key for provider openrouter
                 now = datetime.now(pytz.UTC)
                 api_keys_col().update_one(
@@ -542,9 +553,50 @@ class SimpleHandler(BaseHTTPRequestHandler):
                     {"$set": {"key_encrypted": api_key, "updated_at": now}, "$setOnInsert": {"created_at": now}},
                     upsert=True
                 )
+                
+                # Log success (with masked key)
+                masked_key = ("*" * max(0, len(api_key) - 4)) + api_key[-4:] if len(api_key) > 4 else "****"
+                print(f"API key saved for user {user.get('username', user['_id'])}: {masked_key}")
+                
                 self._set_headers(200)
-                self.wfile.write(json.dumps({"status": "ok"}).encode())
+                self.wfile.write(json.dumps({"status": "ok", "message": "API key saved successfully"}).encode())
             except Exception as e:
+                print(f"Error saving API key: {e}")
+                self._set_headers(500)
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+            return
+
+        # Provision a new runtime OpenRouter key using provisioning key
+        if path == "/api/openrouter/provision":
+            token = self.headers.get("Authorization")
+            user = get_user_by_token(token) if token else None
+            if not user:
+                self._set_headers(401)
+                self.wfile.write(b'{"error":"unauthenticated"}')
+                return
+            try:
+                name = data.get("name") or f"runtime-{str(user.get('_id'))[:6]}"
+                limit = data.get("limit")
+                
+                # Create runtime key via OpenRouter provisioning API
+                new_key, meta = create_runtime_key(name=name, limit=limit)
+                
+                # Save to database
+                now = datetime.now(pytz.UTC)
+                api_keys_col().update_one(
+                    {"user_id": user["_id"], "provider": "openrouter"},
+                    {"$set": {"key_encrypted": new_key, "updated_at": now}, "$setOnInsert": {"created_at": now}},
+                    upsert=True
+                )
+                
+                # Log success (with masked key)
+                masked_key = ("*" * max(0, len(new_key) - 4)) + new_key[-4:] if len(new_key) > 4 else "****"
+                print(f"Provisioned new API key for user {user.get('username', user['_id'])}: {masked_key}")
+                
+                self._set_headers(200)
+                self.wfile.write(json.dumps({"status": "ok", "meta": meta, "message": "Runtime key provisioned successfully"}).encode())
+            except Exception as e:
+                print(f"Error provisioning API key: {e}")
                 self._set_headers(500)
                 self.wfile.write(json.dumps({"error": str(e)}).encode())
             return

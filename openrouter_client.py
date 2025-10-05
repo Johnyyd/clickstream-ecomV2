@@ -3,13 +3,11 @@ import os
 import requests
 import json
 
-# Endpoint configuration: prefer env override; otherwise try official then legacy
+# Endpoint configuration: prefer env override; otherwise use official endpoint
 OPENROUTER_ENV_ENDPOINT = os.environ.get("OPENROUTER_ENDPOINT")
 OPENROUTER_DEFAULT_ENDPOINTS = [
-    "https://openrouter.ai/api/v1/chat/completions",   # official
-    "https://api.openrouter.ai/v1/chat/completions",   # legacy
+    "https://openrouter.ai/api/v1/chat/completions",   # official endpoint
 ]
-# The endpoint above is a placeholder — thay bằng endpoint chính xác bạn dùng nếu cần.
 
 def _build_messages(prompt: str) -> list:
     """Build messages that enforce STRICT JSON output with actionable insights."""

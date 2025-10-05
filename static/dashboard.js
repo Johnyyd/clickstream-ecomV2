@@ -225,7 +225,7 @@ async function saveKey() {
         'Content-Type': 'application/json',
         'Authorization': token
       },
-      body: JSON.stringify({ key })
+      body: JSON.stringify({ api_key: key })
     });
     
     if (resp.ok) {
@@ -259,15 +259,16 @@ async function loadRecommendations() {
     
     if (resp.ok) {
       const data = await resp.json();
-      if (data.recommendations && data.recommendations.length > 0) {
+      const recItems = data.items || data.recommendations || [];
+      if (recItems && recItems.length > 0) {
         recsEl.innerHTML = '<h3>Recommended for You</h3>';
         const ul = document.createElement('ul');
         
-        data.recommendations.forEach(rec => {
+        recItems.forEach(rec => {
           const li = document.createElement('li');
           li.innerHTML = `
-            <a href="/product/${rec.product_id}">
-              <img src="${rec.image_url || '/static/images/placeholder.jpg'}" alt="${rec.name}">
+            <a href="/p/${encodeURIComponent(rec.product_id)}?id=${encodeURIComponent(rec.product_id)}">
+              <img src="${rec.image_url || '/static/images/placeholder.svg'}" alt="${rec.name}">
               <h4>${rec.name}</h4>
               <p>$${rec.price?.toFixed(2) || 'N/A'}</p>
             </a>
@@ -323,6 +324,9 @@ analyzeBtn.onclick = async () => {
       })
     });
     
+    // Check if the key is valid
+    // checkKey();
+
     if (!resp.ok) {
       const error = await resp.json().catch(() => ({}));
       throw new Error(error.error || 'Failed to run analysis');
@@ -352,6 +356,8 @@ analyzeBtn.onclick = async () => {
     // Check the current analysis mode from the server
     checkAnalysisMode();
     
+    output.innerText = `Analysis completed with ${useSpark ? 'Spark' : 'Python'}!`;
+
   } catch (e) {
     output.innerText = `Error: ${e.message}`;
     console.error('Analysis error:', e);

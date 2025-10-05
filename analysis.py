@@ -87,6 +87,7 @@ def simple_sessionize_and_counts(limit=None, user_id=None):
 # analysis.py
 import os
 from openrouter_client import call_openrouter
+from api_key_auto_renewal import call_openrouter_with_auto_renewal
 from db import analyses_col, api_keys_col, events_col, products_col, users_col
 from bson import ObjectId
 import json
@@ -547,14 +548,19 @@ def run_analysis(user_id, params):
     except Exception:
         history = []
 
-    # 5. Check for OpenRouter API key for LLM analysis
-    print("Checking for OpenRouter API key...")
-    key_doc = api_keys_col().find_one({"user_id": ObjectId(user_id), "provider": "openrouter"})
+    # 5. Prepare for OpenRouter API call with auto-renewal support
+    print("Preparing OpenRouter API call with auto-renewal support...")
     
-    if key_doc:
-        print("Found OpenRouter API key, proceeding with LLM analysis")
-        api_key = key_doc["key_encrypted"]
-        
+    # Không cần kiểm tra key trước, auto-renewal sẽ xử lý
+    # Chỉ cần kiểm tra xem có OPENROUTER_PROVISIONING_KEY để có thể auto-renew
+    has_provisioning = bool(os.getenv("OPENROUTER_PROVISIONING_KEY"))
+    if has_provisioning:
+        print("✅ Provisioning key available - auto-renewal enabled")
+    else:
+        print("⚠️ No provisioning key - will use existing API key only (no auto-renewal)")
+    
+    # Luôn thử gọi OpenRouter (auto-renewal sẽ tự động tạo key nếu cần)
+    if True:  # Always attempt
         # Prepare enhanced prompt with detailed metrics
         prompt = f"""
         I have comprehensive clickstream analysis results and a product catalog.
@@ -577,8 +583,16 @@ def run_analysis(user_id, params):
         """
         
         try:
-            print("Calling OpenRouter API...")
-            llm_response = call_openrouter(api_key, prompt)
+            print("Calling OpenRouter API with auto-renewal support...")
+            # Sử dụng auto-renewal wrapper thay vì gọi trực tiếp
+            llm_response = call_openrouter_with_auto_renewal(user_id, prompt)
+            
+            # Log nếu key đã được auto-renewed
+            if llm_response.get("auto_renewed"):
+                print("✅ API key was automatically renewed during this request")
+            if llm_response.get("auto_renewal_failed"):
+                print(f"⚠️ Auto-renewal failed: {llm_response.get('auto_renewal_error')}")
+            
             # Enrich/validate parsed payload if present
             if isinstance(llm_response, dict) and llm_response.get("status") == "ok":
                 parsed = llm_response.get("parsed")
@@ -610,10 +624,7 @@ def run_analysis(user_id, params):
             print("LLM analysis completed successfully")
         except Exception as e:
             print(f"Error calling OpenRouter: {str(e)}")
-            analysis_record["openrouter_output"] = {"error": str(e)}
-    else:
-        print("No OpenRouter API key found, saving analysis without LLM processing")
-        analysis_record["openrouter_output"] = None
+            analysis_record["openrouter_output"] = {"status": "error", "error": str(e), "parsed": None, "raw": None}
 
     # 6. Save comprehensive analysis record
     result = analyses_col().insert_one(analysis_record)

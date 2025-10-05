@@ -110,6 +110,8 @@ def _coerce_llm_parsed(parsed, spark_summary, detailed_metrics, generated_insigh
       - next_best_actions: [str]
       - risk_alerts: [str]
       - kpis: { total_events, total_sessions, bounce_rate, avg_session_duration_seconds }
+      - traffic_insights: { peak_hours, user_behavior_patterns, popular_categories }
+      - conversion_analysis: { funnel_performance, drop_off_points, optimization_opportunities }
     """
     if not isinstance(parsed, dict):
         parsed = {}
@@ -122,6 +124,9 @@ def _coerce_llm_parsed(parsed, spark_summary, detailed_metrics, generated_insigh
 
     def _list_or_default(val, default):
         return val if isinstance(val, list) else list(default)
+    
+    def _dict_or_default(val, default):
+        return val if isinstance(val, dict) else dict(default)
 
     # Fall back to generated Python insights
     py_key_insights = generated_insights.get("key_findings", []) if isinstance(generated_insights, dict) else []
@@ -150,6 +155,16 @@ def _coerce_llm_parsed(parsed, spark_summary, detailed_metrics, generated_insigh
             "total_sessions": (parsed.get("kpis") or {}).get("total_sessions", total_sessions),
             "bounce_rate": (parsed.get("kpis") or {}).get("bounce_rate", bounce_rate),
             "avg_session_duration_seconds": (parsed.get("kpis") or {}).get("avg_session_duration_seconds", avg_sess),
+        },
+        "traffic_insights": {
+            "peak_hours": _list_or_default((parsed.get("traffic_insights") or {}).get("peak_hours"), []),
+            "user_behavior_patterns": _list_or_default((parsed.get("traffic_insights") or {}).get("user_behavior_patterns"), []),
+            "popular_categories": _list_or_default((parsed.get("traffic_insights") or {}).get("popular_categories"), [])
+        },
+        "conversion_analysis": {
+            "funnel_performance": _list_or_default((parsed.get("conversion_analysis") or {}).get("funnel_performance"), []),
+            "drop_off_points": _list_or_default((parsed.get("conversion_analysis") or {}).get("drop_off_points"), []),
+            "optimization_opportunities": _list_or_default((parsed.get("conversion_analysis") or {}).get("optimization_opportunities"), [])
         }
     }
     return coerced
@@ -585,7 +600,13 @@ def run_analysis(user_id, params):
         try:
             print("Calling OpenRouter API with auto-renewal support...")
             # Sử dụng auto-renewal wrapper thay vì gọi trực tiếp
-            llm_response = call_openrouter_with_auto_renewal(user_id, prompt)
+            # Tăng max_tokens để LLM có thể trả về đầy đủ analysis
+            llm_response = call_openrouter_with_auto_renewal(
+                user_id=user_id, 
+                prompt=prompt,
+                max_tokens=2000,  # Tăng từ 900 lên 2000 để có đủ chỗ cho tất cả sections
+                temperature=0.3   # Tăng một chút để creative hơn
+            )
             
             # Log nếu key đã được auto-renewed
             if llm_response.get("auto_renewed"):

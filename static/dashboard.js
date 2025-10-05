@@ -34,8 +34,23 @@ loginBtn.onclick = async () => {
   const j = await resp.json();
   if (j.token) {
     token = j.token;
-    output.innerText = "Logged in!";
+    
+    // Hiển thị API key status
+    let statusMsg = `Logged in as ${j.username}!`;
+    if (j.api_key_status) {
+      if (j.api_key_status.has_key) {
+        statusMsg += `\n✅ API Key: Ready (source: ${j.api_key_status.source})`;
+        if (j.api_key_status.synced) {
+          statusMsg += ` [synced to database]`;
+        }
+      } else {
+        statusMsg += `\n⚠️ No API Key found`;
+      }
+    }
+    output.innerText = statusMsg;
+    
     document.getElementById('controls').style.display = 'block';
+    
     // After login, check current key
     try { await checkKey(); } catch(e) {}
     // Also load latest recommendations if any

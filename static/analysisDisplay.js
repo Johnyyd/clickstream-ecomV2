@@ -1,4 +1,5 @@
 // Analysis Display Module - Handles rendering of analysis results
+import { displayLLMAnalysis } from './llmDisplay.js';
 
 // Main function to display analysis results
 export function displayAnalysisResults(analysis, container) {
@@ -35,9 +36,9 @@ export function displayAnalysisResults(analysis, container) {
     const sessionAnalysis = createSessionAnalysisSection(analysis);
     if (sessionAnalysis) container.appendChild(sessionAnalysis);
 
-    // 7. AI Insights & Recommendations
-    const aiInsights = createAIInsightsSection(analysis);
-    if (aiInsights) container.appendChild(aiInsights);
+    // 7. LLM Analysis (New comprehensive display)
+    const llmSection = createLLMSection(analysis);
+    if (llmSection) container.appendChild(llmSection);
 
     // 8. Raw Data (collapsible)
     const rawSection = createRawDataSection(analysis);
@@ -768,6 +769,29 @@ const styles = `
   font-size: 0.9em;
 }
 `;
+
+// Create LLM Analysis Section
+function createLLMSection(analysis) {
+  if (!analysis.openrouter_output) return null;
+  
+  const section = document.createElement('div');
+  section.className = 'analysis-section llm-analysis-section';
+  section.id = 'llm-analysis';
+  
+  const header = document.createElement('h2');
+  header.className = 'section-header';
+  header.innerHTML = '🤖 AI-Powered Analysis';
+  section.appendChild(header);
+  
+  const llmContainer = document.createElement('div');
+  llmContainer.className = 'llm-container';
+  
+  // Use the new llmDisplay module
+  displayLLMAnalysis(analysis.openrouter_output, llmContainer);
+  
+  section.appendChild(llmContainer);
+  return section;
+}
 
 // Add styles to the document
 const styleElement = document.createElement('style');

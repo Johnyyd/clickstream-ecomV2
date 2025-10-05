@@ -13,36 +13,66 @@ def _build_messages(prompt: str) -> list:
     """Build messages that enforce STRICT JSON output with actionable insights."""
     schema_instructions = (
         "Return ONLY valid JSON with the following schema and nothing else. "
-        "Do not include backticks. Do not include prose outside JSON.\n\n"
-        "Required keys: {\n"
-        "  'executive_summary': str,\n"
-        "  'key_insights': [str],\n"
-        "  'recommendations': [str],\n"
-        "  'decisions': [str],\n"
-        "  'next_best_actions': [str],\n"
-        "  'risk_alerts': [str],\n"
-        "  'recommendations_for_user': [str],\n"
-        "  'recommendations_for_user_products': [ { 'product_id': str, 'name': str, 'reason': str } ],\n"
+        "Do not include backticks, markdown formatting, or any text outside the JSON object.\n\n"
+        "REQUIRED JSON SCHEMA:\n"
+        "{\n"
+        "  'executive_summary': string (2-3 câu tóm tắt tổng quan về hiệu suất website),\n"
+        "  'key_insights': array of strings (5-7 insights quan trọng nhất từ dữ liệu Spark analysis),\n"
+        "  'recommendations': array of strings (5-7 khuyến nghị cụ thể để cải thiện business),\n"
+        "  'decisions': array of strings (3-5 quyết định chiến lược nên thực hiện ngay),\n"
+        "  'next_best_actions': array of strings (5-7 hành động cụ thể cần làm trong 7 ngày tới),\n"
+        "  'risk_alerts': array of strings (các cảnh báo về rủi ro hoặc vấn đề cần chú ý),\n"
+        "  'recommendations_for_user': array of strings (3-5 khuyến nghị cho end-user dựa trên behavior),\n"
+        "  'recommendations_for_user_products': array of objects [\n"
+        "    {\n"
+        "      'product_id': string (ID từ product catalog),\n"
+        "      'name': string (tên sản phẩm),\n"
+        "      'reason': string (lý do recommend dựa trên clickstream data)\n"
+        "    }\n"
+        "  ] (3-5 sản phẩm được recommend),\n"
         "  'kpis': {\n"
         "    'total_events': number,\n"
         "    'total_sessions': number,\n"
-        "    'bounce_rate': number,\n"
+        "    'bounce_rate': number (0-1),\n"
         "    'avg_session_duration_seconds': number\n"
+        "  },\n"
+        "  'traffic_insights': {\n"
+        "    'peak_hours': array of strings (giờ cao điểm và phân tích),\n"
+        "    'user_behavior_patterns': array of strings (các pattern hành vi user),\n"
+        "    'popular_categories': array of strings (categories phổ biến và insights)\n"
+        "  },\n"
+        "  'conversion_analysis': {\n"
+        "    'funnel_performance': array of strings (phân tích hiệu suất từng funnel),\n"
+        "    'drop_off_points': array of strings (điểm user rời bỏ nhiều nhất),\n"
+        "    'optimization_opportunities': array of strings (cơ hội tối ưu conversion)\n"
         "  }\n"
-        "}"
+        "}\n\n"
+        "IMPORTANT ANALYSIS GUIDELINES:\n"
+        "- Phân tích KỸ LƯỠNG dữ liệu từ Spark Analysis (spark_summary, detailed_metrics)\n"
+        "- Tập trung vào: conversion rates, funnel metrics, session behavior, time patterns\n"
+        "- Đưa ra insights CỤ THỂ với SỐ LIỆU (ví dụ: 'Conversion rate từ home->checkout chỉ 8.6%')\n"
+        "- Recommendations phải ACTIONABLE và có thể đo lường được\n"
+        "- Product recommendations phải dựa trên: top viewed products, search terms, cart behavior\n"
+        "- Risk alerts: identify vấn đề nghiêm trọng (low conversion, high bounce, funnel issues)\n"
     )
     return [
         {
             "role": "system",
             "content": (
-                "You are a senior product analyst."
-                "Your job: Read structured clickstream statistics and provide clear, actionable business guidance. Make recommendations for products, features, etc. to customers based on clickstream statistics and database"
-                "Always be concise and decisive."
+                "You are a SENIOR E-COMMERCE DATA ANALYST with expertise in:\n"
+                "- Clickstream analysis and user behavior tracking\n"
+                "- Conversion funnel optimization\n"
+                "- Product recommendation systems\n"
+                "- Business intelligence and KPI analysis\n\n"
+                "Your task: Analyze Spark-generated clickstream data and provide DETAILED, ACTIONABLE insights.\n"
+                "Be SPECIFIC with numbers, percentages, and concrete recommendations.\n"
+                "Focus on BUSINESS IMPACT and ROI.\n"
+                "Output MUST be valid JSON only - no markdown, no explanations outside JSON."
             ),
         },
         {
             "role": "user",
-            "content": f"{schema_instructions}\n\nHere are the analysis inputs to consider (JSON-like):\n{prompt}",
+            "content": f"{schema_instructions}\n\n=== CLICKSTREAM DATA FROM SPARK ANALYSIS ===\n{prompt}",
         },
     ]
 

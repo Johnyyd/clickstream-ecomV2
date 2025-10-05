@@ -475,9 +475,39 @@ class SimpleHandler(BaseHTTPRequestHandler):
             if not user or not verify_password(data.get("password",""), user["password_hash"]):
                 self._set_headers(401)
                 self.wfile.write(b'{"error":"invalid"}'); return
+            
+            # Tạo session token
             token = create_session(user["_id"])
+            
+            # Sync API key cho user (tự động load từ file/env/provision nếu cần)
+            try:
+                from api_key_manager import APIKeyManager
+                print(f"\n[Login] User {user.get('username')} logged in, syncing API key...")
+                key_result = APIKeyManager.sync_and_get_key(user["_id"])
+                
+                api_key_status = {
+                    "has_key": bool(key_result["key"]),
+                    "source": key_result["source"],
+                    "synced": key_result["synced"]
+                }
+                
+                if key_result["key"]:
+                    masked = ("*" * max(0, len(key_result["key"]) - 4)) + key_result["key"][-4:]
+                    print(f"[Login] ✅ API key ready: {masked} (source: {key_result['source']})")
+                else:
+                    print(f"[Login] ⚠️ No API key available: {key_result.get('error')}")
+                    
+            except Exception as e:
+                print(f"[Login] ⚠️ Error syncing API key: {e}")
+                api_key_status = {"has_key": False, "error": str(e)}
+            
             self._set_headers(200)
-            self.wfile.write(json.dumps({"token": token}).encode())
+            self.wfile.write(json.dumps({
+                "token": token,
+                "user_id": str(user["_id"]),
+                "username": user.get("username"),
+                "api_key_status": api_key_status
+            }).encode())
             return
 
         # Ingest event

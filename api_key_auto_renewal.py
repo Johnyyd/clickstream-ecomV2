@@ -106,9 +106,15 @@ def auto_renew_api_key(user_id, old_key=None):
         }
 
 
-def get_api_key_with_auto_renewal(user_id):
+def get_api_key_with_auto_renewal_legacy(user_id):
     """
     Lấy API key cho user, tự động làm mới nếu cần
+    
+    Thứ tự ưu tiên:
+    1. Key từ database (nếu có)
+    2. Key từ file key.txt (nếu có)
+    3. Key từ biến môi trường OPENROUTER_API_KEY (nếu có)
+    4. Auto-provision key mới (nếu có OPENROUTER_PROVISIONING_KEY)
     
     Args:
         user_id: ID của user (string hoặc ObjectId)
@@ -117,36 +123,90 @@ def get_api_key_with_auto_renewal(user_id):
         dict: {"key": str, "renewed": bool, "error": str}
     """
     try:
-        # Lấy key hiện tại từ database
+        # 1. Lấy key hiện tại từ database
         key_doc = api_keys_col().find_one(
             {"user_id": ObjectId(user_id), "provider": "openrouter"}
         )
         
-        if not key_doc:
-            # Không có key, thử tạo mới tự động
-            print(f"[Auto-Renewal] No API key found for user {str(user_id)[:8]}, attempting auto-provision...")
-            result = auto_renew_api_key(user_id)
-            
-            if result["success"]:
+        if key_doc:
+            api_key = key_doc.get("key_encrypted", "")
+            if api_key:
                 return {
-                    "key": result["new_key"],
-                    "renewed": True,
+                    "key": api_key,
+                    "renewed": False,
                     "error": None
                 }
-            else:
-                return {
-                    "key": None,
-                    "renewed": False,
-                    "error": "No API key found and auto-provisioning failed"
-                }
         
-        # Có key, trả về
-        api_key = key_doc.get("key_encrypted", "")
-        return {
-            "key": api_key,
-            "renewed": False,
-            "error": None if api_key else "API key is empty"
-        }
+        # 2. Không có key trong DB, thử load từ file key.txt
+        print(f"[Auto-Renewal] No API key in database for user {str(user_id)[:8]}")
+        print(f"[Auto-Renewal] Attempting to load from key.txt or environment...")
+        
+        api_key = None
+        source = None
+        
+        # Thử load từ file key.txt
+        try:
+            import os
+            key_file = os.path.join(os.path.dirname(__file__), "key.txt")
+            if os.path.exists(key_file):
+                with open(key_file, 'r') as f:
+                    api_key = f.read().strip()
+                    if api_key:
+                        source = "key.txt"
+                        print(f"[Auto-Renewal] ✅ Loaded API key from key.txt")
+        except Exception as e:
+            print(f"[Auto-Renewal] Could not read key.txt: {e}")
+        
+        # Nếu không có trong file, thử biến môi trường
+        if not api_key:
+            api_key = os.getenv("OPENROUTER_API_KEY")
+            if api_key:
+                source = "environment variable"
+                print(f"[Auto-Renewal] ✅ Loaded API key from OPENROUTER_API_KEY")
+        
+        # Nếu có key từ file hoặc env, lưu vào database
+        if api_key:
+            print(f"[Auto-Renewal] Saving API key from {source} to database...")
+            from datetime import datetime
+            import pytz
+            now = datetime.now(pytz.UTC)
+            api_keys_col().update_one(
+                {"user_id": ObjectId(user_id), "provider": "openrouter"},
+                {
+                    "$set": {
+                        "key_encrypted": api_key,
+                        "updated_at": now,
+                        "source": source
+                    },
+                    "$setOnInsert": {"created_at": now}
+                },
+                upsert=True
+            )
+            masked = ("*" * max(0, len(api_key) - 4)) + api_key[-4:] if len(api_key) > 4 else "****"
+            print(f"[Auto-Renewal] ✅ API key saved to database: {masked}")
+            
+            return {
+                "key": api_key,
+                "renewed": True,
+                "error": None
+            }
+        
+        # 3. Không có key từ file/env, thử auto-provision
+        print(f"[Auto-Renewal] No key in file or environment, attempting auto-provision...")
+        result = auto_renew_api_key(user_id)
+        
+        if result["success"]:
+            return {
+                "key": result["new_key"],
+                "renewed": True,
+                "error": None
+            }
+        else:
+            return {
+                "key": None,
+                "renewed": False,
+                "error": "No API key found. Please either:\n1. Add key to key.txt file\n2. Set OPENROUTER_API_KEY environment variable\n3. Set OPENROUTER_PROVISIONING_KEY for auto-provisioning"
+            }
         
     except Exception as e:
         return {
@@ -157,7 +217,7 @@ def get_api_key_with_auto_renewal(user_id):
 
 
 # Wrapper cho openrouter_client để tự động retry với key mới
-def call_openrouter_with_auto_renewal(user_id, prompt, model="z-ai/glm-4.5-air:free", max_tokens=900, temperature=0.0):
+def call_openrouter_with_auto_renewal(user_id, prompt, model="z-ai/glm-4.5-air:free", max_tokens=2000, temperature=0.3):
     """
     Gọi OpenRouter API với tính năng tự động làm mới key khi hết hạn
     
@@ -172,9 +232,10 @@ def call_openrouter_with_auto_renewal(user_id, prompt, model="z-ai/glm-4.5-air:f
         dict: Response từ OpenRouter hoặc error
     """
     from openrouter_client import call_openrouter
+    from api_key_manager import APIKeyManager
     
-    # Lấy API key (có thể tự động tạo mới nếu chưa có)
-    key_result = get_api_key_with_auto_renewal(user_id)
+    # Lấy API key qua APIKeyManager (tự động sync và provision nếu cần)
+    key_result = APIKeyManager.ensure_key_for_user(user_id, validate=False)
     
     if not key_result["key"]:
         return {

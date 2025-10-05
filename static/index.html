@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Clickstream Dashboard</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/llmDisplay.css">
 </head>
 
 <body>
@@ -32,12 +33,16 @@
                     <span id="analysisModeText" aria-live="polite">Spark Analysis</span>
                 </div>
             </div>
-            <div class="key-controls">
-                <h2>API Key</h2>
-                <input id="openrouterKey" placeholder="Paste your OpenRouter API key" />
-                <button id="saveKeyBtn">Save Key</button>
-                <button id="checkKeyBtn">Check Key</button>
-                <pre id="keyStatus"></pre>
+            <div class="key-controls" style="display: none;">
+                <h2>API Key (Auto-managed)</h2>
+                <p class="info-text">✅ API keys are automatically managed. No manual input needed!</p>
+                <details>
+                    <summary>Advanced: Manual Key Management</summary>
+                    <input id="openrouterKey" placeholder="Paste your OpenRouter API key" />
+                    <button id="saveKeyBtn">Save Key</button>
+                    <button id="checkKeyBtn">Check Key</button>
+                    <pre id="keyStatus"></pre>
+                </details>
             </div>
             <pre id="output" class="status-output"></pre>
             <div id="results" class="results">

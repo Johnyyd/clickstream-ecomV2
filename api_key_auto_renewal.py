@@ -217,7 +217,7 @@ def get_api_key_with_auto_renewal_legacy(user_id):
 
 
 # Wrapper cho openrouter_client để tự động retry với key mới
-def call_openrouter_with_auto_renewal(user_id, prompt, model="z-ai/glm-4.5-air:free", max_tokens=2000, temperature=0.3):
+def call_openrouter_with_auto_renewal(user_id, prompt, model="deepseek/deepseek-chat-v3-0324:free", max_tokens=2000, temperature=0.3):
     """
     Gọi OpenRouter API với tính năng tự động làm mới key khi hết hạn
     
@@ -246,10 +246,12 @@ def call_openrouter_with_auto_renewal(user_id, prompt, model="z-ai/glm-4.5-air:f
         }
     
     api_key = key_result["key"]
+    # Track which key we actually use for the call (may be updated if auto-renew occurs)
+    used_key = api_key
     
     # Gọi OpenRouter lần đầu
     print(f"[Auto-Renewal] Calling OpenRouter API...")
-    response = call_openrouter(api_key, prompt, model, max_tokens, temperature)
+    response = call_openrouter(used_key, prompt, model, max_tokens, temperature)
     
     # Kiểm tra xem có lỗi 401/expired không
     if response.get("status") == "error" and is_key_expired_error(response.get("error")):
@@ -261,8 +263,9 @@ def call_openrouter_with_auto_renewal(user_id, prompt, model="z-ai/glm-4.5-air:f
         if renewal_result["success"]:
             # Retry với key mới
             new_key = renewal_result["new_key"]
+            used_key = new_key
             print(f"[Auto-Renewal] Retrying with new key...")
-            response = call_openrouter(new_key, prompt, model, max_tokens, temperature)
+            response = call_openrouter(used_key, prompt, model, max_tokens, temperature)
             
             # Thêm flag để biết đã auto-renew
             if response.get("status") == "ok":
@@ -272,4 +275,45 @@ def call_openrouter_with_auto_renewal(user_id, prompt, model="z-ai/glm-4.5-air:f
             response["auto_renewal_failed"] = True
             response["auto_renewal_error"] = renewal_result["error"]
     
+    # If the model signaled truncation (finish_reason=length / truncated flag), attempt one continuation
+    try:
+        if response.get("status") == "ok" and response.get("truncated"):
+            print("[Auto-Renewal] ⚠️ LLM output was truncated; attempting continuation call...")
+            try:
+                cont_prompt = (
+                    "The previous response was truncated. Continue the JSON output ONLY so that when concatenated with the previous content it forms a single valid JSON object. "
+                    "Do not add any explanations or markdown. Previous content:\n" + (response.get("content") or "")
+                )
+                cont_resp = call_openrouter(used_key, cont_prompt, model, max_tokens, temperature)
+                if cont_resp.get("status") == "ok":
+                    # Combine contents and attempt to parse combined JSON
+                    combined = (response.get("content") or "") + (cont_resp.get("content") or "")
+                    parsed_combined = None
+                    try:
+                        import json
+                        if "{" in combined and "}" in combined:
+                            start = combined.index("{")
+                            end = combined.rindex("}") + 1
+                            parsed_combined = json.loads(combined[start:end])
+                    except Exception:
+                        parsed_combined = None
+
+                    if parsed_combined:
+                        response["parsed"] = parsed_combined
+                        response["auto_continued"] = True
+                        response["raw"] = {"initial": response.get("raw"), "continuation": cont_resp.get("raw")}
+                        response["content"] = combined
+                        response["truncated"] = False
+                        print("[Auto-Renewal] ✅ Continuation successful; reconstructed JSON from combined content.")
+                    else:
+                        response["continuation_raw"] = cont_resp.get("raw")
+                        response["auto_continue_failed"] = True
+                        print("[Auto-Renewal] ❌ Continuation attempt did not produce parseable JSON.")
+            except Exception as e:
+                response["auto_continue_failed"] = True
+                response["auto_continue_error"] = str(e)
+                print(f"[Auto-Renewal] ❌ Continuation attempt failed: {e}")
+    except Exception:
+        pass
+
     return response

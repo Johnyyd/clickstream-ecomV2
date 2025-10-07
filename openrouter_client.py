@@ -93,7 +93,7 @@ def _safe_json_parse(text: str):
         return None
 
 
-def call_openrouter(api_key: str, prompt: str, model: str = "z-ai/glm-4.5-air:free", max_tokens: int = 900, temperature: float = 0.0, retries: int = 2, timeout: int = 45):
+def call_openrouter(api_key: str, prompt: str, model: str = "deepseek/deepseek-chat-v3-0324:free", max_tokens: int = 900, temperature: float = 0.0, retries: int = 2, timeout: int = 45):
     """
     Call OpenRouter to transform analysis metrics into structured, actionable JSON.
 
@@ -147,16 +147,35 @@ def call_openrouter(api_key: str, prompt: str, model: str = "z-ai/glm-4.5-air:fr
                 resp.raise_for_status()
                 raw = resp.json()
 
-                # Try to extract content
+                # Try to extract content and finish reason
                 content = None
+                finish_reason = None
                 try:
-                    content = raw["choices"][0]["message"]["content"]
+                    choice0 = raw.get("choices", [None])[0]
+                    if choice0 and isinstance(choice0, dict):
+                        # new structured responses
+                        msg = choice0.get("message") or {}
+                        content = msg.get("content")
+                        finish_reason = choice0.get("finish_reason")
                 except Exception:
+                    pass
+
+                if content is None:
                     # Some providers may return different structure; fallback to entire raw
                     content = json.dumps(raw)
 
                 parsed = _safe_json_parse(content)
-                return {"status": "ok", "parsed": parsed, "raw": raw, "error": None}
+                truncated = (finish_reason == "length")
+                # Return finish_reason and a truncated flag so callers/UI can react
+                return {
+                    "status": "ok",
+                    "parsed": parsed,
+                    "raw": raw,
+                    "error": None,
+                    "content": content,
+                    "finish_reason": finish_reason,
+                    "truncated": truncated,
+                }
             except Exception as e:
                 last_err = f"endpoint={endpoint} error={e}"
                 if attempt < retries:

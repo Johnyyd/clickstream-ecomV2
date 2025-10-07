@@ -577,12 +577,17 @@ def run_analysis(user_id, params):
     # Luôn thử gọi OpenRouter (auto-renewal sẽ tự động tạo key nếu cần)
     if True:  # Always attempt
         # Prepare enhanced prompt with detailed metrics
+        # Trim detailed_metrics to avoid overly large prompts while preserving key info
+        trimmed_metrics = json.dumps(detailed_metrics, default=str)
+        if len(trimmed_metrics) > 3000:
+            trimmed_metrics = trimmed_metrics[:3000] + '\n...TRUNCATED FOR PROMPT SIZE...'
+
         prompt = f"""
         I have comprehensive clickstream analysis results and a product catalog.
 
         Basic Summary: {json.dumps(spark_summary, default=str)}
 
-        Detailed Metrics: {json.dumps(detailed_metrics, default=str)[:4000]}
+        Detailed Metrics: {trimmed_metrics}
 
         User Context (summarized): {json.dumps(user_ctx, default=str)}
 
@@ -601,11 +606,12 @@ def run_analysis(user_id, params):
             print("Calling OpenRouter API with auto-renewal support...")
             # Sử dụng auto-renewal wrapper thay vì gọi trực tiếp
             # Tăng max_tokens để LLM có thể trả về đầy đủ analysis
+            # Increase max_tokens to allow longer outputs and reduce risk of truncation
             llm_response = call_openrouter_with_auto_renewal(
-                user_id=user_id, 
+                user_id=user_id,
                 prompt=prompt,
-                max_tokens=2000,  # Tăng từ 900 lên 2000 để có đủ chỗ cho tất cả sections
-                temperature=0.3   # Tăng một chút để creative hơn
+                max_tokens=3000,
+                temperature=0.3
             )
             
             # Log nếu key đã được auto-renewed

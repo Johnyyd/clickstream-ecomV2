@@ -20,6 +20,14 @@ export function displayLLMAnalysis(llmOutput, container) {
         return;
     }
     
+    // If model returned truncated output (finish_reason=length), surface a banner
+    if (llmOutput.truncated) {
+        const warn = document.createElement('div');
+        warn.className = 'llm-truncated-warning';
+        warn.innerHTML = `\n            <p>⚠️ LLM output was truncated (model signaled length). Some sections may be incomplete.</p>\n        `;
+        container.appendChild(warn);
+    }
+    
     // Create sections
     const sections = [
         createExecutiveSummary(parsed),

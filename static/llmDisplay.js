@@ -19,6 +19,9 @@ export function displayLLMAnalysis(llmOutput, container) {
         container.innerHTML = '<div class="error">No parsed LLM data available</div>';
         return;
     }
+
+    // Normalize top-level parsed fields to expected types (arrays/objects)
+    normalizeParsed(parsed);
     
     // If model returned truncated output (finish_reason=length), surface a banner
     if (llmOutput.truncated) {
@@ -125,7 +128,7 @@ function createKeyInsights(parsed) {
     const insightsList = parsed.key_insights.map((insight, idx) => 
         `<li class="insight-item">
             <span class="insight-number">${idx + 1}</span>
-            <span class="insight-text">${insight}</span>
+            <span class="insight-text">${safeString(insight)}</span>
         </li>`
     ).join('');
     
@@ -143,7 +146,7 @@ function createTrafficInsights(parsed) {
     const section = document.createElement('div');
     section.className = 'llm-section traffic-section';
     
-    const ti = parsed.traffic_insights;
+    const ti = parsed.traffic_insights || {};
     
     section.innerHTML = `
         <h2>🚦 Traffic Insights</h2>
@@ -163,7 +166,7 @@ function createConversionAnalysis(parsed) {
     const section = document.createElement('div');
     section.className = 'llm-section conversion-section';
     
-    const ca = parsed.conversion_analysis;
+    const ca = parsed.conversion_analysis || {};
     
     section.innerHTML = `
         <h2>🎯 Conversion Analysis</h2>
@@ -186,9 +189,9 @@ function createRecommendations(parsed) {
     const recsList = parsed.recommendations.map((rec, idx) => 
         `<li class="recommendation-item">
             <span class="rec-icon">✓</span>
-            <span class="rec-text">${rec}</span>
-        </li>`
-    ).join('');
+            <span class="rec-text">${safeString(rec)}</span>
+        </li>
+    `).join('');
     
     section.innerHTML = `
         <h2>🎯 Business Recommendations</h2>
@@ -207,7 +210,7 @@ function createDecisions(parsed) {
     const decisionsList = parsed.decisions.map((decision, idx) => 
         `<li class="decision-item">
             <span class="decision-number">${idx + 1}</span>
-            <span class="decision-text">${decision}</span>
+            <span class="decision-text">${safeString(decision)}</span>
         </li>`
     ).join('');
     
@@ -228,7 +231,7 @@ function createNextActions(parsed) {
     const actionsList = parsed.next_best_actions.map((action, idx) => 
         `<li class="action-item">
             <input type="checkbox" id="action-${idx}" class="action-checkbox">
-            <label for="action-${idx}" class="action-text">${action}</label>
+            <label for="action-${idx}" class="action-text">${safeString(action)}</label>
         </li>`
     ).join('');
     
@@ -249,9 +252,9 @@ function createRiskAlerts(parsed) {
     const risksList = parsed.risk_alerts.map(risk => 
         `<li class="risk-item">
             <span class="risk-icon">⚠️</span>
-            <span class="risk-text">${risk}</span>
-        </li>`
-    ).join('');
+            <span class="risk-text">${safeString(risk)}</span>
+        </li>
+    `).join('');
     
     section.innerHTML = `
         <h2>⚠️ Risk Alerts</h2>
@@ -268,7 +271,7 @@ function createUserRecommendations(parsed) {
     section.className = 'llm-section user-recs-section';
     
     const recsList = parsed.recommendations_for_user.map(rec => 
-        `<li class="user-rec-item">${rec}</li>`
+        `<li class="user-rec-item">${safeString(rec)}</li>`
     ).join('');
     
     section.innerHTML = `
@@ -285,13 +288,16 @@ function createProductRecommendations(parsed) {
     const section = document.createElement('div');
     section.className = 'llm-section products-section';
     
-    const productCards = parsed.recommendations_for_user_products.map(product => 
-        `<div class="product-card">
-            <div class="product-name">${product.name}</div>
-            <div class="product-reason">${product.reason}</div>
-            <a href="/p/${product.product_id}" class="product-link">View Product →</a>
+    const productCards = parsed.recommendations_for_user_products.map(product => {
+        const name = safeString(product.name || product.title || 'Unnamed Product');
+        const reason = safeString(product.reason || product.reasoning || 'No reason provided');
+        const pid = safeString(product.product_id || product.id || '');
+        return `<div class="product-card">
+            <div class="product-name">${name}</div>
+            <div class="product-reason">${reason}</div>
+            ${pid ? `<a href="/p/${pid}" class="product-link">View Product →</a>` : ''}
         </div>`
-    ).join('');
+    }).join('');
     
     section.innerHTML = `
         <h2>🛍️ Recommended Products</h2>
@@ -314,10 +320,24 @@ function createRawData(llmOutput) {
 }
 
 function createSubSection(title, items, type = 'default') {
-    if (!items || items.length === 0) return '';
-    
-    const itemsList = items.map(item => `<li class="subsection-item ${type}">${item}</li>`).join('');
-    
+    // Accept strings, single objects, or arrays. Normalize to array.
+    const arr = ensureArray(items);
+    if (arr.length === 0) return '';
+
+    const itemsList = arr.map(item => {
+        if (typeof item === 'string' || typeof item === 'number') {
+            return `<li class="subsection-item ${type}">${safeString(item)}</li>`;
+        }
+        // If item is an object, try to render meaningful fields
+        if (item && typeof item === 'object') {
+            // If it has a title/name, show that plus optional detail
+            const titleText = safeString(item.title || item.name || JSON.stringify(item));
+            const detail = item.reason || item.detail || item.description || '';
+            return `<li class="subsection-item ${type}"><strong>${titleText}</strong>${detail ? ` — ${safeString(detail)}` : ''}</li>`;
+        }
+        return `<li class="subsection-item ${type}">${safeString(item)}</li>`;
+    }).join('');
+
     return `
         <div class="subsection">
             <h3>${title}</h3>
@@ -342,4 +362,48 @@ function formatDuration(seconds) {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}m ${secs}s`;
+}
+
+// Helpers: ensureArray converts strings/single objects into arrays; safeString guards against objects
+function ensureArray(v) {
+    if (v === null || v === undefined) return [];
+    if (Array.isArray(v)) return v;
+    // If it's a string that contains newlines or bullet points, split it
+    if (typeof v === 'string') {
+        const parts = v.split(/\r?\n|\n\s*-\s+|\n\s*\d+\.|;\s*/).map(s => s.trim()).filter(Boolean);
+        return parts.length > 1 ? parts : [v];
+    }
+    return [v];
+}
+
+function safeString(v) {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'string') return v;
+    try {
+        return String(v);
+    } catch (err) {
+        return JSON.stringify(v);
+    }
+}
+
+function normalizeParsed(parsed) {
+    // Normalize common list fields to arrays
+    const listFields = [
+        'key_insights', 'recommendations', 'decisions', 'next_best_actions', 'risk_alerts',
+        'recommendations_for_user', 'recommendations_for_user_products'
+    ];
+    listFields.forEach(f => {
+        if (parsed[f] && !Array.isArray(parsed[f])) {
+            // If it's an object with numeric keys, convert to array
+            if (typeof parsed[f] === 'object') {
+                parsed[f] = Object.values(parsed[f]);
+            } else {
+                parsed[f] = [parsed[f]];
+            }
+        }
+    });
+
+    // Ensure nested objects exist
+    parsed.traffic_insights = parsed.traffic_insights || {};
+    parsed.conversion_analysis = parsed.conversion_analysis || {};
 }

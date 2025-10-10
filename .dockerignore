@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.build/
+
+# Virtual envs
+venv/
+.env/
+.env.local
+
+# VCS
+.git/
+.gitignore
+
+# OS / IDE
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Data / secrets
+key.txt
+*.log
+
+# Node (if any front-end tooling exists)
+node_modules/
+
+# Docker
+Dockerfile*
+*.tar

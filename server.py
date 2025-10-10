@@ -16,6 +16,7 @@ from datetime import datetime
 USE_SPARK = os.environ.get('USE_SPARK', 'false').lower() == 'true'
 
 PORT = int(os.environ.get("PORT", 8000))
+HOST = os.environ.get("HOST", "0.0.0.0")
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 def read_json(rfile, length):
@@ -635,9 +636,9 @@ class SimpleHandler(BaseHTTPRequestHandler):
         self.wfile.write(b'{"error":"not found"}')
 
 if __name__ == "__main__":
-    server_address = ("localhost", PORT)
+    server_address = (HOST, PORT)
     httpd = HTTPServer(server_address, SimpleHandler)
-    print(f"Server running on http://localhost:{PORT}/dashboard")
+    print(f"Server running on http://{HOST}:{PORT}/dashboard")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

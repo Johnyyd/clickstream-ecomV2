@@ -1,0 +1,42 @@
+version: "3.9"
+
+services:
+  mongo:
+    image: mongo:6.0
+    container_name: clickstream
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 })"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: clickstream-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8000
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: clickstream
+      USE_SPARK: "false"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    # If you want live-reload during development, uncomment the following volume:
+    # volumes:
+    #   - ./:/app
+
+volumes:
+  mongo_data:
+    driver: local
+

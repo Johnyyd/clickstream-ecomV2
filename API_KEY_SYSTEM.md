@@ -47,7 +47,7 @@ Trả về key cho user
 - `manage_API__key.py` - Provisioning API wrapper
 
 ### **Integration:**
-- `server.py` - Login endpoint với auto-sync
+- FastAPI (`app/main.py`, `app/api/auth.py`) - Login endpoints với auto-sync
 - `analysis.py` - Sử dụng key khi analyze
 - `static/dashboard.js` - Hiển thị key status
 
@@ -125,9 +125,9 @@ result = sync_user_api_key(user_id)
    sk-or-v1-your-api-key-here
    ```
 
-2. Start server:
+2. Start server (FastAPI):
    ```powershell
-   python server.py
+   uvicorn app.main:app --host 0.0.0.0 --port 8000
    ```
 
 3. Login → Key tự động load và sync vào DB
@@ -136,14 +136,14 @@ result = sync_user_api_key(user_id)
 
 ```powershell
 $env:OPENROUTER_API_KEY="sk-or-v1-your-key"
-python server.py
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 ### **Option 3: Auto-provisioning**
 
 ```powershell
 $env:OPENROUTER_PROVISIONING_KEY="sk-or-v1-your-provisioning-key"
-python server.py
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 Khi login, nếu không có key, hệ thống tự động tạo mới.

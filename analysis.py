@@ -1,10 +1,12 @@
-def simple_sessionize_and_counts(limit=None, user_id=None):
+def simple_sessionize_and_counts(limit=None, user_id=None, use_spark=None):
     """Basic, fast analysis over events for quick stats.
     Uses Spark if USE_SPARK is enabled, otherwise falls back to Python implementation.
 
     Returns dict with keys: total_events, sessions, events_by_type, top_pages.
     """
-    if USE_SPARK:
+    # Resolve engine per-call, defaulting to env-configured global
+    _use_spark = USE_SPARK if use_spark is None else bool(use_spark)
+    if _use_spark:
         try:
             from spark_jobs import sessionize_and_counts
             print("Using Spark for analysis...")
@@ -96,7 +98,7 @@ from collections import Counter, defaultdict
 import statistics
 import pytz 
 
-# Feature flag to enable/disable Spark analysis
+# Feature flag default (can be overridden per-request)
 USE_SPARK = os.environ.get('USE_SPARK', 'false').lower() == 'true'
 
 def _coerce_llm_parsed(parsed, spark_summary, detailed_metrics, generated_insights):
@@ -473,9 +475,14 @@ def run_analysis(user_id, params):
     
     # 1. Run basic analysis
     try:
-        print(f"Running {'Spark' if USE_SPARK else 'Python'} analysis...")
-        spark_summary = simple_sessionize_and_counts(limit=params.get("limit"), user_id=user_id)
-        print(f"Analysis completed successfully (using {'Spark' if USE_SPARK else 'Python'})")
+        # Per-request engine selection (fallback to env/global)
+        req_use_spark = params.get("use_spark")
+        if isinstance(req_use_spark, str):
+            req_use_spark = req_use_spark.lower() == 'true'
+        engine_is_spark = USE_SPARK if req_use_spark is None else bool(req_use_spark)
+        print(f"Running {'Spark' if engine_is_spark else 'Python'} analysis...")
+        spark_summary = simple_sessionize_and_counts(limit=params.get("limit"), user_id=user_id, use_spark=engine_is_spark)
+        print(f"Analysis completed successfully (using {'Spark' if engine_is_spark else 'Python'})")
     except Exception as e:
         print(f"Error in basic analysis: {str(e)}")
         error_record = {

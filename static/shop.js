@@ -109,6 +109,11 @@ const Shop = (() => {
   }
   async function track(page, event_type, properties = {}) {
     try {
+      // Prefer SDK batching if present
+      if (window.analytics && typeof window.analytics.track === 'function') {
+        window.analytics.track(page, event_type, properties);
+      }
+      // Keep legacy single-event POST for backward compatibility
       const { client_id, session_id } = getIds();
       await fetch('/api/ingest', {
         method: 'POST',

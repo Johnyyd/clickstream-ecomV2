@@ -4,3 +4,7 @@ pyspark==4.0.0
 bcrypt==4.0.1
 python-dotenv==1.0.0
 pytz
+fastapi==0.110.0
+uvicorn[standard]==0.30.0
+kafka-python==2.0.2
+pytest==8.2.0

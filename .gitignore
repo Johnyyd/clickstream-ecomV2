@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.env
+.env.*
+.venv/
+venv/
+
+# Node / Frontend
+node_modules/
+dist/
+build/
+.cache/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tooling
+.coverage
+pytest.cache/
+.mypy_cache/
+.pytest_cache/
+.vscode/
+.idea/
+
+# Data/Exports
+*.sqlite
+*.db
+*.jsonl
+analysis_summary.json
+exported_*.json
+
+# Docker
+*.pid

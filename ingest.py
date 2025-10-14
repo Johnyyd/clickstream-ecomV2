@@ -4,6 +4,23 @@ from datetime import datetime
 import uuid
 import time
 import pytz
+import os
+
+_KAFKA_BROKERS = os.getenv("KAFKA_BROKERS")
+_KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "clickstream.events")
+_kafka_producer = None
+
+def _get_kafka_producer():
+    global _kafka_producer
+    if not _KAFKA_BROKERS:
+        return None
+    if _kafka_producer is None:
+        try:
+            from kafka import KafkaProducer
+            _kafka_producer = KafkaProducer(bootstrap_servers=_KAFKA_BROKERS.split(","), value_serializer=lambda v: v.encode("utf-8"))
+        except Exception:
+            _kafka_producer = None
+    return _kafka_producer
 
 def ingest_event(event_json):
     """
@@ -48,6 +65,24 @@ def ingest_event(event_json):
         "session_id": session_id or str(uuid.uuid4())
     }
     res = events_col().insert_one(doc)
+
+    # Optional forward to Kafka (best-effort, non-blocking)
+    try:
+        producer = _get_kafka_producer()
+        if producer:
+            import json as _json
+            payload = {
+                "client_id": doc.get("client_id"),
+                "session_id": doc.get("session_id"),
+                "user_id": str(doc.get("user_id")) if doc.get("user_id") is not None else None,
+                "page": doc.get("page"),
+                "event_type": doc.get("event_type"),
+                "properties": doc.get("properties", {}),
+                "timestamp": ts.timestamp(),
+            }
+            producer.send(_KAFKA_TOPIC, _json.dumps(payload))
+    except Exception:
+        pass
 
     # Upsert session document so sessions are persisted in DB
     try:

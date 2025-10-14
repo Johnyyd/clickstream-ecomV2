@@ -22,6 +22,147 @@ const analysisModeBadge = document.getElementById('analysisModeBadge');
 // State
 let token = null;
 let useSpark = true;
+let metricsTimer = null;
+const METRICS_INTERVAL_MS = 10000;
+
+function ensureMetricsPanel() {
+  let panel = document.getElementById('rt-metrics');
+  if (!panel) {
+    const controls = document.getElementById('controls');
+    panel = document.createElement('div');
+    panel.id = 'rt-metrics';
+    panel.className = 'analysis-section';
+    panel.innerHTML = `
+      <h2 class="section-title">Real-time Metrics (last 60 min)</h2>
+      <div id="rt-summary" class="metrics-grid"></div>
+      <div style="display:grid; gap:12px; margin-top:12px">
+        <div>
+          <h3 style="margin:6px 0">Events per minute</h3>
+          <div id="rt-line"></div>
+        </div>
+        <div>
+          <h3 style="margin:6px 0">Top pages (60m)</h3>
+          <div id="rt-bars"></div>
+        </div>
+      </div>
+      <details>
+        <summary>Raw aggregates</summary>
+        <pre id="rt-raw"></pre>
+      </details>
+    `;
+    controls.appendChild(panel);
+  }
+  return panel;
+}
+
+async function fetchAggregates() {
+  try {
+    const resp = await fetch('/api/metrics/aggregates?minutes=60');
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch {
+    return null;
+  }
+}
+
+function renderAggregates(data) {
+  const panel = ensureMetricsPanel();
+  const items = (data && data.items) || [];
+  const total = items.reduce((s, r) => s + (r.count || 0), 0);
+  const byEvent = {};
+  const byPage = {};
+  const byMinute = new Map(); // key: epoch minute string, val: total count
+  for (const r of items) {
+    byEvent[r.event_type] = (byEvent[r.event_type] || 0) + (r.count || 0);
+    if (r.page) byPage[r.page] = (byPage[r.page] || 0) + (r.count || 0);
+    const end = r.window_end ? new Date(r.window_end) : null;
+    if (end && !isNaN(end.getTime())) {
+      const key = `${end.getUTCFullYear()}-${String(end.getUTCMonth()+1).padStart(2,'0')}-${String(end.getUTCDate()).padStart(2,'0')} ${String(end.getUTCHours()).padStart(2,'0')}:${String(end.getUTCMinutes()).padStart(2,'0')}`;
+      byMinute.set(key, (byMinute.get(key)||0) + (r.count||0));
+    }
+  }
+  const topEvent = Object.entries(byEvent).sort((a,b)=>b[1]-a[1])[0] || ['',0];
+  const topPage = Object.entries(byPage).sort((a,b)=>b[1]-a[1])[0] || ['',0];
+  const grid = panel.querySelector('#rt-summary');
+  grid.innerHTML = `
+    <div class="metric-card"><div class="metric-value">${total}</div><div class="metric-label">Events (60m)</div></div>
+    <div class="metric-card"><div class="metric-value">${topEvent[0]||'-'}: ${topEvent[1]||0}</div><div class="metric-label">Top Event</div></div>
+    <div class="metric-card"><div class="metric-value">${topPage[0]||'-'}: ${topPage[1]||0}</div><div class="metric-label">Top Page</div></div>
+  `;
+  const raw = panel.querySelector('#rt-raw');
+  raw.textContent = JSON.stringify(items.slice(-50), null, 2);
+
+  // Render simple charts
+  const lineHost = panel.querySelector('#rt-line');
+  const barHost = panel.querySelector('#rt-bars');
+  if (lineHost) lineHost.innerHTML = renderLineChartSVG(byMinute);
+  if (barHost) barHost.innerHTML = renderBarChartSVG(byPage);
+}
+
+async function pollMetricsOnce() {
+  const data = await fetchAggregates();
+  if (data) renderAggregates(data);
+}
+
+function startMetricsPolling() {
+  ensureMetricsPanel();
+  if (metricsTimer) clearInterval(metricsTimer);
+  pollMetricsOnce();
+  metricsTimer = setInterval(pollMetricsOnce, METRICS_INTERVAL_MS);
+}
+
+function renderLineChartSVG(byMinuteMap) {
+  // Prepare last 60 minute timeline
+  const now = new Date();
+  const labels = [];
+  const values = [];
+  for (let i = 59; i >= 0; i--) {
+    const t = new Date(now.getTime() - i*60000);
+    const key = `${t.getUTCFullYear()}-${String(t.getUTCMonth()+1).padStart(2,'0')}-${String(t.getUTCDate()).padStart(2,'0')} ${String(t.getUTCHours()).padStart(2,'0')}:${String(t.getUTCMinutes()).padStart(2,'0')}`;
+    labels.push(key);
+    values.push(byMinuteMap.get(key) || 0);
+  }
+  const width = 600, height = 160, pad = 24;
+  const maxV = Math.max(1, ...values);
+  const pts = values.map((v, idx) => {
+    const x = pad + (idx/(values.length-1))*(width-2*pad);
+    const y = pad + (1 - (v/maxV))*(height-2*pad);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(fr => {
+    const y = pad + (1-fr)*(height-2*pad);
+    const val = Math.round(maxV*fr);
+    return `<line x1=\"${pad}\" y1=\"${y}\" x2=\"${width-pad}\" y2=\"${y}\" stroke=\"#233046\" stroke-width=\"1\" />
+            <text x=\"${pad-4}\" y=\"${y}\" fill=\"#98a5b5\" font-size=\"10\" text-anchor=\"end\">${val}</text>`;
+  }).join('');
+  return `<svg width=\"100%\" viewBox=\"0 0 ${width} ${height}\" preserveAspectRatio=\"xMidYMid meet\">
+    <rect x=\"0\" y=\"0\" width=\"${width}\" height=\"${height}\" fill=\"rgba(255,255,255,0.02)\" />
+    ${ticks}
+    <polyline fill=\"none\" stroke=\"#2563eb\" stroke-width=\"2\" points=\"${pts}\" />
+  </svg>`;
+}
+
+function renderBarChartSVG(byPageObj) {
+  const entries = Object.entries(byPageObj).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const width = 600, barH = 18, gap = 8, pad = 24;
+  const height = pad + entries.length*(barH+gap) + pad;
+  const maxV = Math.max(1, ...entries.map(e=>e[1]));
+  const bars = entries.map((e, i) => {
+    const label = (e[0]||'').slice(0,40);
+    const v = e[1];
+    const w = (v/maxV)*(width-2*pad);
+    const y = pad + i*(barH+gap);
+    return `<g>
+      <rect x=\"${pad}\" y=\"${y}\" width=\"${w}\" height=\"${barH}\" fill=\"#10b981\" />
+      <text x=\"${pad+4}\" y=\"${y+barH-5}\" fill=\"#0b1220\" font-size=\"11\" >${label}</text>
+      <text x=\"${pad+w+4}\" y=\"${y+barH-5}\" fill=\"#98a5b5\" font-size=\"11\" >${v}</text>
+    </g>`;
+  }).join('');
+  return `<svg width=\"100%\" viewBox=\"0 0 ${width} ${height}\" preserveAspectRatio=\"xMidYMid meet\">
+    <rect x=\"0\" y=\"0\" width=\"${width}\" height=\"${height}\" fill=\"rgba(255,255,255,0.02)\" />
+    ${bars}
+  </svg>`;
+}
 
 loginBtn.onclick = async () => {
   const username = document.getElementById('username').value;
@@ -55,6 +196,8 @@ loginBtn.onclick = async () => {
     try { await checkKey(); } catch(e) {}
     // Also load latest recommendations if any
     try { await loadRecommendations(); } catch(e) {}
+    // Start/refresh real-time metrics polling
+    startMetricsPolling();
   } else {
     output.innerText = JSON.stringify(j);
   }
@@ -313,6 +456,7 @@ if (checkKeyBtn) {
 
 // Initialize
 loadPreferences();
+startMetricsPolling();
 
 // Set initial ARIA attributes
 if (useSparkToggle) {

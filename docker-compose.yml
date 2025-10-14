@@ -15,6 +15,16 @@ services:
       timeout: 5s
       retries: 5
 
+  mongo-express:
+    image: mongo-express:1.0.2
+    restart: unless-stopped
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://mongo:27017
+    ports:
+      - "8081:8081"
+    depends_on:
+      - mongo
+
   app:
     build:
       context: .
@@ -32,11 +42,66 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
+      kafka:
+        condition: service_started
+      spark-master:
+        condition: service_started
     # If you want live-reload during development, uncomment the following volume:
     # volumes:
     #   - ./:/app
 
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      - zookeeper
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      - kafka
+    entrypoint: ["bash", "-lc"]
+    command: >
+      "sleep 5 && \
+      kafka-topics --create --if-not-exists --topic ${KAFKA_TOPIC:-clickstream.events} \
+      --bootstrap-server kafka:29092 --replication-factor 1 --partitions 3 && \
+      echo 'Kafka topic ensured' && sleep 2"
+    restart: "no"
+
+  spark-master:
+    image: bitnami/spark:3.5
+    environment:
+      - SPARK_MODE=master
+    ports:
+      - "7077:7077"
+      - "8080:8080"
+
+  spark-worker:
+    image: bitnami/spark:3.5
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+    depends_on:
+      - spark-master
+
 volumes:
   mongo_data:
     driver: local
+
 

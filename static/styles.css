@@ -682,3 +682,25 @@ details pre {
 @media (max-width: 640px) {
   .grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
 }
+
+/* --- Auth page --- */
+.hidden { display: none !important; }
+.auth-container {
+  max-width: 420px;
+  margin: 48px auto;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.auth-container h1 { margin: 0 0 16px; font-size: 22px; }
+.auth-container form { display: grid; gap: 12px; }
+.auth-container input {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+.auth-container button { padding: 10px 12px; border-radius: 6px; }
+.auth-switch { text-align: center; margin-top: 12px; }

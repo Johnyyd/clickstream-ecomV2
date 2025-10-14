@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Auth - Clickstream Ecom V2</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="site-header">
+    <nav>
+      <a href="/home">Home</a>
+      <a href="/category">Category</a>
+      <a href="/search">Search</a>
+      <a href="/cart">Cart</a>
+      <a href="/checkout">Checkout</a>
+    </nav>
+  </div>
+
+  <div class="auth-container">
+    <h1 id="title">Login</h1>
+
+    <form id="loginForm" aria-label="Login form">
+      <input id="username" name="username" placeholder="Username" autocomplete="username" required />
+      <input id="password" name="password" type="password" placeholder="Password" autocomplete="current-password" required />
+      <button id="loginBtn" type="submit">Login</button>
+    </form>
+
+    <form id="signupForm" aria-label="Signup form" style="display:none">
+      <input id="su_username" name="username" placeholder="Username" required />
+      <input id="su_email" name="email" type="email" placeholder="Email" required />
+      <input id="su_password" name="password" type="password" placeholder="Password" required />
+      <button id="signupBtn" type="submit">Create account</button>
+    </form>
+
+    <div class="auth-switch">
+      <button id="switchBtn" type="button" aria-live="polite">Need an account? Sign up</button>
+    </div>
+
+    <div class="status" id="status" role="status" aria-live="polite"></div>
+  </div>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const switchBtn = document.getElementById('switchBtn');
+    const loginForm = document.getElementById('loginForm');
+    const signupForm = document.getElementById('signupForm');
+    const titleEl = document.getElementById('title');
+
+    function setStatus(msg) { statusEl.textContent = msg || ''; }
+
+    switchBtn.onclick = () => {
+      const loginVisible = loginForm.style.display !== 'none';
+      if (loginVisible) {
+        loginForm.style.display = 'none';
+        signupForm.style.display = 'grid';
+        titleEl.textContent = 'Sign up';
+        switchBtn.textContent = 'Have an account? Login';
+      } else {
+        loginForm.style.display = 'grid';
+        signupForm.style.display = 'none';
+        titleEl.textContent = 'Login';
+        switchBtn.textContent = 'Need an account? Sign up';
+      }
+      setStatus('');
+    };
+
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      setStatus('Logging in...');
+      const body = { username: document.getElementById('username').value, password: document.getElementById('password').value };
+      try {
+        const resp = await fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        const j = await resp.json();
+        if (j.token) {
+          localStorage.setItem('token', j.token);
+          setStatus('✅ Logged in');
+          setTimeout(() => { window.location.href = '/dashboard'; }, 500);
+        } else {
+          setStatus('❌ ' + (j.error || 'Login failed'));
+        }
+      } catch (e) { setStatus('❌ ' + e.message); }
+    });
+
+    signupForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      setStatus('Creating account...');
+      const body = { 
+        username: document.getElementById('su_username').value,
+        email: document.getElementById('su_email').value,
+        password: document.getElementById('su_password').value
+      };
+      try {
+        const resp = await fetch('/api/signup', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        const j = await resp.json();
+        if (j.user_id) {
+          setStatus('✅ Account created. Please login.');
+          switchBtn.click();
+        } else {
+          setStatus('❌ ' + (j.error || 'Signup failed'));
+        }
+      } catch (e) { setStatus('❌ ' + e.message); }
+    });
+  </script>
+</body>
+</html>

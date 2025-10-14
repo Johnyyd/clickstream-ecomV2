@@ -3,7 +3,7 @@
 Production-like clickstream analytics demo with LLM insights and grounded product recommendations.
 
 ## Key Features
-- User auth, event ingestion, and lightweight analysis (`server.py`, `ingest.py`, `simple_analysis.py`, `analysis.py`).
+- User auth, event ingestion, and analysis (FastAPI: `app/main.py`, modular routers in `app/api/`, `ingest.py`, `simple_analysis.py`, `analysis.py`).
 - LLM insights via OpenRouter (`openrouter_client.py`) with strict JSON and product-grounded recommendations.
 - Frontend dashboard to run analysis and view “Recommended Products” (`static/`).
 
@@ -55,19 +55,29 @@ python cleanup_demo_data.py --delete
 python cleanup_demo_data.py --since-days 14
 ```
 
-## Run the Server and Dashboard
+## Run the Server and Dashboard (FastAPI)
+
+Recommended via Docker Compose (FastAPI is default):
 ```
-python server.py
-# Open http://localhost:8000
+docker compose build
+docker compose up -d
+
+# App:       http://localhost:8000
+# Dashboard: http://localhost:8000/dashboard
+# Mongo-Express: http://localhost:8081
 ```
-- Login or sign up
-- Paste your OpenRouter API key and Save
-- Optional: choose a model compatible with your key
-  ```
-  $env:OPENROUTER_MODEL = "openai/gpt-4o-mini"
-  ```
-- Click "Run Analysis"
-- View: Summary, Detailed Metrics, LLM Insights, and Recommended Products
+
+Run locally without Docker (FastAPI):
+```
+pip install -r requirements.txt
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Quick start (dashboard):
+- Login or sign up at `/dashboard` or use `static/auth.html`.
+- (Optional) Manage OpenRouter key at `/api/openrouter/*` or use auto-provision if configured.
+- Click "Run Analysis".
+- View: Summary, Detailed Metrics, LLM Insights, and Recommended Products.
 
 ## LLM and Product Recommendations
 - `analysis.py/run_analysis()` builds a summarized user context and a subset of the product catalog.
@@ -76,8 +86,11 @@ python server.py
 - `GET /api/recommendations` returns the latest recommendations, enriched with current product details.
 
 ## Project Structure (Selected)
-- `server.py` – HTTP server and REST API endpoints.
-- `ingest.py` – Ingest events into MongoDB using consistent schema.
+- `app/main.py` – FastAPI application (CORS, static, pretty routes, router includes).
+- `app/api/*.py` – Modular routers (`events`, `products`, `auth`, `analyses`, `analysis`, `openrouter`, `recommendations`).
+- `ingest.py` – Ingest events into MongoDB using consistent schema (optional Kafka forward).
+- `jobs/clickstream_streaming.py` – Spark Structured Streaming job (Kafka → aggregates → MongoDB).
+- `app/repositories/indexes.py` – Ensures MongoDB indexes on startup.
 - `simple_analysis.py` – Lightweight metrics.
 - `analysis.py` – Detailed metrics, LLM orchestration, product-grounded recommendations.
 - `openrouter_client.py` – OpenRouter client with strict JSON schema.
@@ -87,6 +100,47 @@ python server.py
 - `seed_products.py` – Seed/expand product catalog.
 - `simulate_clickstream.py` – Optional simulator.
 - `static/` – Frontend (`index.html`, `dashboard.js`, `styles.css`).
+  - `analytics.js` – Lightweight analytics SDK with batching to `/api/ingest-batch`.
+  - `auth.html` – Simple auth page (login/signup).
+
+## Data Pipeline (Kafka + Spark Streaming)
+
+Compose includes Zookeeper, Kafka, Spark master/worker. Create Kafka topic once:
+```
+docker exec -it $(docker ps -qf name=kafka) bash -lc \
+  'kafka-topics --create --topic clickstream.events --bootstrap-server kafka:29092 --replication-factor 1 --partitions 3 || true'
+```
+
+Submit streaming job (from a Spark container):
+```
+docker exec -it $(docker ps -qf name=spark-master) bash -lc \
+  'spark-submit --master spark://spark-master:7077 /app/jobs/clickstream_streaming.py'
+```
+
+Streaming aggregates are written to Mongo collection `aggregates_minute`.
+
+## Event Tracking (Frontend)
+
+- All storefront pages include `static/analytics.js`. It batches events to `/api/ingest-batch`.
+- `static/shop.js` still posts per-event to `/api/ingest` for backward compat.
+
+## API Endpoints (FastAPI)
+
+- Events: `POST /api/ingest`, `POST /api/ingest-batch`
+- Products: `GET /api/products`, `GET /api/categories`, `GET /api/product/{id}`, `GET /api/product/slug/{slug}`, `GET /api/search`
+- Auth: `POST /api/signup`, `POST /api/login`
+- Analyses: `GET /api/analyses`, `GET /api/analyses/{id}`
+- Analysis run/mode: `POST /api/analyze`, `GET /api/analysis/mode`
+- OpenRouter: `GET/POST/DELETE /api/openrouter/key`, `POST /api/openrouter/provision`
+- Recommendations: `GET /api/recommendations`
+
+## Environment Variables
+
+- `MONGO_URI` (default `mongodb://mongo:27017`)
+- `MONGO_DB` (default `clickstream`)
+- `USE_SPARK` (`true`|`false`) – default engine; can be overridden per-request with `params.use_spark`.
+- `KAFKA_BROKERS` (optional `host:port`) and `KAFKA_TOPIC` (default `clickstream.events`) for event forwarding.
+- `OPENROUTER_PROVISIONING_KEY` (optional; enables runtime key provisioning).
 
 ## Notes
 - The app intentionally avoids heavy frameworks to keep the codebase approachable.

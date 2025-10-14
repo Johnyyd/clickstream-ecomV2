@@ -131,7 +131,7 @@
 
 ### 1. Restart server
 ```powershell
-python server.py
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 ### 2. Set provisioning key (nếu chưa có)

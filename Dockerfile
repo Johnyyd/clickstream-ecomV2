@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM python:3.11-slim
+FROM python:3.11-slim AS base
 
 # Install system dependencies (Java for PySpark, and runtime basics)
 RUN apt-get update \
@@ -15,11 +15,14 @@ ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
 
 WORKDIR /app
 
-# Install Python dependencies first (better layer caching)
+FROM base AS deps
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+FROM base AS runtime
+RUN useradd -ms /bin/bash appuser
+USER appuser
+COPY --from=deps /usr/local /usr/local
 COPY . /app
 
 # Environment defaults (can be overridden by compose)
@@ -31,5 +34,5 @@ ENV HOST=0.0.0.0 \
 
 EXPOSE 8000
 
-# Run the server
-CMD ["python", "server.py"]
+# Run the FastAPI server with Uvicorn
+CMD ["sh", "-c", "python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]

@@ -30,7 +30,7 @@ $env:OPENROUTER_PROVISIONING_KEY="sk-or-v1-your-provisioning-key"
 
 ### Bước 2: Restart server
 ```powershell
-python server.py
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 ### Bước 3: Test

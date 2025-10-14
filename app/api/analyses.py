@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Header
 from typing import Optional
 from app.repositories.analyses_repo import AnalysesRepository
+from auth import get_user_by_token
 
 router = APIRouter(prefix="/api", tags=["analyses"])
 
@@ -10,9 +11,16 @@ router = APIRouter(prefix="/api", tags=["analyses"])
 
 @router.get("/analyses")
 def list_analyses(Authorization: Optional[str] = Header(default=None)):
-    # In the legacy server, token is resolved to user; here we fallback to returning last 20 analyses
-    repo = AnalysesRepository()
-    items = repo.list_by_user(user_id=None, limit=20, offset=0)
+    # If a token is provided, attempt to resolve it to a user and return their analyses.
+    # Otherwise, fallback to the last 20 analyses overall.
+    analyses_repo = AnalysesRepository()
+    items = []
+    if Authorization:
+        user = get_user_by_token(Authorization)
+        if user and user.get("_id"):
+            items = analyses_repo.list_by_user(user_id=str(user["_id"]), limit=20, offset=0)
+    if not items:
+        items = analyses_repo.list_by_user(user_id=None, limit=20, offset=0)
     # Keep ISO formatting for created_at if it's a datetime
     for i in items:
         if hasattr(i.get("created_at"), "isoformat"):

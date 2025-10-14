@@ -1,9 +1,10 @@
 # auth.py
 import os, hashlib, secrets, time
 import pytz
-from db import users_col, sessions_col
+from db import sessions_col
 from datetime import datetime, timedelta
 import bcrypt
+from app.repositories.users_repo import UsersRepository
 
 SESSION_TTL_SECONDS = int(os.environ.get("SESSION_TTL", 3600*24))  # 24h
 
@@ -23,15 +24,21 @@ def verify_password(password, hash_):
             return False
 
 def create_user(username, email, password):
-    if users_col().find_one({"username": username}):
+    # Use repository for user existence and upsert
+    repo = UsersRepository()
+    existing = repo.find_by_username(username)
+    if existing:
         raise ValueError("username exists")
-    return users_col().insert_one({
+    user_doc = {
         "username": username,
         "email": email,
         "password_hash": hash_password(password),
         "role": "user",
-        "created_at": datetime.now(pytz.UTC)
-    }).inserted_id
+        "created_at": datetime.now(pytz.UTC),
+    }
+    uid = repo.upsert_user(user_doc)
+    # upsert_user returns string id; maintain previous return type compatibility
+    return uid
 
 def create_session(user_id):
     token = secrets.token_hex(32)
@@ -46,7 +53,7 @@ def create_session(user_id):
 
 def login_user(username, password):
     """Login user with username and password"""
-    user = users_col().find_one({"username": username})
+    user = UsersRepository().find_by_username(username)
     if not user:
         return None, "User not found"
     
@@ -54,11 +61,12 @@ def login_user(username, password):
         return None, "Invalid password"
     
     # Create session
-    token = create_session(user["_id"])
+    token = create_session(user["_id"]) 
     return {"user": user, "token": token}, "Login successful"
 
 def get_user_by_token(token):
     s = sessions_col().find_one({"token": token, "expires_at": {"$gt": datetime.now(pytz.UTC)}})
     if not s:
         return None
-    return users_col().find_one({"_id": s["user_id"]})
+    # Fetch via repository for consistency
+    return UsersRepository().get_by_id(str(s["user_id"]))

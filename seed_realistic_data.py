@@ -28,7 +28,7 @@ from typing import List, Optional
 
 from bson import ObjectId
 
-from db import users_col, products_col
+from db import users_col, products_col, sessions_col
 from ingest import ingest_event
 from auth import create_user
 
@@ -58,7 +58,13 @@ def ensure_users(target_username: Optional[str], count: int) -> List[ObjectId]:
             email = f"{target_username}@example.com"
             pw = f"{target_username}123"
             uid = create_user(target_username, email, pw)
-            u = users_col().find_one({"_id": uid})
+            try:
+                # Normalize to ObjectId and ensure role is 'user'
+                from bson import ObjectId as _OID
+                users_col().update_one({"_id": _OID(uid)}, {"$set": {"role": "user"}})
+                u = users_col().find_one({"_id": _OID(uid)})
+            except Exception:
+                u = users_col().find_one({"username": target_username})
         ids.append(u["_id"])  # type: ignore[index]
         return ids
 
@@ -71,7 +77,9 @@ def ensure_users(target_username: Optional[str], count: int) -> List[ObjectId]:
         idx += 1
         try:
             uid = create_user(uname, f"{uname}@example.com", f"{uname}123")
-            pool.append(uid)
+            from bson import ObjectId as _OID
+            users_col().update_one({"_id": _OID(uid)}, {"$set": {"role": "user"}})
+            pool.append(_OID(uid))
         except Exception:
             u = users_col().find_one({"username": uname})
             if u:
@@ -106,13 +114,42 @@ def realistic_product(products):
     return random.choices(products, weights=weights, k=1)[0]
 
 
+def ensure_browsing_session(session_id: str, user_id: ObjectId, start_ts: int, client_id: Optional[str] = None):
+    """Upsert a browsing session document using _id == session_id to mirror runtime behavior.
+    This keeps session metadata in sync with login-created sessions.
+    """
+    try:
+        ts = datetime.fromtimestamp(start_ts, tz=pytz.UTC)
+        sessions_col().update_one(
+            {"_id": session_id},
+            {
+                "$setOnInsert": {
+                    "_id": session_id,
+                    "session_id": session_id,
+                    "user_id": user_id,
+                    "client_id": client_id,
+                    "created_at": ts,
+                    "first_event_at": ts,
+                    "pages": [],
+                },
+                "$max": {"last_event_at": ts},
+                "$min": {"first_event_at": ts},
+                "$inc": {"event_count": 0},
+            },
+            upsert=True,
+        )
+    except Exception:
+        pass
+
+
 def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int, products: list[dict]):
     """Generate a realistic session with plausible navigation and conversion behavior."""
     sid = f"session_{str(user_id)[-6:]}_{start_ts}"
     current_ts = start_ts
 
     # First event: home
-    emit_event(user_id, sid, current_ts, "/home", "pageview", {"referrer": random.choice(["direct","email","social","ads"])})
+    ensure_browsing_session(sid, user_id, current_ts)
+    emit_event(user_id, sid, current_ts, "/home", "pageview", {"referrer": random.choice(["direct","email","social","ads"])} )
 
     viewed_product_ids: list[str] = []
     cart = []
@@ -190,7 +227,7 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                 emit_event(user_id, sid, current_ts, random.choice(["/home","/category","/search"]), "pageview")
 
 
-def seed_for_users(user_ids: List[ObjectId], days: int, sessions_per_user: int, avg_events: int, seed_products_first: bool):
+def seed_event_for_users(user_ids: List[ObjectId], days: int, sessions_per_user: int, avg_events: int, seed_products_first: bool):
     product_count = ensure_products(seed_products_first)
     if product_count == 0:
         print("No products found. Please seed products first.")
@@ -220,6 +257,37 @@ def seed_for_users(user_ids: List[ObjectId], days: int, sessions_per_user: int, 
                 total_est += persona["avg_events"]
     return total_est
 
+def seed_session_for_user(user_id: ObjectId, start_ts: int, client_id: Optional[str] = None) -> str:
+    """Create a browsing session (no events) consistent with runtime behavior.
+    - Primary key: sessions._id == session_id
+    - Foreign key: events.session_id references this id (when events are later emitted)
+    Returns the created or existing session_id.
+    """
+    sid = f"session_{str(user_id)[-6:]}_{start_ts}"
+    ensure_browsing_session(sid, user_id, start_ts, client_id)
+    return sid
+
+
+def seed_sessions_for_users(user_ids: List[ObjectId], days: int, sessions_per_user: int) -> int:
+    """Create session documents (no events) for a set of users across a time window.
+    Mirrors the timing pattern used by event seeding.
+    Returns the number of sessions created/upserted.
+    """
+    now = datetime.now(pytz.UTC)
+    created = 0
+    for uid in user_ids:
+        for d in range(days):
+            base_day = now - timedelta(days=d)
+            for s in range(sessions_per_user):
+                hour = random.choice([8,9,10,11,13,14,15,19,20,21])
+                minute = random.randint(0,59)
+                second = random.randint(0,59)
+                dt = base_day.replace(hour=hour, minute=minute, second=second, microsecond=0)
+                start_ts = int(dt.timestamp())
+                seed_session_for_user(uid, start_ts)
+                created += 1
+    return created
+
 
 def main():
     parser = argparse.ArgumentParser(description="Seed realistic customer-like data")
@@ -238,9 +306,10 @@ def main():
         user_ids = ensure_users(None, args.user_count)
 
     print(f"Seeding realistic data for {len(user_ids)} users...")
-    est = seed_for_users(user_ids, args.days, args.sessions_per_user, args.avg_events, args.seed_products)
+    est = seed_event_for_users(user_ids, args.days, args.sessions_per_user, args.avg_events, args.seed_products)
+    sessions_created = seed_sessions_for_users(user_ids, args.days, args.sessions_per_user)
     print(f"✅ Estimated events inserted: ~{est}")
-
+    print(f"✅ Sessions upserted: {sessions_created}")
 
 if __name__ == "__main__":
     main()

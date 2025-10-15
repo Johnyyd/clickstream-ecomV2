@@ -14,7 +14,9 @@ def ensure_indexes():
     db.products.create_index([("price", ASCENDING)], name="price")
     # Analyses
     db.analyses.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)], name="user_created")
-    # Sessions
+    # Sessions (auth tokens and browsing sessions share this collection)
     db.sessions.create_index([("token", ASCENDING), ("expires_at", DESCENDING)], name="token_expiry")
+    db.sessions.create_index([("last_event_at", DESCENDING)], name="session_last_event")
+    db.sessions.create_index([("created_at", ASCENDING)], name="session_created")
     # API Keys
     db.api_keys.create_index([("user_id", ASCENDING), ("provider", ASCENDING)], unique=True, name="user_provider")

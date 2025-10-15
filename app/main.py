@@ -45,7 +45,7 @@ def _on_startup():
 def root():
     # Serve storefront home by default
     static_dir = Path(__file__).resolve().parent.parent / "static"
-    index_path = static_dir / "home.html"
+    index_path = static_dir / "auth.html"
     if index_path.exists():
         return FileResponse(str(index_path), media_type="text/html")
     return JSONResponse({"message": "Clickstream-ecomV2 FastAPI is running"})
@@ -64,6 +64,7 @@ _pretty_routes = {
     "/cart": "cart.html",
     "/checkout": "checkout.html",
     "/dashboard": "index.html",
+    "/auth": "auth.html",
 }
 
 def _serve_static_file(filename: str):

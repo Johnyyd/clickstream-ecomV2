@@ -7,15 +7,15 @@ def setup_test_user():
     # Create test user
     user = {
         "_id": ObjectId(),
-        "username": "alice",
-        "email": "alice@example.com",
-        "password_hash": hash_password("alice123"),
-        "role": "user",
+        "username": "admin",
+        "email": "admin@example.com",
+        "password_hash": hash_password("admin123"),
+        "role": "admin",
         "created_at": datetime.now(pytz.UTC)
     }
     
     # Check if user exists
-    existing = users_col().find_one({"username": "alice"})
+    existing = users_col().find_one({"username": "admin"})
     if existing:
         print("Test user already exists")
         return existing
@@ -40,6 +40,6 @@ if __name__ == "__main__":
     print("\n=== Setting up test data ===")
     user = setup_test_user()
     print("\nTest user credentials:")
-    print("Username: alice")
-    print("Password: alice123")
+    print("Username: admin")
+    print("Password: admin123")
     print("\nYou can now login with these credentials on the dashboard.")

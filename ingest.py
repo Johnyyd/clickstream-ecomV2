@@ -84,12 +84,13 @@ def ingest_event(event_json):
     except Exception:
         pass
 
-    # Upsert session document so sessions are persisted in DB
+    # Upsert browsing session document using _id == session_id (primary key)
     try:
         sessions_col().update_one(
-            {"session_id": doc["session_id"]},
+            {"_id": doc["session_id"]},
             {
                 "$setOnInsert": {
+                    "_id": doc["session_id"],
                     "session_id": doc["session_id"],
                     "user_id": user_id,
                     "client_id": doc.get("client_id"),
@@ -100,8 +101,7 @@ def ingest_event(event_json):
                 "$max": {"last_event_at": ts},
                 "$min": {"first_event_at": ts},
                 "$inc": {"event_count": 1},
-                # For a lightweight trace of pages (optional, capped by client)
-                # We avoid $addToSet here to keep cost low; can be enabled if needed.
+                "$addToSet": {"pages": doc.get("page")},
             },
             upsert=True,
         )

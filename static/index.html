@@ -7,6 +7,22 @@
     <title>Clickstream Dashboard</title>
     <link rel="stylesheet" href="/static/styles.css">
     <link rel="stylesheet" href="/static/llmDisplay.css">
+    <script>
+        (async function(){
+          try {
+            const token = localStorage.getItem('token');
+            if (!token) { window.location.replace('/auth'); return; }
+            const resp = await fetch('/api/me', { headers: { 'Authorization': token }});
+            if (!resp.ok) { window.location.replace('/auth'); return; }
+            const me = await resp.json();
+            if ((me.role || 'user') !== 'admin') {
+              window.location.replace('/home');
+            }
+          } catch (e) {
+            window.location.replace('/auth');
+          }
+        })();
+    </script>
 </head>
 
 <body>

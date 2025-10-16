@@ -114,13 +114,13 @@ def realistic_product(products):
     return random.choices(products, weights=weights, k=1)[0]
 
 
-def ensure_browsing_session(session_id: str, user_id: ObjectId, start_ts: int, client_id: Optional[str] = None):
+def ensure_browsing_session(session_id: str, user_id: ObjectId, start_ts: int, client_id: Optional[str] = None) -> bool:
     """Upsert a browsing session document using _id == session_id to mirror runtime behavior.
-    This keeps session metadata in sync with login-created sessions.
+    Returns True if the upsert was acknowledged, False otherwise.
     """
     try:
         ts = datetime.fromtimestamp(start_ts, tz=pytz.UTC)
-        sessions_col().update_one(
+        res = sessions_col().update_one(
             {"_id": session_id},
             {
                 "$setOnInsert": {
@@ -129,7 +129,6 @@ def ensure_browsing_session(session_id: str, user_id: ObjectId, start_ts: int, c
                     "user_id": user_id,
                     "client_id": client_id,
                     "created_at": ts,
-                    "first_event_at": ts,
                     "pages": [],
                 },
                 "$max": {"last_event_at": ts},
@@ -138,8 +137,10 @@ def ensure_browsing_session(session_id: str, user_id: ObjectId, start_ts: int, c
             },
             upsert=True,
         )
-    except Exception:
-        pass
+        return bool(res.acknowledged)
+    except Exception as e:
+        print(f"[seed] ensure_browsing_session error for {session_id}: {e}")
+        return False
 
 
 def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int, products: list[dict]):
@@ -284,8 +285,13 @@ def seed_sessions_for_users(user_ids: List[ObjectId], days: int, sessions_per_us
                 second = random.randint(0,59)
                 dt = base_day.replace(hour=hour, minute=minute, second=second, microsecond=0)
                 start_ts = int(dt.timestamp())
-                seed_session_for_user(uid, start_ts)
-                created += 1
+                sid = seed_session_for_user(uid, start_ts)
+                # Verify existence immediately to count accurately
+                try:
+                    if sessions_col().find_one({"_id": sid}):
+                        created += 1
+                except Exception as e:
+                    print(f"[seed] verification error for {sid}: {e}")
     return created
 
 

@@ -90,12 +90,10 @@ def ingest_event(event_json):
             {"_id": doc["session_id"]},
             {
                 "$setOnInsert": {
-                    "_id": doc["session_id"],
                     "session_id": doc["session_id"],
                     "user_id": user_id,
                     "client_id": doc.get("client_id"),
                     "created_at": ts,
-                    "first_event_at": ts,
                     "pages": [],
                 },
                 "$max": {"last_event_at": ts},

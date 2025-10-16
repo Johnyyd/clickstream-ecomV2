@@ -29,7 +29,7 @@ def login(body: LoginBody):
     result, msg = login_user(body.username, body.password)
     if not result:
         return {"error": msg}
-    # Create a browsing session tied to this login (primary key _id == session_id)
+    # Create a browsing session tied to this login (ObjectId _id, unique string session_id)
     try:
         from datetime import datetime
         import pytz, time
@@ -37,22 +37,22 @@ def login(body: LoginBody):
         uid = str(user["_id"]) if isinstance(user.get("_id"), (str,)) else str(user.get("_id"))
         session_id = f"session_{uid[-6:]}_{int(time.time())}"
         now = datetime.now(pytz.UTC)
-        sessions_col().update_one(
-            {"_id": session_id},
+        from pymongo import ReturnDocument
+        sessions_col().find_one_and_update(
+            {"session_id": session_id},
             {
                 "$setOnInsert": {
-                    "_id": session_id,
                     "session_id": session_id,
                     "user_id": user.get("_id"),
                     "client_id": None,
                     "created_at": now,
-                    "first_event_at": now,
                     "pages": [],
+                    "event_count": 0,
                 },
                 "$max": {"last_event_at": now},
-                "$inc": {"event_count": 0},
             },
             upsert=True,
+            return_document=ReturnDocument.AFTER,
         )
     except Exception:
         session_id = None

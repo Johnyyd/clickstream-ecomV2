@@ -10,6 +10,7 @@ from pyspark.sql.types import (
     MapType, DataType, IntegerType
 )
 import os
+import sys
 from db import events_col
 from datetime import datetime
 import pytz
@@ -37,9 +38,12 @@ def create_spark(app_name="clickstream-analysis", reuse=True):
         # Force garbage collection before creating session
         gc.collect()
 
+        # Resolve Python executable (prefer PYSPARK_PYTHON, else current interpreter)
+        py_exec = os.environ.get("PYSPARK_PYTHON") or sys.executable
+
         spark = SparkSession.builder \
             .appName(app_name) \
-            .master("local[*]") \
+            .master("local[1]") \
             .config("spark.sql.execution.pyspark.udf.faulthandler.enabled", "true") \
             .config("spark.python.worker.faulthandler.enabled", "true") \
             .config("spark.driver.memory", "2g") \
@@ -52,6 +56,19 @@ def create_spark(app_name="clickstream-analysis", reuse=True):
             .config("spark.memory.storageFraction", "0.3") \
             .config("spark.executor.heartbeatInterval", "60s") \
             .config("spark.network.timeout", "1200s") \
+            # Bind explicitly to localhost to avoid Hyper-V/WSL interfaces on Windows
+            .config("spark.driver.bindAddress", "127.0.0.1") \
+            .config("spark.driver.host", "127.0.0.1") \
+            .config("spark.ui.enabled", "false") \
+            # Ensure the same Python is used for driver and workers
+            .config("spark.pyspark.driver.python", py_exec) \
+            .config("spark.pyspark.python", py_exec) \
+            .config("spark.executorEnv.PYSPARK_PYTHON", py_exec) \
+            # Socket/daemon stability on Windows
+            .config("spark.python.use.daemon", "false") \
+            .config("spark.python.worker.reuse", "true") \
+            # Temp dirs (avoid long UNC paths)
+            .config("spark.local.dir", os.environ.get("SPARK_LOCAL_DIRS", os.path.join(os.getcwd(), "tmp_spark"))) \
             .getOrCreate()
 
         # Set log level

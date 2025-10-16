@@ -264,7 +264,8 @@ const Shop = (() => {
       moreBtn.onclick = () => { state.category.offset += limit; loadCategoryFromQuery(); };
     }
     if (info) info.textContent = `${offset + items.length}/${total}`;
-    track('/category', 'pageview', { category });
+    const pagePath = `/category?category=${encodeURIComponent(category)}`;
+    track(pagePath, 'pageview', { category });
   }
 
   function initSearchPage() {
@@ -318,6 +319,16 @@ const Shop = (() => {
           p = await res.json();
         }
       } catch {}
+    } else if (location.pathname.startsWith('/product/')) {
+      const pid = location.pathname.split('/product/')[1];
+      if (pid) {
+        try {
+          const res = await fetch(`/api/product/${encodeURIComponent(pid)}`);
+          if (res.ok) {
+            p = await res.json();
+          }
+        } catch {}
+      }
     }
     if (!p) {
       const id = usp.get('id');
@@ -343,6 +354,11 @@ const Shop = (() => {
       <h2>Related products</h2>
       <div id="relatedGrid" class="grid"></div>
     `;
+    // Track product pageview with product id in the page path
+    try {
+      const pagePath = `/product/${encodeURIComponent(p._id)}`;
+      track(pagePath, 'pageview', { product_id: p._id, product_name: p.name, product_category: p.category, product_price: p.price });
+    } catch {}
     document.getElementById('addToCart').addEventListener('click', () => {
       addToCart({ product_id: p._id, name: p.name, price: p.price, image_url: p.image_url, quantity: 1 });
       track('/cart', 'add_to_cart', { product_id: p._id, product_name: p.name, product_price: p.price });
@@ -468,6 +484,30 @@ const Shop = (() => {
       else if (href.startsWith('/cart') && path.startsWith('/cart')) a.classList.add('active');
       else if (href.startsWith('/checkout') && path.startsWith('/checkout')) a.classList.add('active');
     });
+
+    // Inject Logout button when logged in
+    try {
+      const token = localStorage.getItem('token');
+      const nav = document.querySelector('.site-header nav');
+      if (token && nav && !nav.querySelector('#logoutBtn')) {
+        const sep = document.createTextNode(' ');
+        const btn = document.createElement('a');
+        btn.id = 'logoutBtn';
+        btn.href = '#';
+        btn.textContent = 'Logout';
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          try {
+            track('/auth', 'logout');
+          } catch {}
+          try { localStorage.removeItem('token'); } catch {}
+          try { sessionStorage.removeItem('ecomv2_session_id'); } catch {}
+          setTimeout(() => { window.location.replace('/auth'); }, 50);
+        });
+        nav.appendChild(sep);
+        nav.appendChild(btn);
+      }
+    } catch {}
   }
 
   return {

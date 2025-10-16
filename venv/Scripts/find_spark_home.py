@@ -1,4 +1,4 @@
-#!C:\LUUDULIEU\CODE\Spark\projects\clickstream-ecomV2\venv\Scripts\python.exe
+#!C:\LUUDULIEU\CODE\github\clickstream-ecomV2\venv\Scripts\python.exe
 
 #
 # Licensed to the Apache Software Foundation (ASF) under one or more

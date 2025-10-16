@@ -19,6 +19,11 @@ def ensure_indexes():
     db.sessions.create_index([("token", ASCENDING), ("expires_at", DESCENDING)], name="token_expiry")
     db.sessions.create_index([("last_event_at", DESCENDING)], name="session_last_event")
     db.sessions.create_index([("created_at", ASCENDING)], name="session_created")
-    db.sessions.create_index([("session_id", ASCENDING)], unique=True, name="session_id_unique")
+    # Make session_id unique ONLY when it exists, so auth token docs without session_id don't collide
+    try:
+        db.sessions.drop_index("session_id_unique")
+    except Exception:
+        pass
+    db.sessions.create_index([("session_id", ASCENDING)], unique=True, name="session_id_unique", partialFilterExpression={"session_id": {"$exists": True}})
     # API Keys
     db.api_keys.create_index([("user_id", ASCENDING), ("provider", ASCENDING)], unique=True, name="user_provider")

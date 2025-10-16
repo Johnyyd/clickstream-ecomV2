@@ -83,6 +83,16 @@ def _serve_static_file(filename: str):
 for route, fname in _pretty_routes.items():
     app.add_api_route(route, lambda f=fname: _serve_static_file(f), methods=["GET"])  # type: ignore
 
+# Support dynamic product path /product/<id> by serving product.html
+@app.get("/product/{pid}")
+def _product_dynamic(pid: str):  # noqa: ARG001
+    return _serve_static_file("product.html")
+
+# Support pretty slug path /p/<slug> by serving product.html
+@app.get("/p/{slug}")
+def _product_slug(slug: str):  # noqa: ARG001
+    return _serve_static_file("product.html")
+
 # Routers
 app.include_router(events_api.router)
 app.include_router(analyses_api.router)

@@ -5,6 +5,7 @@ import uuid
 import time
 import pytz
 import os
+from pymongo import ReturnDocument
 
 _KAFKA_BROKERS = os.getenv("KAFKA_BROKERS")
 _KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "clickstream.events")
@@ -64,6 +65,31 @@ def ingest_event(event_json):
         "user_id": user_id,  # Keep as-is (ObjectId or string)
         "session_id": session_id or str(uuid.uuid4())
     }
+    # Upsert/find the browsing session by its string session_id, let Mongo assign ObjectId _id
+    try:
+        session_doc = sessions_col().find_one_and_update(
+            {"session_id": doc["session_id"]},
+            {
+                "$setOnInsert": {
+                    "session_id": doc["session_id"],
+                    "user_id": user_id,
+                    "created_at": ts,
+                    "pages": [],
+                },
+                "$set": {"client_id": doc.get("client_id")},
+                "$max": {"last_event_at": ts},
+                "$min": {"first_event_at": ts},
+                "$inc": {"event_count": 1},
+                "$addToSet": {"pages": doc.get("page")},
+            },
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        if session_doc and session_doc.get("_id") is not None:
+            doc["session_oid"] = session_doc["_id"]
+    except Exception:
+        pass
+
     res = events_col().insert_one(doc)
 
     # Optional forward to Kafka (best-effort, non-blocking)
@@ -84,27 +110,6 @@ def ingest_event(event_json):
     except Exception:
         pass
 
-    # Upsert browsing session document using _id == session_id (primary key)
-    try:
-        sessions_col().update_one(
-            {"_id": doc["session_id"]},
-            {
-                "$setOnInsert": {
-                    "session_id": doc["session_id"],
-                    "user_id": user_id,
-                    "client_id": doc.get("client_id"),
-                    "created_at": ts,
-                    "pages": [],
-                },
-                "$max": {"last_event_at": ts},
-                "$min": {"first_event_at": ts},
-                "$inc": {"event_count": 1},
-                "$addToSet": {"pages": doc.get("page")},
-            },
-            upsert=True,
-        )
-    except Exception:
-        # Do not block ingestion if session upsert fails
-        pass
+    # Session upsert already handled above
 
     return res.inserted_id

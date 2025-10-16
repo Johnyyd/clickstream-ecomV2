@@ -87,9 +87,10 @@ def ensure_users(target_username: Optional[str], count: int) -> List[ObjectId]:
     return pool[:count]
 
 
-def emit_event(user_id, session_id, ts, page, event_type, props=None):
+def emit_event(user_id, session_id, ts, page, event_type, props=None, client_id: Optional[str]=None):
     ev = {
         "user_id": user_id,  # keep as ObjectId
+        "client_id": client_id or "",
         "session_id": session_id,
         "timestamp": int(ts),  # epoch seconds as ingest_event supports
         "page": page,
@@ -147,10 +148,12 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
     """Generate a realistic session with plausible navigation and conversion behavior."""
     sid = f"session_{str(user_id)[-6:]}_{start_ts}"
     current_ts = start_ts
+    # Deterministic client id per user (stable across sessions); adjust if you want per-session IDs
+    client_id = f"client_{str(user_id)[-6:]}"
 
     # First event: home
-    ensure_browsing_session(sid, user_id, current_ts)
-    emit_event(user_id, sid, current_ts, "/home", "pageview", {"referrer": random.choice(["direct","email","social","ads"])} )
+    ensure_browsing_session(sid, user_id, current_ts, client_id)
+    emit_event(user_id, sid, current_ts, "/home", "pageview", {"referrer": random.choice(["direct","email","social","ads"]) }, client_id)
 
     viewed_product_ids: list[str] = []
     cart = []
@@ -166,10 +169,10 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
         if r < 0.35:  # category/search discoverability
             if random.random() < 0.55:
                 category = random.choice([p.get("category") for p in products])
-                emit_event(user_id, sid, current_ts, "/category", "pageview", {"category": category})
+                emit_event(user_id, sid, current_ts, "/category", "pageview", {"category": category}, client_id)
             else:
                 term = random.choice(["laptop","phone","coffee","shoes","shirt","pizza","sushi"]) 
-                emit_event(user_id, sid, current_ts, "/search", "search", {"search_term": term})
+                emit_event(user_id, sid, current_ts, "/search", "search", {"search_term": term}, client_id)
         elif r < 0.70:  # view product
             p = realistic_product(products)
             viewed_product_ids.append(str(p["_id"]))
@@ -185,6 +188,7 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                     "product_category": p["category"],
                     "product_price": p["price"],
                 },
+                client_id,
             )
         elif r < 0.88:  # add to cart
             if viewed_product_ids:
@@ -204,9 +208,10 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                             "product_price": p["price"],
                             "quantity": 1,
                         },
+                        client_id,
                     )
             else:
-                emit_event(user_id, sid, current_ts, "/home", "pageview")
+                emit_event(user_id, sid, current_ts, "/home", "pageview", None, client_id)
         else:  # checkout / purchase
             if cart and random.random() < 0.65:
                 total = sum(item["price"] for item in cart)
@@ -222,10 +227,11 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                         "payment_method": random.choice(["credit_card","paypal","apple_pay"]),
                         "order_id": f"order_{random.randint(1000,9999)}",
                     },
+                    client_id,
                 )
                 cart.clear()
             else:
-                emit_event(user_id, sid, current_ts, random.choice(["/home","/category","/search"]), "pageview")
+                emit_event(user_id, sid, current_ts, random.choice(["/home","/category","/search"]), "pageview", None, client_id)
 
 
 def seed_event_for_users(user_ids: List[ObjectId], days: int, sessions_per_user: int, avg_events: int, seed_products_first: bool):

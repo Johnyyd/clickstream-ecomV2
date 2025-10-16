@@ -5,6 +5,7 @@ def ensure_indexes():
     db = get_db()
     # Events
     db.events.create_index([("session_id", ASCENDING), ("timestamp", ASCENDING)], name="session_ts")
+    db.events.create_index([("session_oid", ASCENDING), ("timestamp", ASCENDING)], name="session_oid_ts")
     db.events.create_index([("event_type", ASCENDING)], name="event_type")
     db.events.create_index([("page", ASCENDING)], name="page")
     db.events.create_index([("user_id", ASCENDING)], name="user_id")
@@ -18,5 +19,6 @@ def ensure_indexes():
     db.sessions.create_index([("token", ASCENDING), ("expires_at", DESCENDING)], name="token_expiry")
     db.sessions.create_index([("last_event_at", DESCENDING)], name="session_last_event")
     db.sessions.create_index([("created_at", ASCENDING)], name="session_created")
+    db.sessions.create_index([("session_id", ASCENDING)], unique=True, name="session_id_unique")
     # API Keys
     db.api_keys.create_index([("user_id", ASCENDING), ("provider", ASCENDING)], unique=True, name="user_provider")

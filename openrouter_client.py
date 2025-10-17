@@ -92,18 +92,14 @@ def _safe_json_parse(text: str):
                 pass
         return None
 
-
-def call_openrouter(api_key: str, prompt: str, model: str = "deepseek/deepseek-chat-v3-0324:free", max_tokens: int = 900, temperature: float = 0.0, retries: int = 2, timeout: int = 45):
+def call_openrouter(api_key: str, prompt: str, model: str = "deepseek/deepseek-chat-v3-0324:free", max_tokens: int = 900, temperature: float = 0.0, retries: int = 5, timeout: int = 45):
     """
-    Call OpenRouter to transform analysis metrics into structured, actionable JSON.
-
-    Returns a dict with keys:
-    - status: "ok" | "error"
-    - parsed: dict | None  (structured insights if parsing succeeded)
-    - raw: dict | None     (raw provider JSON)
-    - error: str | None
+    Gửi yêu cầu đến OpenRouter API kèm cơ chế retry thông minh khi bị rate-limit (429)
+    hoặc lỗi mạng tạm thời. Trả về dict gồm parsed JSON hoặc lỗi chi tiết.
     """
-    # Allow the model to be overridden by environment variable
+    import time
+    import random
+
     env_model = os.environ.get("OPENROUTER_MODEL")
     if env_model:
         model = env_model
@@ -111,7 +107,6 @@ def call_openrouter(api_key: str, prompt: str, model: str = "deepseek/deepseek-c
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        # Recommended headers per OpenRouter docs (optional but helpful)
         "HTTP-Referer": os.environ.get("OPENROUTER_HTTP_REFERER", "http://localhost:8000/dashboard"),
         "X-Title": os.environ.get("OPENROUTER_APP_TITLE", "Clickstream Ecom Dashboard"),
     }
@@ -121,52 +116,43 @@ def call_openrouter(api_key: str, prompt: str, model: str = "deepseek/deepseek-c
         "messages": _build_messages(prompt),
         "max_tokens": max_tokens,
         "temperature": temperature,
-        # Hint models to return strict JSON if supported by the provider
         "response_format": {"type": "json_object"},
     }
 
-    last_err = None
-    # Build list of endpoints to try (env first, then defaults), de-duplicated
     endpoints_raw = ([OPENROUTER_ENV_ENDPOINT] if OPENROUTER_ENV_ENDPOINT else []) + OPENROUTER_DEFAULT_ENDPOINTS
-    seen = set()
-    endpoints = []
-    for ep in endpoints_raw:
-        if ep and ep not in seen:
-            endpoints.append(ep)
-            seen.add(ep)
+    endpoints = list(dict.fromkeys([ep for ep in endpoints_raw if ep]))  # remove duplicates
 
     for endpoint in endpoints:
-        for attempt in range(retries + 1):
+        for attempt in range(1, retries + 1):
             try:
-                # Diagnostic logging for troubleshooting endpoint/model issues
-                try:
-                    print(f"[OpenRouter] Endpoint={endpoint} Model={model} MaxTokens={max_tokens} Temp={temperature}")
-                except Exception:
-                    pass
+                print(f"[OpenRouter] Endpoint={endpoint} Model={model} Attempt={attempt}/{retries}")
                 resp = requests.post(endpoint, headers=headers, data=json.dumps(payload), timeout=timeout)
+
+                # === Retry thông minh khi gặp rate-limit (429) ===
+                if resp.status_code == 429:
+                    wait_time = 5 * attempt + random.uniform(0, 2)
+                    print(f"⚠️ Rate limit hit (429). Waiting {wait_time:.1f}s before retry...")
+                    time.sleep(wait_time)
+                    continue
+
                 resp.raise_for_status()
                 raw = resp.json()
 
-                # Try to extract content and finish reason
+                # Parse nội dung phản hồi
                 content = None
                 finish_reason = None
-                try:
-                    choice0 = raw.get("choices", [None])[0]
-                    if choice0 and isinstance(choice0, dict):
-                        # new structured responses
-                        msg = choice0.get("message") or {}
-                        content = msg.get("content")
-                        finish_reason = choice0.get("finish_reason")
-                except Exception:
-                    pass
+                choice0 = raw.get("choices", [None])[0]
+                if choice0 and isinstance(choice0, dict):
+                    msg = choice0.get("message") or {}
+                    content = msg.get("content")
+                    finish_reason = choice0.get("finish_reason")
 
-                if content is None:
-                    # Some providers may return different structure; fallback to entire raw
+                if not content:
                     content = json.dumps(raw)
 
                 parsed = _safe_json_parse(content)
                 truncated = (finish_reason == "length")
-                # Return finish_reason and a truncated flag so callers/UI can react
+
                 return {
                     "status": "ok",
                     "parsed": parsed,
@@ -176,10 +162,13 @@ def call_openrouter(api_key: str, prompt: str, model: str = "deepseek/deepseek-c
                     "finish_reason": finish_reason,
                     "truncated": truncated,
                 }
+
+            except requests.exceptions.RequestException as e:
+                wait_time = 3 * attempt
+                print(f"⚠️ Network error on attempt {attempt}/{retries}: {e}. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+                continue
             except Exception as e:
-                last_err = f"endpoint={endpoint} error={e}"
-                if attempt < retries:
-                    continue
-                # move on to next endpoint after exhausting retries
-                break
-    return {"status": "error", "parsed": None, "raw": None, "error": last_err}
+                return {"status": "error", "parsed": None, "raw": None, "error": str(e)}
+
+    return {"status": "error", "parsed": None, "raw": None, "error": f"Failed after {retries} retries"}

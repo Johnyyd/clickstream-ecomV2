@@ -11,6 +11,21 @@ from pyspark.sql.types import (
 )
 import os
 import sys
+import json
+import os
+os.environ["JAVA_HOME"] = r"C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot"
+os.environ["SPARK_HOME"] = r"C:\LUUDULIEU\APP\Spark\Spark\spark-4.0.0"
+os.environ["HADOOP_HOME"] = r"C:\LUUDULIEU\APP\Hadoop\hadoop-3.3.4"
+os.environ["PATH"] = (
+    os.environ["JAVA_HOME"] + r"\bin;" +
+    os.environ["SPARK_HOME"] + r"\bin;" +
+    os.environ["HADOOP_HOME"] + r"\bin;" +
+    os.environ["PATH"]
+)
+os.environ["SPARK_LOCAL_IP"] = "127.0.0.1"
+os.environ["PYSPARK_PYTHON"] = r"C:\LUUDULIEU\CODE\github\clickstream-ecomV2\venv\Scripts\python.exe"
+os.environ["PYSPARK_DRIVER_PYTHON"] = r"C:\LUUDULIEU\CODE\github\clickstream-ecomV2\venv\Scripts\python.exe"
+os.environ["ARROW_PRE_0_15_IPC_FORMAT"] = "1"
 from db import events_col
 from datetime import datetime
 import pytz
@@ -38,41 +53,125 @@ def create_spark(app_name="clickstream-analysis", reuse=True):
         # Force garbage collection before creating session
         gc.collect()
 
-        # Resolve Python executable (prefer PYSPARK_PYTHON, else current interpreter)
-        py_exec = os.environ.get("PYSPARK_PYTHON") or sys.executable
+        conf = None
+        
+        # Resolve Python executable robustly (avoid Windows Store alias)
+        def _resolve_python_exec():
+            try:
+                import shutil
+            except Exception:
+                shutil = None
+            candidates = [
+                os.environ.get("PYSPARK_PYTHON"),
+                getattr(sys, "_base_executable", None),
+                sys.executable,
+                shutil.which("python3") if shutil else None,
+                shutil.which("python") if shutil else None,
+            ]
+            for c in candidates:
+                if not c:
+                    continue
+                # Skip Microsoft Store alias path
+                if "WindowsApps" in str(c):
+                    continue
+                # If c is an absolute path, ensure it exists
+                try:
+                    if os.path.isabs(c) and not os.path.exists(c):
+                        continue
+                except Exception:
+                    pass
+                return c
+            return sys.executable
 
-        spark = SparkSession.builder \
-            .appName(app_name) \
-            .master("local[1]") \
-            .config("spark.sql.execution.pyspark.udf.faulthandler.enabled", "true") \
-            .config("spark.python.worker.faulthandler.enabled", "true") \
-            .config("spark.driver.memory", "2g") \
-            .config("spark.executor.memory", "2g") \
-            .config("spark.driver.maxResultSize", "1g") \
-            .config("spark.python.worker.memory", "1g") \
-            .config("spark.sql.shuffle.partitions", "4") \
-            .config("spark.default.parallelism", "4") \
-            .config("spark.memory.fraction", "0.8") \
-            .config("spark.memory.storageFraction", "0.3") \
-            .config("spark.executor.heartbeatInterval", "60s") \
-            .config("spark.network.timeout", "1200s") \
-            # Bind explicitly to localhost to avoid Hyper-V/WSL interfaces on Windows
-            .config("spark.driver.bindAddress", "127.0.0.1") \
-            .config("spark.driver.host", "127.0.0.1") \
-            .config("spark.ui.enabled", "false") \
-            # Ensure the same Python is used for driver and workers
-            .config("spark.pyspark.driver.python", py_exec) \
-            .config("spark.pyspark.python", py_exec) \
-            .config("spark.executorEnv.PYSPARK_PYTHON", py_exec) \
-            # Socket/daemon stability on Windows
-            .config("spark.python.use.daemon", "false") \
-            .config("spark.python.worker.reuse", "true") \
-            # Temp dirs (avoid long UNC paths)
-            .config("spark.local.dir", os.environ.get("SPARK_LOCAL_DIRS", os.path.join(os.getcwd(), "tmp_spark"))) \
-            .getOrCreate()
+        py_exec = _resolve_python_exec()
 
+        # Ensure PySpark workers use the exact same Python interpreter
+        os.environ["PYSPARK_PYTHON"] = py_exec
+        os.environ["PYSPARK_DRIVER_PYTHON"] = py_exec
+        # Force Spark to use IPv4 localhost
+        os.environ["SPARK_LOCAL_IP"] = "127.0.0.1"
+        os.environ["SPARK_LOCAL_HOSTNAME"] = "localhost"
+
+        print(f"Using Python for Spark: {py_exec}")
+
+        spark = (
+            SparkSession.builder
+                .appName(app_name)
+                .master("local[*]")
+                .config("spark.sql.execution.pyspark.udf.faulthandler.enabled", "true")
+                .config("spark.python.worker.faulthandler.enabled", "true")
+                .config("spark.driver.memory", "6g")
+                .config("spark.executor.memory", "6g")
+                .config("spark.driver.maxResultSize", "1g")
+                .config("spark.python.worker.memory", "1g")
+                .config("spark.sql.shuffle.partitions", "1")
+                .config("spark.default.parallelism", "1")
+                .config("spark.memory.fraction", "0.8")
+                .config("spark.memory.storageFraction", "0.3")
+                .config("spark.executor.heartbeatInterval", "60s")
+                .config("spark.network.timeout", "1200s")
+                # Bind explicitly to localhost to avoid Hyper-V/WSL interfaces on Windows
+                .config("spark.driver.bindAddress", "127.0.0.1")
+                .config("spark.driver.host", "127.0.0.1")
+                .config("spark.local.ip", "127.0.0.1")
+                .config("spark.blockManager.port", "0")
+                .config("spark.port.maxRetries", "50")
+                .config("spark.driver.extraJavaOptions", "-Djava.net.preferIPv4Stack=true")
+                .config("spark.executor.extraJavaOptions", "-Djava.net.preferIPv4Stack=true")
+                .config("spark.python.auth.socketTimeout", "120")
+                .config("spark.ui.enabled", "false")
+                # Ensure the same Python is used for driver and workers
+                .config("spark.pyspark.driver.python", py_exec)
+                .config("spark.pyspark.python", py_exec)
+                .config("spark.executorEnv.PYSPARK_PYTHON", py_exec)
+                # Tắt Hive để tránh gọi constructor lỗi HashMap
+                .config("spark.sql.catalogImplementation", "in-memory")
+                # Tránh auto load session từ context cũ
+                .config("spark.driver.bindAddress", "127.0.0.1")
+                .config("spark.driver.host", "127.0.0.1")
+                
+                .config("spark.executorEnv.PYTHONUNBUFFERED", "1") \
+                .config("spark.python.worker.debug", "true")
+
+                .config("spark.executorEnv.PYTHONPATH", os.environ.get("PYTHONPATH", "")) \
+                .config("spark.executorEnv.PYSPARK_PYTHON", sys.executable) \
+                .config("spark.executorEnv.PYSPARK_DRIVER_PYTHON", sys.executable)
+                .config("spark.sql.execution.arrow.pyspark.enabled", "false")
+
+                .config("spark.python.worker.reuse", "true") \
+                .config("spark.python.use.daemon", "true") \
+                .config("spark.executorEnv.PYSPARK_PYTHON", os.environ["PYSPARK_PYTHON"]) \
+                .config("spark.executorEnv.PYSPARK_DRIVER_PYTHON", os.environ["PYSPARK_DRIVER_PYTHON"])
+
+                # Temp dirs (avoid long UNC paths)
+                .config("spark.local.dir", os.environ.get("SPARK_LOCAL_DIRS", os.path.join(os.getcwd(), "tmp_spark")))
+                # .getOrCreate()
+        )
+        print(f"Spark PYSPARK_PYTHON = {os.environ.get('PYSPARK_PYTHON')}")
+        print(f"Spark PYSPARK_DRIVER_PYTHON = {os.environ.get('PYSPARK_DRIVER_PYTHON')}")
+        # Nếu bạn có danh sách cấu hình dạng list, hãy chuyển thành dict trước:
+        if isinstance(conf, list):
+            conf = dict(conf)
+
+        if isinstance(conf, dict):
+            for k, v in conf.items():
+                spark = spark.config(k, v)
+
+        spark = spark.getOrCreate()
+        
         # Set log level
-        spark.sparkContext.setLogLevel("ERROR")
+        spark.sparkContext.setLogLevel("WARN")
+        return spark
+
+        # Quick sanity checks to detect worker/env issues early
+        try:
+            test_rdd = spark.sparkContext.parallelize([1]).map(lambda x: x + 1).collect()
+            print(f"Spark worker test OK: {test_rdd}")
+            test_df = spark.createDataFrame([{"a": 1}])
+            print(f"Spark DataFrame test OK, count: {test_df.count()}")
+        except Exception as diag_err:
+            print(f"Spark worker/DF diagnostic failed: {diag_err}")
+            # Continue; downstream logic will handle and report gracefully
 
         # Save module-level session so it can be reused by the HTTP server.
         # We intentionally do not mark the session as "owned" here to avoid
@@ -129,9 +228,17 @@ def load_events_as_list(limit=None):
                         try:
                             timestamp = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
                         except ValueError:
-                            timestamp = datetime.now(pytz.UTC)
+                            timestamp = datetime.utcnow()
                 elif not isinstance(timestamp, datetime):
-                    timestamp = datetime.now(pytz.UTC)
+                    timestamp = datetime.utcnow()
+                # Normalize to UTC naive (no tzinfo)
+                try:
+                    if getattr(timestamp, 'tzinfo', None) is not None:
+                        # convert to UTC then drop tzinfo
+                        timestamp = timestamp.astimezone(pytz.UTC).replace(tzinfo=None)
+                except Exception:
+                    # As a safe fallback use current UTC naive
+                    timestamp = datetime.utcnow()
                 
                 # Handle properties conversion
                 properties = d.get("properties", {})
@@ -141,7 +248,8 @@ def load_events_as_list(limit=None):
                         properties = ast.literal_eval(properties)
                     except:
                         properties = {}
-                elif not isinstance(properties, dict):
+                # After parsing, ensure it's a dict; otherwise default to {}
+                if not isinstance(properties, dict):
                     properties = {}
                 
                 # Convert MongoDB document to plain Python dict
@@ -204,6 +312,16 @@ def sessionize_and_counts(limit=None):
                 else:
                     page_base = page.split("?")[0]  # Remove query params
                 
+                # Coerce properties to dict[str, str]
+                props = d.get("properties", {})
+                if isinstance(props, dict):
+                    try:
+                        props = {str(k): str(v) for k, v in props.items()}
+                    except Exception:
+                        props = {}
+                else:
+                    props = {}
+                
                 simplified_docs.append({
                     "session_id": str(d.get("session_id", "") or "unknown"),
                     "user_id": str(d.get("user_id", "") or "unknown"),
@@ -211,7 +329,7 @@ def sessionize_and_counts(limit=None):
                     "page_base": page_base,
                     "event_type": str(d.get("event_type", "pageview") or "pageview"),
                     "timestamp": d.get("timestamp", datetime.now(pytz.UTC)),
-                    "properties": d.get("properties", {})
+                    "properties": props
                 })
             except Exception as e:
                 print(f"Error processing document: {e}")
@@ -267,7 +385,7 @@ def sessionize_and_counts(limit=None):
             return {"total_events": 0, "sessions": 0, "top_pages": [], "funnel_home_to_product": 0}
         
         # Optimize the DataFrame
-        df = df.repartition(4, "session_id")  # Distribute data by session_id
+        df = df.repartition(1, "session_id")  # Use a single partition to minimize Python workers on Windows
         df.cache()  # Cache for multiple operations
         
         # Create a view for SQL queries
@@ -542,3 +660,16 @@ def sessionize_and_counts(limit=None):
             gc.collect()
         except Exception as cleanup_error:
             print(f"Error during cleanup: {cleanup_error}")
+
+# if __name__ == "__main__":
+#     from pyspark.sql import SparkSession
+
+#     spark = SparkSession.builder \
+#         .appName("Clickstream Test") \
+#         .master("local[*]") \
+#         .getOrCreate()
+
+#     data = [(1, "test"), (2, "spark"), (3, "clickstream")]
+#     df = spark.createDataFrame(data, ["id", "value"])
+#     df.show()
+#     spark.stop()

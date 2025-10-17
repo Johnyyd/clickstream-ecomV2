@@ -28,7 +28,7 @@ from typing import List, Optional
 
 from bson import ObjectId
 
-from db import users_col, products_col, sessions_col
+from db import users_col, products_col, sessions_col, carts_col
 from seed_products import slugify
 from ingest import ingest_event
 from auth import create_user
@@ -114,6 +114,29 @@ def realistic_product(products):
             w = 1
         weights.append(w)
     return random.choices(products, weights=weights, k=1)[0]
+
+
+def _update_user_cart(user_id: ObjectId, product_id: ObjectId, delta_qty: int = 1):
+    try:
+        # Increment quantity for the product in user's cart
+        pid = str(product_id)
+        col = carts_col()
+        doc = col.find_one({"user_id": user_id})
+        if not doc:
+            col.insert_one({"user_id": user_id, "items": [{"product_id": pid, "quantity": max(1, int(delta_qty))}]})
+            return
+        items = doc.get("items", [])
+        found = False
+        for it in items:
+            if str(it.get("product_id")) == pid:
+                it["quantity"] = max(1, int(it.get("quantity") or 0) + int(delta_qty))
+                found = True
+                break
+        if not found:
+            items.append({"product_id": pid, "quantity": max(1, int(delta_qty))})
+        col.update_one({"_id": doc["_id"]}, {"$set": {"items": items}})
+    except Exception:
+        pass
 
 
 def ensure_browsing_session(session_id: str, user_id: ObjectId, start_ts: int, client_id: Optional[str] = None) -> bool:
@@ -205,6 +228,7 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                 p = next((pp for pp in products if str(pp["_id"]) == prod_id), None)
                 if p:
                     cart.append(p)
+                    _update_user_cart(user_id, p["_id"], 1)
                     emit_event(
                         user_id,
                         sid,
@@ -238,6 +262,11 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                     },
                     client_id,
                 )
+                # Clear persistent cart for the user upon purchase
+                try:
+                    carts_col().update_one({"user_id": user_id}, {"$set": {"items": []}}, upsert=True)
+                except Exception:
+                    pass
                 cart.clear()
             else:
                 # Navigate to home or a specific category page with query param

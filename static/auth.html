@@ -81,25 +81,7 @@
               sessionStorage.setItem('ecomv2_session_id', j.session_id);
             }
           } catch (e) {}
-          // Sync server cart to localStorage before redirect
-          try {
-            if (role !== 'admin') {
-              const resp2 = await fetch('/api/cart', { headers: { 'Authorization': j.token } });
-              if (resp2.ok) {
-                const data = await resp2.json();
-                const items = Array.isArray(data.items) ? data.items : [];
-                // Persist to the same key used by storefront
-                localStorage.setItem('ecomv2_cart', JSON.stringify(items.map(x => ({
-                  product_id: x.product_id,
-                  name: x.name,
-                  price: x.price,
-                  image_url: x.image_url,
-                  quantity: x.quantity || 1,
-                }))));
-              }
-            }
-          } catch (e) {}
-          setTimeout(() => { window.location.href = role === 'admin' ? '/dashboard' : '/cart'; }, 400);
+          setTimeout(() => { window.location.href = role === 'admin' ? '/dashboard' : '/home'; }, 400);
         } else {
           setStatus('❌ ' + (j.error || 'Login failed'));
         }

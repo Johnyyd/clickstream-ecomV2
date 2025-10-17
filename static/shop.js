@@ -56,26 +56,9 @@ const Shop = (() => {
       return [];
     }
   }
-  function getToken() {
-    try { return localStorage.getItem('token') || ''; } catch { return ''; }
-  }
-  async function syncServerCartFromLocal() {
-    const token = getToken();
-    if (!token) return;
-    try {
-      const items = getCart().map(x => ({ product_id: x.product_id, quantity: x.quantity || 1 }));
-      await fetch('/api/cart', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': token },
-        body: JSON.stringify({ items })
-      });
-    } catch (e) { /* swallow */ }
-  }
   function saveCart(items) {
     localStorage.setItem(CART_KEY, JSON.stringify(items));
     updateCartCount();
-    // Best-effort sync to server if logged in
-    syncServerCartFromLocal();
   }
   function addToCart(item) {
     const items = getCart();
@@ -86,64 +69,10 @@ const Shop = (() => {
       items.push({ ...item, quantity: item.quantity || 1 });
     }
     saveCart(items);
-    // Also call incremental API when logged in
-    try {
-      const token = getToken();
-      if (token) {
-        fetch('/api/cart/add', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': token },
-          body: JSON.stringify({ product_id: item.product_id, quantity: item.quantity || 1 })
-        }).then(async () => {
-          try {
-            const resp = await fetch('/api/cart', { headers: { 'Authorization': token } });
-            if (resp.ok) {
-              const data = await resp.json();
-              const items2 = Array.isArray(data.items) ? data.items : [];
-              localStorage.setItem(CART_KEY, JSON.stringify(items2.map(x => ({
-                product_id: x.product_id,
-                name: x.name,
-                price: x.price,
-                image_url: x.image_url,
-                quantity: x.quantity || 1,
-              }))));
-              updateCartCount();
-            }
-          } catch {}
-        }).catch(() => {});
-      }
-    } catch {}
   }
   function removeFromCart(product_id) {
     const items = getCart().filter(x => x.product_id !== product_id);
     saveCart(items);
-    // Also call incremental API when logged in
-    try {
-      const token = getToken();
-      if (token) {
-        fetch('/api/cart/remove', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': token },
-          body: JSON.stringify({ product_id })
-        }).then(async () => {
-          try {
-            const resp = await fetch('/api/cart', { headers: { 'Authorization': token } });
-            if (resp.ok) {
-              const data = await resp.json();
-              const items2 = Array.isArray(data.items) ? data.items : [];
-              localStorage.setItem(CART_KEY, JSON.stringify(items2.map(x => ({
-                product_id: x.product_id,
-                name: x.name,
-                price: x.price,
-                image_url: x.image_url,
-                quantity: x.quantity || 1,
-              }))));
-              updateCartCount();
-            }
-          } catch {}
-        }).catch(() => {});
-      }
-    } catch {}
   }
   function setCartQuantity(product_id, qty) {
     const items = getCart();
@@ -448,26 +377,7 @@ const Shop = (() => {
     }
   }
 
-  async function renderCartPage() {
-    // Hydrate from server when logged in
-    try {
-      const token = getToken();
-      if (token) {
-        const resp = await fetch('/api/cart', { headers: { 'Authorization': token } });
-        if (resp.ok) {
-          const data = await resp.json();
-          const items = Array.isArray(data.items) ? data.items : [];
-          // Normalize and persist to local for UI bindings
-          localStorage.setItem(CART_KEY, JSON.stringify(items.map(x => ({
-            product_id: x.product_id,
-            name: x.name,
-            price: x.price,
-            image_url: x.image_url,
-            quantity: x.quantity || 1,
-          }))));
-        }
-      }
-    } catch (e) { /* ignore */ }
+  function renderCartPage() {
     const items = getCart();
     const list = document.getElementById('cartItems');
     if (!items.length) {
@@ -506,14 +416,10 @@ const Shop = (() => {
     });
     const clearBtn = document.getElementById('clearCart');
     if (clearBtn) {
-      clearBtn.onclick = async () => {
+      clearBtn.onclick = () => {
         localStorage.removeItem(CART_KEY);
         updateCartCount();
         track('/cart', 'clear_cart', { previous_items: items.length });
-        try {
-          const token = getToken();
-          if (token) await fetch('/api/cart', { method: 'DELETE', headers: { 'Authorization': token } });
-        } catch (e) {}
         renderCartPage();
       };
     }

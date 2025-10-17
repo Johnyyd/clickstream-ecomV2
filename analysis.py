@@ -19,7 +19,17 @@ def simple_sessionize_and_counts(limit=None, user_id=None, use_spark=None):
             
             top_pages = []
             if "top_pages" in result:
-                top_pages = [(page, count) for page, count in result["top_pages"].items()]
+                tp = result["top_pages"]
+                # Accept multiple shapes: dict[str,int], list[dict{page,count}], list[tuple]]
+                if isinstance(tp, dict):
+                    top_pages = [(page, count) for page, count in tp.items()]
+                elif isinstance(tp, list):
+                    if len(tp) > 0 and isinstance(tp[0], dict) and "page" in tp[0] and "count" in tp[0]:
+                        top_pages = [(str(x.get("page")), int(x.get("count", 0))) for x in tp]
+                    elif len(tp) > 0 and isinstance(tp[0], (list, tuple)) and len(tp[0]) >= 2:
+                        top_pages = [(str(x[0]), int(x[1])) for x in tp]
+                    else:
+                        top_pages = []
             
             return {
                 "total_events": result.get("total_events", 0),
@@ -267,6 +277,65 @@ def calculate_detailed_metrics(limit=None, user_id=None):
             event_type = str(event.get("event_type", "pageview"))
             user_id = str(event.get("user_id", ""))
             timestamp = event.get("timestamp")
+            props = event.get("properties") or {}
+
+            # Normalize product page URLs to canonical /p/<slug>?id=<24hex>
+            try:
+                if isinstance(page, str) and page.startswith("/p/"):
+                    pid = str(props.get("product_id", ""))
+                    if pid and len(pid) == 24:
+                        if "?id=" in page:
+                            # Replace id value if it's missing or truncated
+                            base, q = page.split("?", 1)
+                            # naive parse for id=...
+                            parts = q.split("&")
+                            new_parts = []
+                            id_found = False
+                            for part in parts:
+                                if part.startswith("id="):
+                                    id_found = True
+                                    cur = part[3:]
+                                    if cur != pid:
+                                        new_parts.append(f"id={pid}")
+                                    else:
+                                        new_parts.append(part)
+                                else:
+                                    new_parts.append(part)
+                            if not id_found:
+                                new_parts.append(f"id={pid}")
+                            page = base + "?" + "&".join(new_parts)
+                        else:
+                            page = f"{page}?id={pid}"
+            except Exception:
+                pass
+
+            # Normalize category URLs to /category?category=<name>
+            try:
+                if isinstance(page, str) and page.startswith("/category"):
+                    cat = props.get("category")
+                    if isinstance(cat, str) and cat:
+                        if "?" in page:
+                            base, q = page.split("?", 1)
+                            parts = q.split("&")
+                            new_parts = []
+                            cat_found = False
+                            for part in parts:
+                                if part.startswith("category="):
+                                    cat_found = True
+                                    cur = part[len("category="):]
+                                    if cur != cat:
+                                        new_parts.append(f"category={cat}")
+                                    else:
+                                        new_parts.append(part)
+                                else:
+                                    new_parts.append(part)
+                            if not cat_found:
+                                new_parts.append(f"category={cat}")
+                            page = base + "?" + "&".join(new_parts)
+                        else:
+                            page = f"/category?category={cat}"
+            except Exception:
+                pass
             
             if session_id:
                 sessions.add(session_id)
@@ -391,29 +460,34 @@ def calculate_funnel_analysis(page_sequences):
     
     for session_id, pages in page_sequences.items():
         pages_set = set(pages)
-        
+        # Support both legacy '/product/...' and new '/p/<slug>?id=...' URLs
+        has_product = any((isinstance(p, str) and (p.startswith("/product") or p.startswith("/p/"))) for p in pages)
+        has_home = "/home" in pages_set
+        has_checkout = "/checkout" in pages_set
+        has_search = "/search" in pages_set
+
         # Home to Product funnel
-        if "/home" in pages_set:
+        if has_home:
             funnels["home_to_product"]["home"] += 1
-            if "/product" in pages_set:
+            if has_product:
                 funnels["home_to_product"]["product"] += 1
         
         # Product to Checkout funnel
-        if "/product" in pages_set:
+        if has_product:
             funnels["product_to_checkout"]["product"] += 1
-            if "/checkout" in pages_set:
+            if has_checkout:
                 funnels["product_to_checkout"]["checkout"] += 1
         
         # Home to Checkout funnel
-        if "/home" in pages_set:
+        if has_home:
             funnels["home_to_checkout"]["home"] += 1
-            if "/checkout" in pages_set:
+            if has_checkout:
                 funnels["home_to_checkout"]["checkout"] += 1
         
         # Search to Product funnel
-        if "/search" in pages_set:
+        if has_search:
             funnels["search_to_product"]["search"] += 1
-            if "/product" in pages_set:
+            if has_product:
                 funnels["search_to_product"]["product"] += 1
     
     # Calculate conversion rates
@@ -581,8 +655,18 @@ def run_analysis(user_id, params):
     else:
         print("⚠️ No provisioning key - will use existing API key only (no auto-renewal)")
     
-    # Luôn thử gọi OpenRouter (auto-renewal sẽ tự động tạo key nếu cần)
-    if True:  # Always attempt
+    # Allow callers to skip LLM step (useful for auto-refresh to avoid rate limits)
+    skip_llm = False
+    try:
+        val = params.get("skip_llm")
+        if isinstance(val, str):
+            val = val.lower() == 'true'
+        skip_llm = bool(val)
+    except Exception:
+        skip_llm = False
+
+    # Luôn thử gọi OpenRouter trừ khi được yêu cầu bỏ qua
+    if not skip_llm:
         # Prepare enhanced prompt with detailed metrics
         # Trim detailed_metrics to avoid overly large prompts while preserving key info
         trimmed_metrics = json.dumps(detailed_metrics, default=str)
@@ -659,6 +743,9 @@ def run_analysis(user_id, params):
         except Exception as e:
             print(f"Error calling OpenRouter: {str(e)}")
             analysis_record["openrouter_output"] = {"status": "error", "error": str(e), "parsed": None, "raw": None}
+    else:
+        # Mark as skipped to keep UI consistent
+        analysis_record["openrouter_output"] = {"status": "skipped", "parsed": None, "raw": None, "error": None}
 
     # 6. Save comprehensive analysis record
     result = analyses_col().insert_one(analysis_record)

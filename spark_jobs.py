@@ -615,9 +615,9 @@ def sessionize_and_counts(limit=None):
                 "sessions": sessions_count,
                 "unique_users": 0,
                 "top_pages": top_pages_list,
-                "funnel_metrics": {},
-                "conversion_rates": {},
-                "session_metrics": {},
+                "funnel_metrics": funnel_metrics,
+                "conversion_rates": conversion_rates,
+                "session_metrics": session_metrics,
                 "funnel_home_to_product": funnel_home_product
             }
         

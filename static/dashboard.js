@@ -5,6 +5,7 @@ import { displayAnalysisResults } from './analysisDisplay.js';
 const loginBtn = document.getElementById('loginBtn');
 const simulateBtn = document.getElementById('simulateBtn');
 const analyzeBtn = document.getElementById('analyzeBtn');
+let autoAnalyzeBtn = null;
 const output = document.getElementById('output');
 const summaryEl = document.getElementById('summary');
 const pythonDetailsEl = document.getElementById('pythonDetails');
@@ -24,6 +25,8 @@ let token = null;
 let useSpark = true;
 let metricsTimer = null;
 const METRICS_INTERVAL_MS = 10000;
+const AUTO_ANALYZE_INTERVAL_MS = 60000;
+let autoAnalyzeTimer = null;
 
 function ensureMetricsPanel() {
   let panel = document.getElementById('rt-metrics');
@@ -198,6 +201,13 @@ loginBtn.onclick = async () => {
     try { await loadRecommendations(); } catch(e) {}
     // Start/refresh real-time metrics polling
     startMetricsPolling();
+    // Ensure auto-analyze control and restore last state
+    ensureAutoAnalyzeButton();
+    autoAnalyzeBtn.onclick = () => {
+      if (autoAnalyzeTimer) stopAutoAnalyze(); else startAutoAnalyze();
+    };
+    const savedAuto = localStorage.getItem('autoAnalyze');
+    if (savedAuto === 'true') startAutoAnalyze();
   } else {
     output.innerText = JSON.stringify(j);
   }
@@ -318,8 +328,9 @@ async function checkAnalysisMode() {
         useSpark = serverUseSpark;
         if (useSparkToggle) useSparkToggle.checked = useSpark;
         updateAnalysisModeUI();
-        output.innerText = `Server is using ${useSpark ? 'Spark' : 'Python'} analysis`;
       }
+      // Clarify message to reflect server default mode, not per-run selection
+      output.innerText = `Server default mode: ${serverUseSpark ? 'Spark' : 'Python'}`;
     }
   } catch (e) {
     console.error('Failed to check analysis mode:', e);
@@ -327,6 +338,80 @@ async function checkAnalysisMode() {
 }
 
 // displayAnalysisResults is now imported from analysisDisplay.js
+
+// Helper to run analysis with options
+async function runAnalysis({ skipLLM = false, limit = null, useSparkFlag = null } = {}) {
+  if (!token) { output.innerText = 'login first'; return null; }
+  const mode = (useSparkFlag === null ? useSpark : !!useSparkFlag) ? 'Spark' : 'Python';
+  output.innerText = `Running analysis with ${mode}...`;
+  try {
+    const params = { use_spark: mode === 'Spark' };
+    // Omit limit to analyze all available events unless a specific limit is provided
+    if (limit != null) params.limit = limit;
+    if (skipLLM) params.skip_llm = true;
+
+    const resp = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token
+      },
+      body: JSON.stringify({ params })
+    });
+    if (!resp.ok) {
+      const error = await resp.json().catch(() => ({}));
+      throw new Error(error.error || 'Failed to run analysis');
+    }
+    const j = await resp.json();
+    if (j.error) {
+      output.innerText = `Error: ${j.error}`;
+      return null;
+    }
+    const analysisResp = await fetch(`/api/analyses/${j.analysis._id}`, {
+      headers: { 'Authorization': token }
+    });
+    if (!analysisResp.ok) throw new Error('Failed to fetch analysis details');
+    const analysis = await analysisResp.json();
+    const resultsContainer = document.getElementById('results');
+    displayAnalysisResults(analysis, resultsContainer);
+    checkAnalysisMode();
+    output.innerText = `Analysis completed with ${mode}!`;
+    return analysis;
+  } catch (e) {
+    output.innerText = `Error: ${e.message}`;
+    console.error('Analysis error:', e);
+    return null;
+  }
+}
+
+function ensureAutoAnalyzeButton() {
+  if (autoAnalyzeBtn) return autoAnalyzeBtn;
+  const controls = document.getElementById('controls');
+  const btn = document.createElement('button');
+  btn.id = 'autoAnalyzeBtn';
+  btn.textContent = 'Start Auto-Analyze';
+  btn.title = 'Auto-run analysis periodically (LLM skipped)';
+  btn.style.marginLeft = '8px';
+  controls.querySelector('.analysis-controls')?.appendChild(btn);
+  autoAnalyzeBtn = btn;
+  return btn;
+}
+
+function startAutoAnalyze() {
+  if (autoAnalyzeTimer) clearInterval(autoAnalyzeTimer);
+  // First immediate run with skip LLM and no limit
+  runAnalysis({ skipLLM: true, limit: null });
+  autoAnalyzeTimer = setInterval(() => runAnalysis({ skipLLM: true, limit: null }), AUTO_ANALYZE_INTERVAL_MS);
+  localStorage.setItem('autoAnalyze', 'true');
+  if (autoAnalyzeBtn) autoAnalyzeBtn.textContent = 'Stop Auto-Analyze';
+}
+
+function stopAutoAnalyze() {
+  if (autoAnalyzeTimer) clearInterval(autoAnalyzeTimer);
+  autoAnalyzeTimer = null;
+  localStorage.setItem('autoAnalyze', 'false');
+  if (autoAnalyzeBtn) autoAnalyzeBtn.textContent = 'Start Auto-Analyze';
+}
 
 // Check OpenRouter API key status
 async function checkKey() {
@@ -466,59 +551,5 @@ if (useSparkToggle) {
 }
 
 analyzeBtn.onclick = async () => {
-  if (!token) { output.innerText = "login first"; return; }
-  output.innerText = `Running analysis with ${useSpark ? 'Spark' : 'Python'}...`;
-  try {
-    const resp = await fetch('/api/analyze', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': token
-      },
-      body: JSON.stringify({
-        params: { 
-          limit: 1000,
-          use_spark: useSpark
-        }
-      })
-    });
-    
-    // Check if the key is valid
-    // checkKey();
-
-    if (!resp.ok) {
-      const error = await resp.json().catch(() => ({}));
-      throw new Error(error.error || 'Failed to run analysis');
-    }
-    
-    const j = await resp.json();
-    if (j.error) {
-      output.innerText = `Error: ${j.error}`;
-      return;
-    }
-    
-    // Get the full analysis using the returned ID
-    const analysisResp = await fetch(`/api/analyses/${j.analysis._id}`, {
-      headers: { 'Authorization': token }
-    });
-    
-    if (!analysisResp.ok) {
-      throw new Error('Failed to fetch analysis details');
-    }
-    
-    const analysis = await analysisResp.json();
-    
-    // Display the results in the results container
-    const resultsContainer = document.getElementById('results');
-    displayAnalysisResults(analysis, resultsContainer);
-    
-    // Check the current analysis mode from the server
-    checkAnalysisMode();
-    
-    output.innerText = `Analysis completed with ${useSpark ? 'Spark' : 'Python'}!`;
-
-  } catch (e) {
-    output.innerText = `Error: ${e.message}`;
-    console.error('Analysis error:', e);
-  }
+  await runAnalysis({ skipLLM: false, limit: null });
 };

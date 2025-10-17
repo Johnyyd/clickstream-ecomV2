@@ -29,6 +29,7 @@ from typing import List, Optional
 from bson import ObjectId
 
 from db import users_col, products_col, sessions_col
+from seed_products import slugify
 from ingest import ingest_event
 from auth import create_user
 
@@ -169,7 +170,15 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
         if r < 0.35:  # category/search discoverability
             if random.random() < 0.55:
                 category = random.choice([p.get("category") for p in products])
-                emit_event(user_id, sid, current_ts, "/category", "pageview", {"category": category}, client_id)
+                emit_event(
+                    user_id,
+                    sid,
+                    current_ts,
+                    f"/category?category={category}",
+                    "pageview",
+                    {"category": category},
+                    client_id,
+                )
             else:
                 term = random.choice(["laptop","phone","coffee","shoes","shirt","pizza","sushi"]) 
                 emit_event(user_id, sid, current_ts, "/search", "search", {"search_term": term}, client_id)
@@ -180,7 +189,7 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                 user_id,
                 sid,
                 current_ts,
-                f"/product/{p['_id']}",
+                f"/p/{slugify(p.get('name') or str(p['_id']))}?id={str(p['_id'])}",
                 "pageview",
                 {
                     "product_id": str(p["_id"]),
@@ -231,7 +240,20 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                 )
                 cart.clear()
             else:
-                emit_event(user_id, sid, current_ts, random.choice(["/home","/category","/search"]), "pageview", None, client_id)
+                # Navigate to home or a specific category page with query param
+                if random.random() < 0.5:
+                    emit_event(user_id, sid, current_ts, "/home", "pageview", None, client_id)
+                else:
+                    cat = random.choice([p.get("category") for p in products])
+                    emit_event(
+                        user_id,
+                        sid,
+                        current_ts,
+                        f"/category?category={cat}",
+                        "pageview",
+                        {"category": cat},
+                        client_id,
+                    )
 
 
 def seed_event_for_users(user_ids: List[ObjectId], days: int, sessions_per_user: int, avg_events: int, seed_products_first: bool):

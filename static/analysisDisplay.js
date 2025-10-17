@@ -36,6 +36,10 @@ export function displayAnalysisResults(analysis, container) {
     const sessionAnalysis = createSessionAnalysisSection(analysis);
     if (sessionAnalysis) container.appendChild(sessionAnalysis);
 
+    // 6.5 Spark Summary (from spark_summary)
+    const sparkSection = createSparkSummarySection(analysis);
+    if (sparkSection) container.appendChild(sparkSection);
+
     // 7. LLM Analysis (New comprehensive display)
     const llmSection = createLLMSection(analysis);
     if (llmSection) container.appendChild(llmSection);

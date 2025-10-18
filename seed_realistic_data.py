@@ -59,13 +59,7 @@ def ensure_users(target_username: Optional[str], count: int) -> List[ObjectId]:
             email = f"{target_username}@example.com"
             pw = f"{target_username}123"
             uid = create_user(target_username, email, pw)
-            try:
-                # Normalize to ObjectId and ensure role is 'user'
-                from bson import ObjectId as _OID
-                users_col().update_one({"_id": _OID(uid)}, {"$set": {"role": "user"}})
-                u = users_col().find_one({"_id": _OID(uid)})
-            except Exception:
-                u = users_col().find_one({"username": target_username})
+            u = users_col().find_one({"_id": ObjectId(uid)})
         ids.append(u["_id"])  # type: ignore[index]
         return ids
 
@@ -78,22 +72,20 @@ def ensure_users(target_username: Optional[str], count: int) -> List[ObjectId]:
         idx += 1
         try:
             uid = create_user(uname, f"{uname}@example.com", f"{uname}123")
-            from bson import ObjectId as _OID
-            users_col().update_one({"_id": _OID(uid)}, {"$set": {"role": "user"}})
-            pool.append(_OID(uid))
+            pool.append(ObjectId(uid))
         except Exception:
             u = users_col().find_one({"username": uname})
             if u:
-                pool.append(u["_id"])  # type: ignore[index]
+                pool.append(u["_id"])
     return pool[:count]
 
 
 def emit_event(user_id, session_id, ts, page, event_type, props=None, client_id: Optional[str]=None):
     ev = {
-        "user_id": user_id,  # keep as ObjectId
+        "user_id": str(user_id),
         "client_id": client_id or "",
         "session_id": session_id,
-        "timestamp": int(ts),  # epoch seconds as ingest_event supports
+        "timestamp": int(ts),
         "page": page,
         "event_type": event_type,
         "properties": {"source": "realistic_seed", **(props or {})},
@@ -153,7 +145,6 @@ def ensure_browsing_session(session_id: str, user_id: ObjectId, start_ts: int, c
                     "session_id": session_id,
                     "user_id": user_id,
                     "client_id": client_id,
-                    "created_at": ts,
                     "pages": [],
                 },
                 "$max": {"last_event_at": ts},
@@ -170,7 +161,7 @@ def ensure_browsing_session(session_id: str, user_id: ObjectId, start_ts: int, c
 
 def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int, products: list[dict]):
     """Generate a realistic session with plausible navigation and conversion behavior."""
-    sid = f"session_{str(user_id)[-6:]}_{start_ts}"
+    sid = str(ObjectId())
     current_ts = start_ts
     # Deterministic client id per user (stable across sessions); adjust if you want per-session IDs
     client_id = f"client_{str(user_id)[-6:]}"
@@ -292,7 +283,7 @@ def seed_event_for_users(user_ids: List[ObjectId], days: int, sessions_per_user:
         return 0
     products = list(products_col().find({}))
 
-    now = datetime.now(pytz.UTC) # error
+    now = datetime.now(pytz.UTC)
     total_est = 0
     for uid in user_ids:
         # Define user persona for conversion/engagement variety
@@ -321,7 +312,7 @@ def seed_session_for_user(user_id: ObjectId, start_ts: int, client_id: Optional[
     - Foreign key: events.session_id references this id (when events are later emitted)
     Returns the created or existing session_id.
     """
-    sid = f"session_{str(user_id)[-6:]}_{start_ts}"
+    sid = str(ObjectId())
     ensure_browsing_session(sid, user_id, start_ts, client_id)
     return sid
 

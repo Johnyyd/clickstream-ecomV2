@@ -1,15 +1,13 @@
 from bson import ObjectId
-from db import get_db
+from db import products_col
 from datetime import datetime
 import pytz
 
 def slugify(name: str) -> str:
     s = name.lower()
-    # characters to normalize to dashes
     chars = [" ", "/", "\\", ",", ".", "(", ")", "[", "]", "{", "}", "\'", "\""]
     for ch in chars:
         s = s.replace(ch, "-")
-    # collapse multiple dashes
     while "--" in s:
         s = s.replace("--", "-")
     return s.strip("-")
@@ -78,17 +76,13 @@ def seed_more_products():
         {"name": "Trench Coat", "category": "shirt", "price": 150, "tags": ["clothing","formal"]},
     ]
     
-    db = get_db()
+    col = products_col()
     for p in more_products:
         p["_id"] = ObjectId()
-        p["created_at"] = datetime.now(pytz.UTC)
-        # Ensure image_url is present and points to static images
-        slug = slugify(p["name"]) if p.get("name") else str(p["_id"])
-        p["slug"] = slug
-        # default to .jpg; users can drop images into static/images with matching names
-        p["image_url"] = f"/static/images/{slug}.jpg"
-    db.products.insert_many(more_products)
-    print("Inserted more products:", len(more_products))
+        p["slug"] = slugify(p["name"])
+        p["image_url"] = f"/static/images/{p['slug']}.jpg"
+    col.insert_many(more_products)
+    print(f"Inserted {len(more_products)} products")
 
 if __name__ == "__main__":
     seed_more_products()

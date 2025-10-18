@@ -409,6 +409,54 @@ function createSessionAnalysisSection(analysis) {
   return section;
 }
 
+function createSparkSummarySection(analysis) {
+  const spark = analysis && analysis.spark_summary;
+  if (!spark || typeof spark !== 'object') return null;
+  const section = document.createElement('div');
+  section.className = 'analysis-section spark-summary-section';
+  const title = document.createElement('h2');
+  title.textContent = 'Spark Summary';
+  title.className = 'section-title';
+  const grid = document.createElement('div');
+  grid.className = 'metrics-grid';
+  const cards = [
+    { label: 'Total Events', value: spark.total_events ?? 0 },
+    { label: 'Total Sessions', value: spark.sessions ?? 0 },
+    { label: 'Unique Users', value: spark.unique_users ?? (analysis?.detailed_metrics?.basic_metrics?.unique_users ?? 0) }
+  ];
+  cards.forEach(item => {
+    const card = document.createElement('div');
+    card.className = 'metric-card';
+    card.innerHTML = `
+      <div class="metric-value">${item.value}</div>
+      <div class="metric-label">${item.label}</div>
+    `;
+    grid.appendChild(card);
+  });
+  const topPages = Array.isArray(spark.top_pages) ? spark.top_pages : [];
+  let pagesEl = null;
+  if (topPages.length) {
+    pagesEl = document.createElement('div');
+    pagesEl.className = 'data-section';
+    const rows = topPages.slice(0, 10).map(p => {
+      const page = typeof p === 'object' && p !== null ? (p.page ?? p[0]) : '';
+      const count = typeof p === 'object' && p !== null ? (p.count ?? p[1]) : '';
+      return `<tr><td>${page}</td><td>${count}</td></tr>`;
+    }).join('');
+    pagesEl.innerHTML = `
+      <h3>Top Pages</h3>
+      <table class="data-table">
+        <thead><tr><th>Page</th><th>Views</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+  section.appendChild(title);
+  section.appendChild(grid);
+  if (pagesEl) section.appendChild(pagesEl);
+  return section;
+}
+
 // Create AI insights and recommendations section
 function createAIInsightsSection(analysis) {
   const insights = analysis.insights || {};

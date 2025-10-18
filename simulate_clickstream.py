@@ -80,7 +80,7 @@ def create_session_with_real_user():
     return {
         "session_id": session_id,
         "client_id": client_id,
-        "user_id": user_id,  # This will be ObjectId
+        "user_id": str(user_id),
         "start_time": int(time.time()) - random.randint(0, 86400)
     }
 

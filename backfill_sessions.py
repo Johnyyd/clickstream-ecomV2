@@ -27,7 +27,6 @@ def upsert_session(session_id: str, user_id: Any, client_id: str | None, ts) -> 
                 "session_id": session_id,
                 "user_id": user_id,
                 "client_id": client_id,
-                "created_at": ts,
                 "first_event_at": ts,
                 "pages": [],
             },

@@ -53,7 +53,7 @@ def ensure_users(target_username: Optional[str], count: int) -> List[ObjectId]:
             email = f"{target_username}@example.com"
             pw = f"{target_username}123"
             uid = create_user(target_username, email, pw)
-            u = users_col().find_one({"_id": uid})
+            u = users_col().find_one({"_id": ObjectId(uid)})
         ids.append(u["_id"])  # type: ignore[index]
         return ids
 
@@ -69,12 +69,11 @@ def ensure_users(target_username: Optional[str], count: int) -> List[ObjectId]:
         else:
             try:
                 uid = create_user(uname, email, pw)
-                pool.append(uid)
+                pool.append(ObjectId(uid))
             except Exception:
-                # Race or exists
                 u = users_col().find_one({"username": uname})
                 if u:
-                    pool.append(u["_id"])  # type: ignore[index]
+                    pool.append(u["_id"])
 
     # Top up to requested count with synthetic users
     idx = 1
@@ -84,7 +83,7 @@ def ensure_users(target_username: Optional[str], count: int) -> List[ObjectId]:
         if users_col().find_one({"username": uname}):
             continue
         uid = create_user(uname, f"{uname}@example.com", "password123")
-        pool.append(uid)
+        pool.append(ObjectId(uid))
 
     return pool[:count]
 
@@ -95,9 +94,9 @@ def random_product():
 
 def emit_event(user_id, session_id, ts, page, event_type, props=None):
     ev = {
-        "user_id": user_id,  # keep as ObjectId
+        "user_id": str(user_id),
         "session_id": session_id,
-        "timestamp": int(ts),  # epoch seconds as ingest_event supports
+        "timestamp": int(ts),
         "page": page,
         "event_type": event_type,
         "properties": props or {},
@@ -202,9 +201,7 @@ def seed_for_users(user_ids: List[ObjectId], days: int, sessions_per_user: int, 
                 second = random.randint(0, 59)
                 dt = base_day.replace(hour=hour, minute=minute, second=second, microsecond=0)
                 start_ts = int(dt.timestamp())
-                before = products_col().count_documents({})
                 generate_session_for_user(uid, start_ts, avg_events)
-                # Approximate count increase (not exact without querying each insert)
                 total_events += avg_events
     return total_events
 

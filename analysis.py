@@ -10,7 +10,7 @@ def simple_sessionize_and_counts(limit=None, user_id=None, use_spark=None):
         try:
             from spark_jobs import sessionize_and_counts
             print("Using Spark for analysis...")
-            result = sessionize_and_counts(limit=limit)
+            result = sessionize_and_counts(limit=limit, user_id=user_id)
             
             # Convert Spark result to match the Python implementation's format
             events_by_type = {}

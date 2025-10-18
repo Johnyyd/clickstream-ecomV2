@@ -1,5 +1,6 @@
 # ingest.py
 from db import events_col, sessions_col
+from bson import ObjectId
 from datetime import datetime
 import uuid
 import time
@@ -46,23 +47,25 @@ def ingest_event(event_json):
     user_id = event_json.get("user_id")
     session_id = event_json.get("session_id")
 
-    # If user_id is provided but session_id is not, create a consistent session_id
     if user_id and not session_id:
-        if hasattr(user_id, '__str__'):
-            session_id = f"session_{str(user_id)[-6:]}_{int(time.time())}"
-        else:
-            session_id = f"session_{user_id}_{int(time.time())}"
-    # Normalize to string for consistent keying in both events and sessions
+        session_id = f"session_{str(user_id)[-6:]}_{int(time.time())}"
     if session_id is not None:
         session_id = str(session_id)
     
+    # Coerce user_id to ObjectId when possible, else None
+    try:
+        if user_id is not None:
+            user_id = ObjectId(str(user_id))
+    except Exception:
+        user_id = None
+
     doc = {
         "client_id": event_json.get("client_id", str(uuid.uuid4())),
         "timestamp": ts,
         "page": event_json.get("page"),
         "event_type": event_json.get("event_type","pageview"),
         "properties": event_json.get("properties", {}),
-        "user_id": user_id,  # Keep as-is (ObjectId or string)
+        "user_id": user_id,
         "session_id": session_id or str(uuid.uuid4())
     }
     # Upsert/find the browsing session by its string session_id, let Mongo assign ObjectId _id
@@ -73,7 +76,6 @@ def ingest_event(event_json):
                 "$setOnInsert": {
                     "session_id": doc["session_id"],
                     "user_id": user_id,
-                    "created_at": ts,
                     "pages": [],
                 },
                 "$set": {"client_id": doc.get("client_id")},

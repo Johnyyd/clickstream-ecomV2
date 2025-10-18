@@ -22,6 +22,7 @@ const analysisModeBadge = document.getElementById('analysisModeBadge');
 
 // State
 let token = null;
+let currentUserId = null;
 let useSpark = true;
 let metricsTimer = null;
 const METRICS_INTERVAL_MS = 10000;
@@ -194,6 +195,13 @@ loginBtn.onclick = async () => {
     output.innerText = statusMsg;
     
     document.getElementById('controls').style.display = 'block';
+    try {
+      const meResp = await fetch('/api/me', { headers: { 'Authorization': token }});
+      if (meResp.ok) {
+        const me = await meResp.json();
+        currentUserId = me._id || me.id || (me.user && (me.user._id || me.user.id)) || null;
+      }
+    } catch(e) {}
     
     // After login, check current key
     try { await checkKey(); } catch(e) {}
@@ -218,13 +226,16 @@ simulateBtn.onclick = async () => {
   output.innerText = "Simulating 10 events...";
   
   try {
+    const simSessionId = `session_sim_${Date.now()}`;
     // create 10 simple events
     for (let i = 0; i < 10; i++) {
       const event = {
         client_id: "client-demo",
         page: i % 3 === 0 ? "/home" : (i % 3 === 1 ? "/product" : "/checkout"),
         event_type: "pageview",
-        timestamp: Math.floor(Date.now() / 1000)
+        timestamp: Math.floor(Date.now() / 1000),
+        user_id: currentUserId || undefined,
+        session_id: simSessionId
       };
       
       await fetch('/api/ingest', {

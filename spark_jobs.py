@@ -27,6 +27,7 @@ os.environ["PYSPARK_PYTHON"] = r"C:\LUUDULIEU\CODE\github\clickstream-ecomV2\ven
 os.environ["PYSPARK_DRIVER_PYTHON"] = r"C:\LUUDULIEU\CODE\github\clickstream-ecomV2\venv\Scripts\python.exe"
 os.environ["ARROW_PRE_0_15_IPC_FORMAT"] = "1"
 from db import events_col
+from bson import ObjectId
 from datetime import datetime
 import pytz
 import traceback
@@ -208,9 +209,16 @@ analysis_schema = StructType([
     StructField("properties", MapType(StringType(), StringType()), True)
 ])
 
-def load_events_as_list(limit=None):
+def load_events_as_list(limit=None, user_id=None):
     try:
         q = {}
+        if user_id is not None:
+            try:
+                oid = ObjectId(str(user_id))
+                q["$or"] = [{"user_id": oid}, {"user_id": str(user_id)}]
+            except Exception:
+                q["user_id"] = str(user_id)
+
         cursor = events_col().find(q).sort("timestamp",1)
         if limit:
             cursor = cursor.limit(limit)
@@ -268,13 +276,13 @@ def load_events_as_list(limit=None):
                 print(f"Error processing document: {e}")
                 continue
                 
-        print(f"Loaded {len(docs)} events from MongoDB")
+        print(f"Loaded {len(docs)} events from MongoDB for user: {str(user_id) if user_id is not None else 'ALL'}")
         return docs
     except Exception as e:
         print(f"Error loading events: {e}")
         return []
 
-def sessionize_and_counts(limit=None):
+def sessionize_and_counts(limit=None, user_id=None):
     spark = None
     try:
         print("\n=== Starting Spark Analysis ===")
@@ -282,8 +290,8 @@ def sessionize_and_counts(limit=None):
         spark.sparkContext.setLogLevel("WARN")
         print("Spark session created successfully")
         
-        docs = load_events_as_list(limit=limit)
-        print(f"Loaded {len(docs)} documents from MongoDB")
+        docs = load_events_as_list(limit=limit, user_id=user_id)
+        print(f"Loaded {len(docs)} documents from MongoDB (filtered)")
         
         if not docs:
             print("No documents found in MongoDB")

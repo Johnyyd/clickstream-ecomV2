@@ -217,7 +217,7 @@ def get_api_key_with_auto_renewal_legacy(user_id):
 
 
 # Wrapper cho openrouter_client để tự động retry với key mới
-def call_openrouter_with_auto_renewal(user_id, prompt, model="deepseek/deepseek-chat-v3-0324:free", max_tokens=2000, temperature=0.3):
+def call_openrouter_with_auto_renewal(user_id, prompt, model="qwen/qwen3-4b:free", max_tokens=2000, temperature=0.3):
     """
     Gọi OpenRouter API với tính năng tự động làm mới key khi hết hạn
     

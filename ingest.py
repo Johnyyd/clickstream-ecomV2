@@ -48,7 +48,7 @@ def ingest_event(event_json):
     session_id = event_json.get("session_id")
 
     if user_id and not session_id:
-        session_id = f"session_{str(user_id)[-6:]}_{int(time.time())}"
+        session_id = str(ObjectId())
     if session_id is not None:
         session_id = str(session_id)
     
@@ -66,7 +66,7 @@ def ingest_event(event_json):
         "event_type": event_json.get("event_type","pageview"),
         "properties": event_json.get("properties", {}),
         "user_id": user_id,
-        "session_id": session_id or str(uuid.uuid4())
+        "session_id": session_id
     }
     # Upsert/find the browsing session by its string session_id, let Mongo assign ObjectId _id
     try:
@@ -76,20 +76,21 @@ def ingest_event(event_json):
                 "$setOnInsert": {
                     "session_id": doc["session_id"],
                     "user_id": user_id,
-                    "pages": [],
+                    # Don't set pages here - let $addToSet handle it
                 },
                 "$set": {"client_id": doc.get("client_id")},
                 "$max": {"last_event_at": ts},
                 "$min": {"first_event_at": ts},
                 "$inc": {"event_count": 1},
-                "$addToSet": {"pages": doc.get("page")},
+                "$addToSet": {"pages": doc.get("page")},  # This auto-creates array if needed
             },
             upsert=True,
             return_document=ReturnDocument.AFTER,
         )
         if session_doc and session_doc.get("_id") is not None:
             doc["session_oid"] = session_doc["_id"]
-    except Exception:
+    except Exception as e:
+        print(f"[ingest] Warning: Failed to update session {doc.get('session_id')}: {e}")
         pass
 
     res = events_col().insert_one(doc)

@@ -23,7 +23,7 @@ const analysisModeBadge = document.getElementById('analysisModeBadge');
 // State
 let token = null;
 let currentUserId = null;
-let useSpark = true;
+let useSpark = true; // Default to Spark analysis
 let metricsTimer = null;
 const METRICS_INTERVAL_MS = 10000;
 const AUTO_ANALYZE_INTERVAL_MS = 60000;
@@ -37,7 +37,7 @@ function ensureMetricsPanel() {
     panel.id = 'rt-metrics';
     panel.className = 'analysis-section';
     panel.innerHTML = `
-      <h2 class="section-title">Real-time Metrics (last 60 min)</h2>
+      <h2 class="section-title">Real-time Metrics (last 5 min)</h2>
       <div id="rt-summary" class="metrics-grid"></div>
       <div style="display:grid; gap:12px; margin-top:12px">
         <div>
@@ -45,7 +45,7 @@ function ensureMetricsPanel() {
           <div id="rt-line"></div>
         </div>
         <div>
-          <h3 style="margin:6px 0">Top pages (60m)</h3>
+          <h3 style="margin:6px 0">Top pages (5m)</h3>
           <div id="rt-bars"></div>
         </div>
       </div>
@@ -61,7 +61,7 @@ function ensureMetricsPanel() {
 
 async function fetchAggregates() {
   try {
-    const resp = await fetch('/api/metrics/aggregates?minutes=60');
+    const resp = await fetch('/api/metrics/aggregates?minutes=5');
     if (!resp.ok) return null;
     return await resp.json();
   } catch {
@@ -89,7 +89,7 @@ function renderAggregates(data) {
   const topPage = Object.entries(byPage).sort((a,b)=>b[1]-a[1])[0] || ['',0];
   const grid = panel.querySelector('#rt-summary');
   grid.innerHTML = `
-    <div class="metric-card"><div class="metric-value">${total}</div><div class="metric-label">Events (60m)</div></div>
+    <div class="metric-card"><div class="metric-value">${total}</div><div class="metric-label">Events (5m)</div></div>
     <div class="metric-card"><div class="metric-value">${topEvent[0]||'-'}: ${topEvent[1]||0}</div><div class="metric-label">Top Event</div></div>
     <div class="metric-card"><div class="metric-value">${topPage[0]||'-'}: ${topPage[1]||0}</div><div class="metric-label">Top Page</div></div>
   `;
@@ -199,9 +199,13 @@ loginBtn.onclick = async () => {
       const meResp = await fetch('/api/me', { headers: { 'Authorization': token }});
       if (meResp.ok) {
         const me = await meResp.json();
-        currentUserId = me._id || me.id || (me.user && (me.user._id || me.user.id)) || null;
+        // API /me returns { user_id, username, role }
+        currentUserId = me.user_id || me._id || me.id || null;
+        console.log('Logged in user ID:', currentUserId);
       }
-    } catch(e) {}
+    } catch(e) {
+      console.error('Failed to fetch user info:', e);
+    }
     
     // After login, check current key
     try { await checkKey(); } catch(e) {}
@@ -216,6 +220,9 @@ loginBtn.onclick = async () => {
     };
     const savedAuto = localStorage.getItem('autoAnalyze');
     if (savedAuto === 'true') startAutoAnalyze();
+    
+    // Ensure username input for optional single-user analysis
+    ensureUsernameInput();
   } else {
     output.innerText = JSON.stringify(j);
   }
@@ -351,12 +358,24 @@ async function checkAnalysisMode() {
 // displayAnalysisResults is now imported from analysisDisplay.js
 
 // Helper to run analysis with options
-async function runAnalysis({ skipLLM = false, limit = null, useSparkFlag = null } = {}) {
+async function runAnalysis({ skipLLM = false, limit = null, useSparkFlag = null, analysisTarget = null } = {}) {
   if (!token) { output.innerText = 'login first'; return null; }
   const mode = (useSparkFlag === null ? useSpark : !!useSparkFlag) ? 'Spark' : 'Python';
-  output.innerText = `Running analysis with ${mode}...`;
+  
+  // Determine analysis target
+  let targetDesc = 'current user';
+  if (analysisTarget === 'all') {
+    targetDesc = 'ALL USERS (entire database)';
+  } else if (analysisTarget && analysisTarget.startsWith('username:')) {
+    const username = analysisTarget.split(':', 1)[1];
+    targetDesc = `user: ${username}`;
+  }
+  
+  output.innerText = `Running ${mode} analysis for ${targetDesc}...`;
   try {
     const params = { use_spark: mode === 'Spark' };
+    // Add analysis target
+    if (analysisTarget) params.analysis_target = analysisTarget;
     // Omit limit to analyze all available events unless a specific limit is provided
     if (limit != null) params.limit = limit;
     if (skipLLM) params.skip_llm = true;
@@ -410,9 +429,21 @@ function ensureAutoAnalyzeButton() {
 
 function startAutoAnalyze() {
   if (autoAnalyzeTimer) clearInterval(autoAnalyzeTimer);
+  
+  // Determine current analysis target based on username field
+  const getAnalysisTarget = () => {
+    const usernameInput = document.getElementById('targetUsername');
+    const username = usernameInput ? usernameInput.value.trim() : '';
+    return username ? `username:${username}` : 'all';
+  };
+  
   // First immediate run with skip LLM and no limit
-  runAnalysis({ skipLLM: true, limit: null });
-  autoAnalyzeTimer = setInterval(() => runAnalysis({ skipLLM: true, limit: null }), AUTO_ANALYZE_INTERVAL_MS);
+  const target = getAnalysisTarget();
+  runAnalysis({ skipLLM: true, limit: null, analysisTarget: target });
+  autoAnalyzeTimer = setInterval(() => {
+    const target = getAnalysisTarget();
+    runAnalysis({ skipLLM: true, limit: null, analysisTarget: target });
+  }, AUTO_ANALYZE_INTERVAL_MS);
   localStorage.setItem('autoAnalyze', 'true');
   if (autoAnalyzeBtn) autoAnalyzeBtn.textContent = 'Stop Auto-Analyze';
 }
@@ -561,6 +592,55 @@ if (useSparkToggle) {
   useSparkToggle.setAttribute('aria-labelledby', 'analysisModeLabel');
 }
 
+// Username input for optional single-user analysis
+function ensureUsernameInput() {
+  const controls = document.getElementById('controls');
+  if (!controls) return;
+  
+  // Check if already exists
+  if (document.getElementById('usernameInputSection')) return;
+  
+  const inputDiv = document.createElement('div');
+  inputDiv.id = 'usernameInputSection';
+  inputDiv.className = 'username-section';
+  inputDiv.innerHTML = `
+    <div class="username-field">
+      <label for="targetUsername" class="username-label">
+        <span class="label-text">Username (Optional)</span>
+        <span class="label-hint">Leave empty to analyze all users</span>
+      </label>
+      <input 
+        type="text" 
+        id="targetUsername" 
+        placeholder="Enter username to analyze specific user..."
+        class="username-input"
+      />
+    </div>
+  `;
+  
+  // Insert before analyze button
+  const analyzeSection = controls.querySelector('.analysis-controls');
+  if (analyzeSection) {
+    analyzeSection.parentNode.insertBefore(inputDiv, analyzeSection);
+  } else {
+    controls.appendChild(inputDiv);
+  }
+}
+
 analyzeBtn.onclick = async () => {
-  await runAnalysis({ skipLLM: false, limit: null });
+  // Check if username is provided
+  const usernameInput = document.getElementById('targetUsername');
+  const username = usernameInput ? usernameInput.value.trim() : '';
+  
+  let analysisTarget = null;
+  
+  if (username) {
+    // If username provided, analyze that specific user
+    analysisTarget = `username:${username}`;
+  } else {
+    // If no username, analyze all users (entire database)
+    analysisTarget = 'all';
+  }
+  
+  await runAnalysis({ skipLLM: false, limit: null, analysisTarget });
 };

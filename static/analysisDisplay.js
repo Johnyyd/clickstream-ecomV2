@@ -325,10 +325,27 @@ function createTimeAnalysisSection(analysis) {
   const content = document.createElement('div');
   content.className = 'time-analysis-content';
   
+  // Peak metrics summary
+  const peakMetrics = document.createElement('div');
+  peakMetrics.className = 'metrics-grid';
+  peakMetrics.innerHTML = `
+    <div class="metric-card">
+      <div class="metric-icon">⏰</div>
+      <div class="metric-value">${timeData.peak_hour !== null && timeData.peak_hour !== undefined ? timeData.peak_hour + ':00' : 'N/A'}</div>
+      <div class="metric-label">Peak Hour</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-icon">📅</div>
+      <div class="metric-value">${timeData.peak_day || 'N/A'}</div>
+      <div class="metric-label">Peak Day</div>
+    </div>
+  `;
+  content.appendChild(peakMetrics);
+  
   // Add hourly distribution
   if (timeData.hourly_distribution) {
     const hours = Object.entries(timeData.hourly_distribution)
-      .sort(([a], [b]) => a - b);
+      .sort(([a], [b]) => parseInt(a) - parseInt(b));
     
     if (hours.length > 0) {
       const maxCount = Math.max(...hours.map(([_, count]) => count));
@@ -351,6 +368,38 @@ function createTimeAnalysisSection(analysis) {
         </div>
       `;
       content.appendChild(hourlySection);
+    }
+  }
+  
+  // Add daily distribution
+  if (timeData.daily_distribution) {
+    const days = Object.entries(timeData.daily_distribution)
+      .sort(([a], [b]) => {
+        const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        return dayOrder.indexOf(a) - dayOrder.indexOf(b);
+      });
+    
+    if (days.length > 0) {
+      const maxCount = Math.max(...days.map(([_, count]) => count));
+      
+      const dailySection = document.createElement('div');
+      dailySection.className = 'data-section';
+      dailySection.innerHTML = `
+        <h3>Daily Distribution</h3>
+        <div class="daily-chart">
+          ${days.map(([day, count]) => {
+            const height = (count / maxCount * 100) || 0;
+            return `
+              <div class="daily-bar-container">
+                <div class="daily-bar" style="height: ${height}%"></div>
+                <div class="day-label">${day.substring(0, 3)}</div>
+                <div class="count-label">${count}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+      content.appendChild(dailySection);
     }
   }
   

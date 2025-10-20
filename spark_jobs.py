@@ -236,9 +236,9 @@ def load_events_as_list(limit=None, user_id=None):
                         try:
                             timestamp = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
                         except ValueError:
-                            timestamp = datetime.utcnow()
+                            timestamp = datetime.now(pytz.UTC)
                 elif not isinstance(timestamp, datetime):
-                    timestamp = datetime.utcnow()
+                    timestamp = datetime.now(pytz.UTC)
                 # Normalize to UTC naive (no tzinfo)
                 try:
                     if getattr(timestamp, 'tzinfo', None) is not None:
@@ -246,7 +246,7 @@ def load_events_as_list(limit=None, user_id=None):
                         timestamp = timestamp.astimezone(pytz.UTC).replace(tzinfo=None)
                 except Exception:
                     # As a safe fallback use current UTC naive
-                    timestamp = datetime.utcnow()
+                    timestamp = datetime.now(pytz.UTC)
                 
                 # Handle properties conversion
                 properties = d.get("properties", {})

@@ -92,7 +92,7 @@ def _safe_json_parse(text: str):
                 pass
         return None
 
-def call_openrouter(api_key: str, prompt: str, model: str = "deepseek/deepseek-chat-v3-0324:free", max_tokens: int = 900, temperature: float = 0.0, retries: int = 1, timeout: int = 45):
+def call_openrouter(api_key: str, prompt: str, model: str = "qwen/qwen3-4b:free", max_tokens: int = 900, temperature: float = 0.0, retries: int = 1, timeout: int = 45):
     """
     Gửi yêu cầu đến OpenRouter API kèm cơ chế retry thông minh khi bị rate-limit (429)
     hoặc lỗi mạng tạm thời. Trả về dict gồm parsed JSON hoặc lỗi chi tiết.
@@ -100,16 +100,16 @@ def call_openrouter(api_key: str, prompt: str, model: str = "deepseek/deepseek-c
     import time
     import random
 
-    env_model = os.environ.get("OPENROUTER_MODEL")
-    if env_model:
-        model = env_model
+    # env_model = os.environ.get("OPENROUTER_MODEL")
+    # if env_model:
+    #     model = env_model
 
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
         "HTTP-Referer": os.environ.get("OPENROUTER_HTTP_REFERER", "http://localhost:8000/dashboard"),
         "X-Title": os.environ.get("OPENROUTER_APP_TITLE", "Clickstream Ecom Dashboard"),
-    }
+    } 
 
     payload = {
         "model": model,

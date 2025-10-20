@@ -704,3 +704,63 @@ details pre {
 }
 .auth-container button { padding: 10px 12px; border-radius: 6px; }
 .auth-switch { text-align: center; margin-top: 12px; }
+
+/* --- Username Input Section --- */
+.username-section {
+  margin: 20px 0;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.username-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.username-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.label-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.label-hint {
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.username-input {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.username-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.username-input:hover {
+  border-color: var(--primary-border);
+}
+
+.username-input::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
+}

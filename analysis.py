@@ -109,7 +109,8 @@ import statistics
 import pytz 
 
 # Feature flag default (can be overridden per-request)
-USE_SPARK = os.environ.get('USE_SPARK', 'false').lower() == 'true'
+# Default to TRUE - use Spark by default, fallback to Python on error
+USE_SPARK = os.environ.get('USE_SPARK', 'true').lower() == 'true'
 
 def _coerce_llm_parsed(parsed, spark_summary, detailed_metrics, generated_insights):
     """Ensure LLM parsed output has required keys and fill sensible defaults.
@@ -545,11 +546,16 @@ def calculate_bounce_rate(session_metrics):
     return single_page_sessions / len(session_metrics)
 
 def run_analysis(user_id, params):
-    print(f"\n=== Starting Analysis for User {user_id} ===")
+    # user_id can be None (analyze all), or a specific user ID
+    if user_id is None:
+        print(f"\n=== Starting Analysis for ALL USERS (entire database) ===")
+    else:
+        print(f"\n=== Starting Analysis for User {user_id} ===")
     
     # 1. Run basic analysis
     try:
         # Per-request engine selection (fallback to env/global)
+        # Default to Spark (USE_SPARK default is now True)
         req_use_spark = params.get("use_spark")
         if isinstance(req_use_spark, str):
             req_use_spark = req_use_spark.lower() == 'true'
@@ -559,8 +565,10 @@ def run_analysis(user_id, params):
         print(f"Analysis completed successfully (using {'Spark' if engine_is_spark else 'Python'})")
     except Exception as e:
         print(f"Error in basic analysis: {str(e)}")
+        # Store user_id as ObjectId only if it's not None
+        error_user_id = ObjectId(user_id) if user_id is not None else None
         error_record = {
-            "user_id": ObjectId(user_id),
+            "user_id": error_user_id,
             "created_at": datetime.now(pytz.UTC),
             "parameters": params,
             "status": "failed",
@@ -583,8 +591,10 @@ def run_analysis(user_id, params):
     insights = generate_insights(spark_summary, detailed_metrics)
     
     # 4. Prepare comprehensive analysis record
+    # Handle user_id: can be None (all users) or specific user ID
+    analysis_user_id = ObjectId(user_id) if user_id is not None else None
     analysis_record = {
-        "user_id": ObjectId(user_id),
+        "user_id": analysis_user_id,
         "created_at": datetime.now(pytz.UTC),
         "parameters": params,
         "status": "done",

@@ -27,7 +27,7 @@ def setup_test_user():
     api_key = {
         "user_id": result.inserted_id,
         "provider": "openrouter",
-        "key_encrypted": "test_key",  # In production, this should be properly encrypted
+        "key": "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",  # In production, this should be properly encrypted
         "created_at": datetime.now(pytz.UTC)
     }
     

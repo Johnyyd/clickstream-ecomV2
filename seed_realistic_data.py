@@ -132,20 +132,20 @@ def _update_user_cart(user_id: ObjectId, product_id: ObjectId, delta_qty: int = 
 
 
 def ensure_browsing_session(session_id: str, user_id: ObjectId, start_ts: int, client_id: Optional[str] = None) -> bool:
-    """Upsert a browsing session document using _id == session_id to mirror runtime behavior.
+    """Upsert a browsing session document matching ingest.py behavior.
+    Query by session_id field (not _id) to ensure consistency with runtime ingestion.
     Returns True if the upsert was acknowledged, False otherwise.
     """
     try:
         ts = datetime.fromtimestamp(start_ts, tz=pytz.UTC)
         res = sessions_col().update_one(
-            {"_id": session_id},
+            {"session_id": session_id},  # Match ingest.py: query by session_id field
             {
                 "$setOnInsert": {
-                    "_id": session_id,
                     "session_id": session_id,
                     "user_id": user_id,
                     "client_id": client_id,
-                    "pages": [],
+                    # Don't set pages here - will be populated by ingest_event
                 },
                 "$max": {"last_event_at": ts},
                 "$min": {"first_event_at": ts},
@@ -159,29 +159,54 @@ def ensure_browsing_session(session_id: str, user_id: ObjectId, start_ts: int, c
         return False
 
 
-def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int, products: list[dict]):
+def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int, products: list[dict], persona: dict = None):
     """Generate a realistic session with plausible navigation and conversion behavior."""
     sid = str(ObjectId())
     current_ts = start_ts
     # Deterministic client id per user (stable across sessions); adjust if you want per-session IDs
     client_id = f"client_{str(user_id)[-6:]}"
 
-    # First event: home
+    # Use persona to adjust behavior
+    if not persona:
+        persona = {"name": "normal", "browse_rate": 0.35, "product_view_rate": 0.35, "cart_rate": 0.18, "checkout_rate": 0.12}
+    
+    # First event: home with varied entry points
     ensure_browsing_session(sid, user_id, current_ts, client_id)
-    emit_event(user_id, sid, current_ts, "/home", "pageview", {"referrer": random.choice(["direct","email","social","ads"]) }, client_id)
+    entry_points = [
+        ("/home", "pageview", {"referrer": random.choice(["direct","email","social","ads","google","facebook"])}),
+        ("/search", "search", {"search_term": random.choice(["laptop","phone","coffee","shoes","shirt"]), "referrer": "google"}),
+        (f"/category?category={random.choice([p.get('category') for p in products])}", "pageview", {"referrer": "social"}),
+    ]
+    entry = random.choices(entry_points, weights=[0.6, 0.25, 0.15], k=1)[0]
+    emit_event(user_id, sid, current_ts, entry[0], entry[1], entry[2], client_id)
 
     viewed_product_ids: list[str] = []
     cart = []
 
-    # Events count ~ N(avg, 2)
-    n_events = max(3, random.randint(avg_events - 2, avg_events + 2))
+    # More varied events count based on persona
+    if persona["name"] == "bouncer":
+        n_events = random.randint(1, 3)  # Quick exit
+    elif persona["name"] == "browser":
+        n_events = random.randint(avg_events - 2, avg_events)  # Normal browsing
+    elif persona["name"] == "shopper":
+        n_events = random.randint(avg_events, avg_events + 3)  # More engaged
+    elif persona["name"] == "power_buyer":
+        n_events = random.randint(avg_events + 2, avg_events + 5)  # Very engaged
+    else:
+        n_events = max(3, random.randint(avg_events - 2, avg_events + 2))
 
     for i in range(1, n_events):
-        # spacing 15s..4m
-        current_ts += random.randint(15, 240)
+        # More realistic spacing based on user behavior
+        if persona["name"] == "bouncer":
+            current_ts += random.randint(5, 30)  # Quick navigation
+        elif persona["name"] == "power_buyer":
+            current_ts += random.randint(30, 120)  # Thoughtful browsing
+        else:
+            current_ts += random.randint(15, 240)  # Normal
+        
         r = random.random()
 
-        if r < 0.35:  # category/search discoverability
+        if r < persona["browse_rate"]:  # category/search discoverability
             if random.random() < 0.55:
                 category = random.choice([p.get("category") for p in products])
                 emit_event(
@@ -196,7 +221,7 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
             else:
                 term = random.choice(["laptop","phone","coffee","shoes","shirt","pizza","sushi"]) 
                 emit_event(user_id, sid, current_ts, "/search", "search", {"search_term": term}, client_id)
-        elif r < 0.70:  # view product
+        elif r < (persona["browse_rate"] + persona["product_view_rate"]):  # view product
             p = realistic_product(products)
             viewed_product_ids.append(str(p["_id"]))
             emit_event(
@@ -213,7 +238,7 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                 },
                 client_id,
             )
-        elif r < 0.88:  # add to cart
+        elif r < (persona["browse_rate"] + persona["product_view_rate"] + persona["cart_rate"]):  # add to cart
             if viewed_product_ids:
                 prod_id = random.choice(viewed_product_ids)
                 p = next((pp for pp in products if str(pp["_id"]) == prod_id), None)
@@ -285,24 +310,46 @@ def seed_event_for_users(user_ids: List[ObjectId], days: int, sessions_per_user:
 
     now = datetime.now(pytz.UTC)
     total_est = 0
+    
+    # More diverse user personas with realistic behavior patterns
+    PERSONAS = [
+        {"name": "bouncer", "weight": 0.15, "extra_sessions": 0, "avg_events": 2, 
+         "browse_rate": 0.8, "product_view_rate": 0.15, "cart_rate": 0.03, "checkout_rate": 0.02},
+        {"name": "browser", "weight": 0.35, "extra_sessions": 0, "avg_events": avg_events - 1,
+         "browse_rate": 0.5, "product_view_rate": 0.35, "cart_rate": 0.1, "checkout_rate": 0.05},
+        {"name": "shopper", "weight": 0.25, "extra_sessions": 2, "avg_events": avg_events,
+         "browse_rate": 0.3, "product_view_rate": 0.4, "cart_rate": 0.2, "checkout_rate": 0.1},
+        {"name": "power_buyer", "weight": 0.15, "extra_sessions": 3, "avg_events": avg_events + 2,
+         "browse_rate": 0.2, "product_view_rate": 0.35, "cart_rate": 0.25, "checkout_rate": 0.2},
+        {"name": "returning_customer", "weight": 0.10, "extra_sessions": 4, "avg_events": avg_events + 1,
+         "browse_rate": 0.25, "product_view_rate": 0.4, "cart_rate": 0.2, "checkout_rate": 0.15},
+    ]
+    
     for uid in user_ids:
-        # Define user persona for conversion/engagement variety
-        persona = random.choice([
-            {"name": "browser", "extra_sessions": 0, "avg_events": avg_events - 1},
-            {"name": "shopper", "extra_sessions": 2, "avg_events": avg_events},
-            {"name": "buyer", "extra_sessions": 1, "avg_events": avg_events + 1},
-            {"name": "returning", "extra_sessions": 3, "avg_events": avg_events},
-        ])
+        # Assign persona to user with weighted probability
+        persona = random.choices(PERSONAS, weights=[p["weight"] for p in PERSONAS], k=1)[0]
+        print(f"User {str(uid)[-6:]}: {persona['name']}")
 
         for d in range(days):
             base_day = now - timedelta(days=d)
-            for s in range(sessions_per_user + persona["extra_sessions"]):
-                hour = random.choice([8,9,10,11,13,14,15,19,20,21])
+            # Vary sessions per day
+            daily_sessions = sessions_per_user + persona["extra_sessions"] + random.randint(-1, 1)
+            daily_sessions = max(1, daily_sessions)
+            
+            for s in range(daily_sessions):
+                # More realistic hour distribution with peaks
+                hour_weights = [
+                    (0, 0.01), (1, 0.005), (2, 0.005), (3, 0.005), (4, 0.005), (5, 0.01),
+                    (6, 0.02), (7, 0.04), (8, 0.06), (9, 0.08), (10, 0.09), (11, 0.08),
+                    (12, 0.07), (13, 0.06), (14, 0.07), (15, 0.08), (16, 0.07), (17, 0.06),
+                    (18, 0.05), (19, 0.08), (20, 0.09), (21, 0.07), (22, 0.04), (23, 0.02)
+                ]
+                hour = random.choices([h for h, w in hour_weights], weights=[w for h, w in hour_weights], k=1)[0]
                 minute = random.randint(0,59)
                 second = random.randint(0,59)
                 dt = base_day.replace(hour=hour, minute=minute, second=second, microsecond=0)
                 start_ts = int(dt.timestamp())
-                generate_session_for_user(uid, start_ts, persona["avg_events"], products)
+                generate_session_for_user(uid, start_ts, persona["avg_events"], products, persona)
                 total_est += persona["avg_events"]
     return total_est
 
@@ -346,7 +393,7 @@ def seed_sessions_for_users(user_ids: List[ObjectId], days: int, sessions_per_us
 def main():
     parser = argparse.ArgumentParser(description="Seed realistic customer-like data")
     parser.add_argument("--username", type=str, default=None, help="Seed only for this username (create if missing)")
-    parser.add_argument("--user-count", type=int, default=100, help="Number of users when --username not provided")
+    parser.add_argument("--user-count", type=int, default=1000, help="Number of users when --username not provided")
     parser.add_argument("--days", type=int, default=7, help="Days back to generate")
     parser.add_argument("--sessions-per-user", type=int, default=5, help="Sessions per user per day")
     parser.add_argument("--avg-events", type=int, default=7, help="Average events per session")

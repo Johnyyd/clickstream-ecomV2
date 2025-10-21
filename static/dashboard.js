@@ -230,32 +230,160 @@ loginBtn.onclick = async () => {
 
 simulateBtn.onclick = async () => {
   if (!token) { output.innerText = "login first"; return; }
-  output.innerText = "Simulating 10 events...";
+  output.innerText = "Simulating 100 realistic events...";
   
   try {
     const simSessionId = `session_sim_${Date.now()}`;
-    // create 10 simple events
-    for (let i = 0; i < 10; i++) {
-      const event = {
-        client_id: "client-demo",
-        page: i % 3 === 0 ? "/home" : (i % 3 === 1 ? "/product" : "/checkout"),
-        event_type: "pageview",
-        timestamp: Math.floor(Date.now() / 1000),
+    const clientId = `client_sim_${currentUserId || 'anon'}`;
+    
+    // Simulate realistic user behavior with personas
+    const personas = [
+      {name: "bouncer", weight: 0.15, events: 3, browseRate: 0.8, productRate: 0.15, cartRate: 0.03, checkoutRate: 0.02},
+      {name: "browser", weight: 0.35, events: 8, browseRate: 0.5, productRate: 0.35, cartRate: 0.1, checkoutRate: 0.05},
+      {name: "shopper", weight: 0.25, events: 12, browseRate: 0.3, productRate: 0.4, cartRate: 0.2, checkoutRate: 0.1},
+      {name: "power_buyer", weight: 0.15, events: 15, browseRate: 0.2, productRate: 0.35, cartRate: 0.25, checkoutRate: 0.2},
+      {name: "returning", weight: 0.10, events: 10, browseRate: 0.25, productRate: 0.4, cartRate: 0.2, checkoutRate: 0.15}
+    ];
+    
+    // Select persona
+    const rand = Math.random();
+    let cumWeight = 0;
+    let persona = personas[1]; // default
+    for (const p of personas) {
+      cumWeight += p.weight;
+      if (rand <= cumWeight) {
+        persona = p;
+        break;
+      }
+    }
+    
+    const pages = ["/home", "/category", "/search", "/product", "/cart", "/checkout"];
+    const categories = ["computer", "phone", "shoes", "shirt", "coffee"];
+    const searchTerms = ["laptop", "phone", "coffee", "shoes", "shirt"];
+    let timestamp = Math.floor(Date.now() / 1000);
+    let viewedProducts = [];
+    let cartItems = [];
+    
+    // Entry point
+    const entryPoints = [
+      {page: "/home", type: "pageview", props: {referrer: "direct"}},
+      {page: "/search", type: "search", props: {search_term: searchTerms[Math.floor(Math.random() * searchTerms.length)], referrer: "google"}},
+      {page: `/category?category=${categories[Math.floor(Math.random() * categories.length)]}`, type: "pageview", props: {referrer: "social"}}
+    ];
+    const entry = entryPoints[Math.floor(Math.random() * 100) < 60 ? 0 : (Math.floor(Math.random() * 100) < 85 ? 1 : 2)];
+    
+    await fetch('/api/ingest', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'Authorization': token},
+      body: JSON.stringify({
+        client_id: clientId,
+        page: entry.page,
+        event_type: entry.type,
+        timestamp: timestamp,
         user_id: currentUserId || undefined,
-        session_id: simSessionId
-      };
+        session_id: simSessionId,
+        properties: entry.props
+      })
+    });
+    
+    // Generate remaining events
+    for (let i = 1; i < persona.events && i < 100; i++) {
+      timestamp += Math.floor(Math.random() * 60) + 10; // 10-70 seconds between events
+      const r = Math.random();
+      
+      let event;
+      if (r < persona.browseRate) {
+        // Browse
+        const category = categories[Math.floor(Math.random() * categories.length)];
+        event = {
+          client_id: clientId,
+          page: `/category?category=${category}`,
+          event_type: "pageview",
+          timestamp: timestamp,
+          user_id: currentUserId || undefined,
+          session_id: simSessionId,
+          properties: {category: category}
+        };
+      } else if (r < persona.browseRate + persona.productRate) {
+        // View product
+        const productId = `prod_${Math.floor(Math.random() * 100)}`;
+        viewedProducts.push(productId);
+        event = {
+          client_id: clientId,
+          page: `/p/product-${productId}?id=${productId}`,
+          event_type: "pageview",
+          timestamp: timestamp,
+          user_id: currentUserId || undefined,
+          session_id: simSessionId,
+          properties: {
+            product_id: productId,
+            product_name: `Product ${productId}`,
+            product_price: Math.floor(Math.random() * 500) + 50
+          }
+        };
+      } else if (r < persona.browseRate + persona.productRate + persona.cartRate) {
+        // Add to cart
+        if (viewedProducts.length > 0) {
+          const productId = viewedProducts[Math.floor(Math.random() * viewedProducts.length)];
+          cartItems.push(productId);
+          event = {
+            client_id: clientId,
+            page: "/cart",
+            event_type: "add_to_cart",
+            timestamp: timestamp,
+            user_id: currentUserId || undefined,
+            session_id: simSessionId,
+            properties: {
+              product_id: productId,
+              quantity: 1
+            }
+          };
+        } else {
+          event = {
+            client_id: clientId,
+            page: "/home",
+            event_type: "pageview",
+            timestamp: timestamp,
+            user_id: currentUserId || undefined,
+            session_id: simSessionId
+          };
+        }
+      } else {
+        // Checkout/Purchase
+        if (cartItems.length > 0 && Math.random() < 0.65) {
+          event = {
+            client_id: clientId,
+            page: "/checkout",
+            event_type: "purchase",
+            timestamp: timestamp,
+            user_id: currentUserId || undefined,
+            session_id: simSessionId,
+            properties: {
+              cart_items: cartItems.length,
+              total_amount: Math.floor(Math.random() * 1000) + 100,
+              payment_method: ["credit_card", "paypal", "apple_pay"][Math.floor(Math.random() * 3)]
+            }
+          };
+        } else {
+          event = {
+            client_id: clientId,
+            page: "/home",
+            event_type: "pageview",
+            timestamp: timestamp,
+            user_id: currentUserId || undefined,
+            session_id: simSessionId
+          };
+        }
+      }
       
       await fetch('/api/ingest', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token
-        },
+        headers: {'Content-Type': 'application/json', 'Authorization': token},
         body: JSON.stringify(event)
       });
     }
     
-    output.innerText = "10 events ingested successfully";
+    output.innerText = `${persona.events} realistic events ingested successfully (${persona.name} persona)`;
   } catch (error) {
     console.error('Error simulating events:', error);
     output.innerText = `Error: ${error.message}`;
@@ -644,3 +772,375 @@ analyzeBtn.onclick = async () => {
   
   await runAnalysis({ skipLLM: false, limit: null, analysisTarget });
 };
+
+// ML Algorithm buttons
+const mlKmeansBtn = document.getElementById('mlKmeansBtn');
+const mlTreeBtn = document.getElementById('mlTreeBtn');
+const mlFpGrowthBtn = document.getElementById('mlFpGrowthBtn');
+const mlLogisticBtn = document.getElementById('mlLogisticBtn');
+
+async function runMLAlgorithm(endpoint, algorithmName) {
+  if (!token) {
+    output.innerText = "Please login first";
+    return;
+  }
+  
+  const usernameInput = document.getElementById('targetUsername');
+  const username = usernameInput ? usernameInput.value.trim() : null;
+  
+  output.innerText = `Running ${algorithmName}...`;
+  
+  try {
+    const resp = await fetch(`/api/${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token
+      },
+      body: JSON.stringify({ username })
+    });
+    
+    // Check HTTP status first
+    if (!resp.ok) {
+      const errorData = await resp.json();
+      const errorMsg = errorData.detail || errorData.error || `HTTP ${resp.status} error`;
+      output.innerText = `Error: ${errorMsg}`;
+      return;
+    }
+    
+    const result = await resp.json();
+    
+    // Additional check for error in response
+    if (result.error) {
+      output.innerText = `Error: ${result.error}`;
+      return;
+    }
+    
+    // Display results
+    displayMLResults(algorithmName, result);
+    output.innerText = `${algorithmName} completed successfully`;
+  } catch (error) {
+    console.error(`Error running ${algorithmName}:`, error);
+    output.innerText = `Error: ${error.message}`;
+  }
+}
+
+function displayMLResults(algorithmName, result) {
+  // Validate result object
+  if (!result || typeof result !== 'object') {
+    console.error('Invalid result object:', result);
+    return;
+  }
+  
+  // Create or get ML results container
+  let mlResultsDiv = document.getElementById('ml-results');
+  if (!mlResultsDiv) {
+    mlResultsDiv = document.createElement('div');
+    mlResultsDiv.id = 'ml-results';
+    mlResultsDiv.className = 'analysis-section ml-results-section';
+    const resultsDiv = document.getElementById('results');
+    if (resultsDiv) {
+      resultsDiv.insertBefore(mlResultsDiv, resultsDiv.firstChild);
+    }
+  }
+  
+  // Build HTML based on algorithm
+  let html = `<h2>🤖 ${algorithmName}</h2>`;
+  
+  if (algorithmName === 'K-Means Clustering') {
+    html += `
+      <div class="ml-result-card">
+        <h3>Cluster Analysis</h3>
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-icon">👥</div>
+            <div class="metric-value">${result.total_users}</div>
+            <div class="metric-label">Total Users</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon">🎯</div>
+            <div class="metric-value">${result.num_clusters}</div>
+            <div class="metric-label">Clusters</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon">📊</div>
+            <div class="metric-value">${result.silhouette_score}</div>
+            <div class="metric-label">Silhouette Score</div>
+          </div>
+        </div>
+        
+        <h4>Cluster Characteristics</h4>
+        <div class="clusters-grid">
+    `;
+    
+    if (result.cluster_stats && typeof result.cluster_stats === 'object') {
+      for (const [clusterId, stats] of Object.entries(result.cluster_stats)) {
+        const clusterNames = ['🔵 Low Value', '🟢 Medium Value', '🟡 High Value'];
+        html += `
+          <div class="cluster-card">
+            <div class="cluster-header">${clusterNames[clusterId] || `Cluster ${clusterId}`}</div>
+            <div class="cluster-stats">
+              <div><strong>Users:</strong> ${stats.user_count || 0}</div>
+              <div><strong>Avg Events:</strong> ${stats.avg_events || 0}</div>
+              <div><strong>Conversion:</strong> ${((stats.avg_conversion || 0) * 100).toFixed(2)}%</div>
+              <div><strong>Cart Rate:</strong> ${((stats.avg_cart_rate || 0) * 100).toFixed(2)}%</div>
+            </div>
+          </div>
+        `;
+      }
+    }
+    
+    html += `
+        </div>
+      </div>
+    `;
+  } else if (algorithmName === 'Decision Tree') {
+    html += `
+      <div class="ml-result-card">
+        <h3>Conversion Prediction Model</h3>
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-icon">🎯</div>
+            <div class="metric-value">${result.auc_score}</div>
+            <div class="metric-label">AUC Score</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon">🌳</div>
+            <div class="metric-value">${result.tree_depth}</div>
+            <div class="metric-label">Tree Depth</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon">📦</div>
+            <div class="metric-value">${result.training_samples}</div>
+            <div class="metric-label">Training Samples</div>
+          </div>
+        </div>
+        
+        <h4>Feature Importance</h4>
+        <div class="feature-importance">
+    `;
+    
+    if (result.feature_importance && typeof result.feature_importance === 'object') {
+      const maxImportance = Math.max(...Object.values(result.feature_importance));
+      for (const [feature, importance] of Object.entries(result.feature_importance)) {
+      const percentage = (importance / maxImportance * 100);
+      html += `
+        <div class="feature-bar">
+          <span class="feature-name">${feature}</span>
+          <div class="bar-container">
+            <div class="bar-fill" style="width: ${percentage}%"></div>
+          </div>
+          <span class="feature-value">${importance}</span>
+        </div>
+      `;
+      }
+    }
+    
+    html += `
+        </div>
+        
+        <h4>Sample Predictions</h4>
+        <table class="predictions-table">
+          <thead>
+            <tr>
+              <th>Session</th>
+              <th>Actual</th>
+              <th>Predicted</th>
+              <th>Confidence</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+    
+    if (result.sample_predictions && Array.isArray(result.sample_predictions)) {
+      for (const sample of result.sample_predictions) {
+        const match = sample.actual === sample.predicted;
+        html += `
+          <tr class="${match ? 'correct' : 'incorrect'}">
+            <td>${sample.session_id}</td>
+            <td>${sample.actual ? '✅ Purchase' : '❌ No Purchase'}</td>
+            <td>${sample.predicted ? '✅ Purchase' : '❌ No Purchase'}</td>
+            <td>${(sample.confidence * 100).toFixed(1)}%</td>
+          </tr>
+        `;
+      }
+    }
+    
+    html += `
+          </tbody>
+        </table>
+      </div>
+    `;
+  } else if (algorithmName === 'FP-Growth Pattern Mining') {
+    html += `
+      <div class="ml-result-card">
+        <h3>Frequent Navigation Patterns</h3>
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-icon">📊</div>
+            <div class="metric-value">${result.total_transactions}</div>
+            <div class="metric-label">Sessions Analyzed</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon">🔍</div>
+            <div class="metric-value">${result.num_frequent_patterns}</div>
+            <div class="metric-label">Patterns Found</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon">📈</div>
+            <div class="metric-value">${result.num_rules}</div>
+            <div class="metric-label">Association Rules</div>
+          </div>
+        </div>
+        
+        <h4>Top Frequent Patterns</h4>
+        <div class="patterns-list">
+    `;
+    
+    if (result.top_patterns && Array.isArray(result.top_patterns)) {
+      for (const pattern of result.top_patterns.slice(0, 10)) {
+        html += `
+          <div class="pattern-item">
+            <div class="pattern-pages">${pattern.pattern.join(' → ')}</div>
+            <div class="pattern-stats">
+              <span class="freq-badge">${pattern.frequency} sessions</span>
+              <span class="support-badge">Support: ${(pattern.support * 100).toFixed(1)}%</span>
+            </div>
+          </div>
+        `;
+      }
+    }
+    
+    html += `
+        </div>
+        
+        <h4>Top Association Rules</h4>
+        <div class="rules-list">
+    `;
+    
+    if (result.top_rules && Array.isArray(result.top_rules)) {
+      for (const rule of result.top_rules.slice(0, 8)) {
+        html += `
+          <div class="rule-item">
+            <div class="rule-text">
+              <span class="if-part">${rule.if.join(', ')}</span>
+              <span class="arrow">⇒</span>
+              <span class="then-part">${rule.then.join(', ')}</span>
+            </div>
+            <div class="rule-stats">
+              <span>Confidence: ${(rule.confidence * 100).toFixed(1)}%</span>
+              <span>Lift: ${rule.lift.toFixed(2)}</span>
+            </div>
+          </div>
+        `;
+      }
+    }
+    
+    html += `
+        </div>
+      </div>
+    `;
+  } else if (algorithmName === 'Logistic Regression') {
+    html += `
+      <div class="ml-result-card">
+        <h3>Purchase Probability Prediction</h3>
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-icon">🎯</div>
+            <div class="metric-value">${result.auc_score}</div>
+            <div class="metric-label">AUC Score</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon">📦</div>
+            <div class="metric-value">${result.training_samples}</div>
+            <div class="metric-label">Training Samples</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon">🧪</div>
+            <div class="metric-value">${result.test_samples}</div>
+            <div class="metric-label">Test Samples</div>
+          </div>
+        </div>
+        
+        <h4>Feature Coefficients</h4>
+        <div class="coefficients-list">
+    `;
+    
+    if (result.feature_coefficients && typeof result.feature_coefficients === 'object') {
+      for (const [feature, coef] of Object.entries(result.feature_coefficients)) {
+        const isPositive = coef > 0;
+        html += `
+          <div class="coef-item">
+            <span class="coef-name">${feature}</span>
+            <span class="coef-value ${isPositive ? 'positive' : 'negative'}">
+              ${isPositive ? '+' : ''}${coef}
+            </span>
+          </div>
+        `;
+      }
+    }
+    
+    html += `
+          <div class="coef-item intercept">
+            <span class="coef-name">Intercept</span>
+            <span class="coef-value">${result.intercept}</span>
+          </div>
+        </div>
+        
+        <h4>Sample Predictions</h4>
+        <table class="predictions-table">
+          <thead>
+            <tr>
+              <th>Session</th>
+              <th>Actual</th>
+              <th>Predicted</th>
+              <th>Purchase Probability</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+    
+    if (result.sample_predictions && Array.isArray(result.sample_predictions)) {
+      for (const sample of result.sample_predictions) {
+        const match = sample.actual === sample.predicted;
+        html += `
+          <tr class="${match ? 'correct' : 'incorrect'}">
+            <td>${sample.session_id}</td>
+            <td>${sample.actual ? '✅ Purchase' : '❌ No Purchase'}</td>
+            <td>${sample.predicted ? '✅ Purchase' : '❌ No Purchase'}</td>
+            <td>
+              <div class="prob-bar-container">
+                <div class="prob-bar" style="width: ${sample.purchase_probability * 100}%"></div>
+                <span class="prob-text">${(sample.purchase_probability * 100).toFixed(1)}%</span>
+              </div>
+            </td>
+          </tr>
+        `;
+      }
+    }
+    
+    html += `
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+  
+  mlResultsDiv.innerHTML = html;
+}
+
+if (mlKmeansBtn) {
+  mlKmeansBtn.onclick = () => runMLAlgorithm('ml/kmeans', 'K-Means Clustering');
+}
+
+if (mlTreeBtn) {
+  mlTreeBtn.onclick = () => runMLAlgorithm('ml/decision-tree', 'Decision Tree');
+}
+
+if (mlFpGrowthBtn) {
+  mlFpGrowthBtn.onclick = () => runMLAlgorithm('ml/fp-growth', 'FP-Growth Pattern Mining');
+}
+
+if (mlLogisticBtn) {
+  mlLogisticBtn.onclick = () => runMLAlgorithm('ml/logistic-regression', 'Logistic Regression');
+}

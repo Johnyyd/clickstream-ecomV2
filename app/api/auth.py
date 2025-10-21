@@ -10,6 +10,23 @@ import os
 
 router = APIRouter(prefix="/api", tags=["auth"])
 
+# Dependency function for protected routes
+def get_current_user(Authorization: Optional[str] = Header(default=None)):
+    """
+    FastAPI dependency to get the current authenticated user.
+    Raises HTTPException if not authenticated.
+    """
+    if not Authorization:
+        raise HTTPException(status_code=401, detail="Unauthorized - No token provided")
+    user = get_user_by_token(Authorization)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized - Invalid token")
+    return {
+        "user_id": str(user.get("_id")),
+        "username": user.get("username"),
+        "role": user.get("role", "user"),
+    }
+
 class SignUpBody(BaseModel):
     username: str
     email: str

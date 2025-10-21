@@ -34,9 +34,9 @@
             <button id="loginBtn">Login</button>
         </div>
         <div id="controls">
-            <button id="simulateBtn">Simulate Events (10)</button>
+            <button id="simulateBtn">Simulate Events (100)</button>
             <div class="analysis-controls">
-                <button id="analyzeBtn">Run Analysis</button>
+                <button id="analyzeBtn">Run Spark Analysis</button>
                 <div class="toggle-container" role="group" aria-labelledby="analysisModeLabel">
                     <span id="analysisModeLabel" class="sr-only">Analysis Engine</span>
                     <label class="switch">
@@ -47,6 +47,15 @@
                         <span class="slider round"></span>
                     </label>
                     <span id="analysisModeText" aria-live="polite">Spark Analysis</span>
+                </div>
+            </div>
+            <div class="ml-controls">
+                <h3>Machine Learning Algorithms</h3>
+                <div class="ml-buttons">
+                    <button id="mlKmeansBtn" class="ml-btn">K-Means Clustering</button>
+                    <button id="mlTreeBtn" class="ml-btn">Decision Tree</button>
+                    <button id="mlFpGrowthBtn" class="ml-btn">FP-Growth Patterns</button>
+                    <button id="mlLogisticBtn" class="ml-btn">Logistic Regression</button>
                 </div>
             </div>
             <div class="key-controls hidden">
@@ -81,9 +90,9 @@
             </div>
         </div>
     </div>
-    <script src="/static/analytics.js?v=2.1"></script>
-    <script type="module" src="/static/dashboard.js?v=2.1"></script>
-    <script type="module" src="/static/analysisDisplay.js?v=2.1"></script>
+    <script src="/static/analytics.js?v=2.2"></script>
+    <script type="module" src="/static/dashboard.js?v=2.2"></script>
+    <script type="module" src="/static/analysisDisplay.js?v=2.2"></script>
 
 </body>
 

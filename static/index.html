@@ -7,6 +7,7 @@
     <title>Clickstream Dashboard</title>
     <link rel="stylesheet" href="/static/styles.css?v=2.1">
     <link rel="stylesheet" href="/static/llmDisplay.css?v=2.1">
+    <link rel="stylesheet" href="/static/comprehensiveAnalytics.css?v=1.0">
     <script>
         (async function(){
           try {
@@ -28,11 +29,6 @@
 <body>
     <div id="app">
         <h1>Clickstream Dashboard</h1>
-        <div id="auth">
-            <input id="username" placeholder="username">
-            <input id="password" placeholder="password" type="password">
-            <button id="loginBtn">Login</button>
-        </div>
         <div id="controls">
             <button id="simulateBtn">Simulate Events (100)</button>
             <div class="analysis-controls">
@@ -49,8 +45,19 @@
                     <span id="analysisModeText" aria-live="polite">Spark Analysis</span>
                 </div>
             </div>
+            <div class="comprehensive-analytics-controls">
+                <h3>📊 Comprehensive Analytics</h3>
+                <div class="analytics-buttons">
+                    <button id="runAllAnalyticsBtn" class="analytics-btn primary">🚀 Run All Analytics</button>
+                    <button id="seoAnalyticsBtn" class="analytics-btn">🔍 SEO & Traffic</button>
+                    <button id="cartAnalyticsBtn" class="analytics-btn">🛒 Cart Abandonment</button>
+                    <button id="retentionAnalyticsBtn" class="analytics-btn">📈 Retention</button>
+                    <button id="journeyAnalyticsBtn" class="analytics-btn">🗺️ Customer Journey</button>
+                    <button id="recommendationsBtn" class="analytics-btn">⭐ Recommendations</button>
+                </div>
+            </div>
             <div class="ml-controls">
-                <h3>Machine Learning Algorithms</h3>
+                <h3>🤖 Machine Learning Algorithms</h3>
                 <div class="ml-buttons">
                     <button id="mlKmeansBtn" class="ml-btn">K-Means Clustering</button>
                     <button id="mlTreeBtn" class="ml-btn">Decision Tree</button>
@@ -70,6 +77,67 @@
                 </details>
             </div>
             <pre id="output" class="status-output"></pre>
+            
+            <!-- Comprehensive Analytics Results -->
+            <div id="comprehensiveResults" class="comprehensive-results hidden">
+                <h2>📊 Comprehensive Analytics Results</h2>
+                
+                <!-- SEO & Traffic Analysis -->
+                <div id="seoResults" class="analytics-section hidden">
+                    <h3>🔍 SEO & Traffic Source Analysis</h3>
+                    <div class="metrics-grid">
+                        <div id="trafficBySource" class="metric-card"></div>
+                        <div id="landingPages" class="metric-card"></div>
+                        <div id="conversionBySource" class="metric-card"></div>
+                        <div id="hourlyTraffic" class="metric-card"></div>
+                    </div>
+                </div>
+                
+                <!-- Cart Abandonment -->
+                <div id="cartResults" class="analytics-section hidden">
+                    <h3>🛒 Cart Abandonment Analysis</h3>
+                    <div class="metrics-grid">
+                        <div id="abandonmentRate" class="metric-card"></div>
+                        <div id="abandonedProducts" class="metric-card"></div>
+                        <div id="cartValueComparison" class="metric-card"></div>
+                    </div>
+                </div>
+                
+                <!-- Retention Analysis -->
+                <div id="retentionResults" class="analytics-section hidden">
+                    <h3>📈 Cohort & Retention Analysis</h3>
+                    <div class="metrics-grid">
+                        <div id="cohortTable" class="metric-card"></div>
+                        <div id="retentionMetrics" class="metric-card"></div>
+                        <div id="userSegments" class="metric-card"></div>
+                    </div>
+                </div>
+                
+                <!-- Customer Journey -->
+                <div id="journeyResults" class="analytics-section hidden">
+                    <h3>🗺️ Customer Journey Path Analysis</h3>
+                    <div class="metrics-grid">
+                        <div id="conversionPaths" class="metric-card"></div>
+                        <div id="dropoffPoints" class="metric-card"></div>
+                        <div id="pathStatistics" class="metric-card"></div>
+                        <div id="commonSequences" class="metric-card"></div>
+                    </div>
+                </div>
+                
+                <!-- Product Recommendations -->
+                <div id="recommendationsResults" class="analytics-section hidden">
+                    <h3>⭐ Product Recommendations (ALS)</h3>
+                    <div id="alsRecommendations" class="metric-card"></div>
+                </div>
+                
+                <!-- ML Results -->
+                <div id="mlResults" class="analytics-section hidden">
+                    <h3>🤖 Machine Learning Results</h3>
+                    <div id="mlContent" class="metric-card"></div>
+                </div>
+            </div>
+            
+            <!-- Original Results Section -->
             <div id="results" class="results">
                 <h2>Summary</h2>
                 <pre id="summary"></pre>
@@ -93,6 +161,7 @@
     <script src="/static/analytics.js?v=2.2"></script>
     <script type="module" src="/static/dashboard.js?v=2.2"></script>
     <script type="module" src="/static/analysisDisplay.js?v=2.2"></script>
+    <script src="/static/comprehensiveAnalytics.js?v=1.0"></script>
 
 </body>
 

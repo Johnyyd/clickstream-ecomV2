@@ -12,6 +12,7 @@ from app.api import recommendations as recommendations_api
 from app.api import metrics as metrics_api
 from app.api import cart as cart_api
 from app.api import ml as ml_api
+from app.api import analytics_comprehensive as analytics_comprehensive_api
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
@@ -106,3 +107,4 @@ app.include_router(recommendations_api.router)
 app.include_router(metrics_api.router)
 app.include_router(cart_api.router)
 app.include_router(ml_api.router)
+app.include_router(analytics_comprehensive_api.router)

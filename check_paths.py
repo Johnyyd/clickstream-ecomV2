@@ -2,9 +2,9 @@
 import os
 
 paths = {
-    "JAVA_HOME": r"C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot",
-    "SPARK_HOME": r"C:\LUUDULIEU\APP\Spark\Spark\spark-4.0.0",
-    "HADOOP_HOME": r"C:\LUUDULIEU\APP\Hadoop\hadoop-3.3.4",
+    "JAVA_HOME": r"C:\LUUDULIEU\APP\JDK\jdk-17.0.12",
+    "SPARK_HOME": r"C:\LUUDULIEU\APP\Spark\spark-3.5.7",
+    "HADOOP_HOME": r"C:\LUUDULIEU\APP\Hadoop\hadoop-3.3.5\hadoop-3.3.5",
     "Python (venv)": r"C:\LUUDULIEU\CODE\github\clickstream-ecomV2\.venv\Scripts\python.exe",
 }
 

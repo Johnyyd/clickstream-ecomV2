@@ -19,9 +19,9 @@ def get_aggregates(minutes: int = Query(default=60, ge=1, le=1440)) -> Dict[str,
     cur = db.aggregates_minute.find({
         "window_end": {"$gte": since}
     }).sort([( "window_end", 1 )])
-    items: List[Dict[str, Any]] = []
+    raw_items: List[Dict[str, Any]] = []
     for d in cur:
-        items.append({
+        raw_items.append({
             "window_start": d.get("window_start"),
             "window_end": d.get("window_end"),
             "page": d.get("page"),
@@ -29,28 +29,86 @@ def get_aggregates(minutes: int = Query(default=60, ge=1, le=1440)) -> Dict[str,
             "count": d.get("count", 0),
         })
 
+    print(f"[metrics.get_aggregates] Found {len(raw_items)} raw items from aggregates_minute collection")
+    
+    # Aggregate items by minute (whether from collection or fallback)
+    items: List[Dict[str, Any]] = []
+    page_totals = {}
+    event_totals = {}
+    
+    if raw_items:
+        # Aggregate existing data from aggregates_minute collection
+        minute_totals = {}
+        for r in raw_items:
+            window_end = r.get("window_end")
+            if not window_end:
+                continue
+            
+            # Use window_end as key for grouping
+            key = window_end.isoformat() if isinstance(window_end, datetime) else str(window_end)
+            
+            if key not in minute_totals:
+                minute_totals[key] = {
+                    "window_start": r.get("window_start"),
+                    "window_end": window_end,
+                    "count": 0
+                }
+            
+            minute_totals[key]["count"] += r.get("count", 0)
+            
+            # Track page and event totals
+            if r.get("page"):
+                page_totals[r["page"]] = page_totals.get(r["page"], 0) + r.get("count", 0)
+            if r.get("event_type"):
+                event_totals[r["event_type"]] = event_totals.get(r["event_type"], 0) + r.get("count", 0)
+        
+        # Convert to list
+        items = list(minute_totals.values())
+        print(f"[metrics.get_aggregates] Aggregated to {len(items)} minute-level items")
+        print(f"[metrics.get_aggregates] Top pages: {sorted(page_totals.items(), key=lambda x: x[1], reverse=True)[:3]}")
+        
+        return {
+            "items": items,
+            "by_page": page_totals,
+            "by_event": event_totals
+        }
+    
     # Fallback: if no aggregates available, compute from raw events to keep UI populated
     if not items:
+        print(f"[metrics.get_aggregates] Using fallback - querying events collection")
         try:
             # Load recent events and bucket by minute, page, event_type
+            # Query with datetime (events are stored as datetime in DB, not int)
             q = {"timestamp": {"$gte": since}}
+            print(f"[metrics.get_aggregates] Query: {q}, since datetime: {since}")
             cursor = events_col().find(q, {"timestamp": 1, "page": 1, "event_type": 1}).sort("timestamp", 1)
+            event_count = 0
             buckets: Dict[str, Dict[str, Dict[str, int]]] = {}
             # buckets[minute_iso][page][event_type] = count
             for ev in cursor:
+                event_count += 1
                 ts = ev.get("timestamp")
                 if not ts:
                     continue
-                # Ensure ts is datetime
-                if isinstance(ts, (int, float)):
-                    ts = datetime.utcfromtimestamp(ts)
+                
+                # Handle different timestamp formats
+                if isinstance(ts, datetime):
+                    # Already datetime - use as-is
+                    ts_dt = ts
+                elif isinstance(ts, (int, float)):
+                    # Unix timestamp - convert to datetime
+                    ts_dt = datetime.utcfromtimestamp(ts)
                 elif isinstance(ts, str):
+                    # ISO string - parse
                     try:
-                        ts = datetime.fromisoformat(ts)
+                        ts_dt = datetime.fromisoformat(ts)
                     except Exception:
                         continue
-                # Floor to minute in UTC
-                ts_utc = ts if ts.tzinfo is None else ts.astimezone(tz=None).replace(tzinfo=None)
+                else:
+                    continue
+                
+                # Floor to minute in UTC (remove timezone info for consistent bucketing)
+                ts_utc = ts_dt if ts_dt.tzinfo is None else ts_dt.replace(tzinfo=None)
                 minute = ts_utc.replace(second=0, microsecond=0)
                 page = ev.get("page") or None
                 et = ev.get("event_type") or "pageview"
@@ -59,22 +117,52 @@ def get_aggregates(minutes: int = Query(default=60, ge=1, le=1440)) -> Dict[str,
                 buckets[mkey].setdefault(page, {})
                 buckets[mkey][page][et] = buckets[mkey][page].get(et, 0) + 1
 
-            # Convert buckets to items sorted by window_end ascending
+            print(f"[metrics.get_aggregates] Processed {event_count} events, created {len(buckets)} minute buckets")
+            
+            # Convert buckets to items - aggregate by minute for line chart efficiency
+            # Group all events in the same minute together for simpler client-side processing
+            minute_totals = {}
+            page_totals = {}
+            event_totals = {}
+            
             for mkey in sorted(buckets.keys()):
                 minute_dt = datetime.fromisoformat(mkey)
                 window_start = minute_dt
                 window_end = minute_dt + timedelta(minutes=1)
+                
+                minute_total = 0
                 for page, et_map in buckets[mkey].items():
                     for et, cnt in et_map.items():
-                        items.append({
-                            "window_start": window_start,
-                            "window_end": window_end,
-                            "page": page,
-                            "event_type": et,
-                            "count": int(cnt),
-                        })
-        except Exception:
-            # Silent fallback failure; return empty items
-            pass
+                        minute_total += cnt
+                        # Track by page and event_type for detailed breakdown if needed
+                        page_totals[page] = page_totals.get(page, 0) + cnt
+                        event_totals[et] = event_totals.get(et, 0) + cnt
+                
+                # Store one item per minute with total count
+                minute_totals[mkey] = {
+                    "window_start": window_start,
+                    "window_end": window_end,
+                    "count": minute_total
+                }
+            
+            # Create aggregated items: one per minute
+            for mkey in sorted(minute_totals.keys()):
+                items.append(minute_totals[mkey])
+            
+            print(f"[metrics.get_aggregates] Generated {len(items)} minute-aggregated items from fallback (from {event_count} raw events)")
+            print(f"[metrics.get_aggregates] Top pages: {sorted(page_totals.items(), key=lambda x: x[1], reverse=True)[:3]}")
+            print(f"[metrics.get_aggregates] Top events: {sorted(event_totals.items(), key=lambda x: x[1], reverse=True)[:3]}")
+            
+            # Return with page and event breakdowns for client-side rendering
+            return {
+                "items": items,
+                "by_page": page_totals,
+                "by_event": event_totals
+            }
+        except Exception as e:
+            # Log fallback failure
+            print(f"[metrics.get_aggregates] Fallback error: {e}")
+            import traceback
+            traceback.print_exc()
 
     return {"items": items}

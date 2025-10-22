@@ -1,5 +1,5 @@
 # spark_jobs.py
-from pyspark.sql import SparkSession
+from spark_session import get_spark_session
 from pyspark.sql.functions import (
     col, window, to_timestamp, unix_timestamp, collect_set,
     coalesce, lit, current_timestamp, create_map, desc, count,
@@ -12,20 +12,6 @@ from pyspark.sql.types import (
 import os
 import sys
 import json
-import os
-os.environ["JAVA_HOME"] = r"C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot"
-os.environ["SPARK_HOME"] = r"C:\LUUDULIEU\APP\Spark\Spark\spark-4.0.0"
-os.environ["HADOOP_HOME"] = r"C:\LUUDULIEU\APP\Hadoop\hadoop-3.3.4"
-os.environ["PATH"] = (
-    os.environ["JAVA_HOME"] + r"\bin;" +
-    os.environ["SPARK_HOME"] + r"\bin;" +
-    os.environ["HADOOP_HOME"] + r"\bin;" +
-    os.environ["PATH"]
-)
-os.environ["SPARK_LOCAL_IP"] = "127.0.0.1"
-os.environ["PYSPARK_PYTHON"] = r"C:\LUUDULIEU\CODE\github\clickstream-ecomV2\venv\Scripts\python.exe"
-os.environ["PYSPARK_DRIVER_PYTHON"] = r"C:\LUUDULIEU\CODE\github\clickstream-ecomV2\venv\Scripts\python.exe"
-os.environ["ARROW_PRE_0_15_IPC_FORMAT"] = "1"
 from db import events_col
 from bson import ObjectId
 from datetime import datetime
@@ -33,158 +19,13 @@ import pytz
 import traceback
 import gc
 
-# Module-level reusable Spark session
-_SPARK_SESSION = None
-_SPARK_OWNED = False
-
 def create_spark(app_name="clickstream-analysis", reuse=True):
-    """Create or return a reusable SparkSession.
-
-    If reuse=True and a module-level session exists, return it. The session
-    will not be stopped by `sessionize_and_counts` to avoid race conditions
-    with other threads or the HTTP server.
     """
-    global _SPARK_SESSION, _SPARK_OWNED
-
-    # Return existing active session when requested
-    if reuse and _SPARK_SESSION is not None:
-        return _SPARK_SESSION
-
-    try:
-        # Force garbage collection before creating session
-        gc.collect()
-
-        conf = None
-        
-        # Resolve Python executable robustly (avoid Windows Store alias)
-        def _resolve_python_exec():
-            try:
-                import shutil
-            except Exception:
-                shutil = None
-            candidates = [
-                os.environ.get("PYSPARK_PYTHON"),
-                getattr(sys, "_base_executable", None),
-                sys.executable,
-                shutil.which("python3") if shutil else None,
-                shutil.which("python") if shutil else None,
-            ]
-            for c in candidates:
-                if not c:
-                    continue
-                # Skip Microsoft Store alias path
-                if "WindowsApps" in str(c):
-                    continue
-                # If c is an absolute path, ensure it exists
-                try:
-                    if os.path.isabs(c) and not os.path.exists(c):
-                        continue
-                except Exception:
-                    pass
-                return c
-            return sys.executable
-
-        py_exec = _resolve_python_exec()
-
-        # Ensure PySpark workers use the exact same Python interpreter
-        os.environ["PYSPARK_PYTHON"] = py_exec
-        os.environ["PYSPARK_DRIVER_PYTHON"] = py_exec
-        # Force Spark to use IPv4 localhost
-        os.environ["SPARK_LOCAL_IP"] = "127.0.0.1"
-        os.environ["SPARK_LOCAL_HOSTNAME"] = "localhost"
-
-        print(f"Using Python for Spark: {py_exec}")
-
-        spark = (
-            SparkSession.builder
-                .appName(app_name)
-                .master("local[*]")
-                .config("spark.sql.execution.pyspark.udf.faulthandler.enabled", "true")
-                .config("spark.python.worker.faulthandler.enabled", "true")
-                .config("spark.driver.memory", "6g")
-                .config("spark.executor.memory", "6g")
-                .config("spark.driver.maxResultSize", "1g")
-                .config("spark.python.worker.memory", "1g")
-                .config("spark.sql.shuffle.partitions", "1")
-                .config("spark.default.parallelism", "1")
-                .config("spark.memory.fraction", "0.8")
-                .config("spark.memory.storageFraction", "0.3")
-                .config("spark.executor.heartbeatInterval", "60s")
-                .config("spark.network.timeout", "1200s")
-                # Bind explicitly to localhost to avoid Hyper-V/WSL interfaces on Windows
-                .config("spark.driver.bindAddress", "127.0.0.1")
-                .config("spark.driver.host", "127.0.0.1")
-                .config("spark.local.ip", "127.0.0.1")
-                .config("spark.blockManager.port", "0")
-                .config("spark.port.maxRetries", "50")
-                .config("spark.driver.extraJavaOptions", "-Djava.net.preferIPv4Stack=true")
-                .config("spark.executor.extraJavaOptions", "-Djava.net.preferIPv4Stack=true")
-                .config("spark.python.auth.socketTimeout", "120")
-                .config("spark.ui.enabled", "false")
-                # Ensure the same Python is used for driver and workers
-                .config("spark.pyspark.driver.python", py_exec)
-                .config("spark.pyspark.python", py_exec)
-                .config("spark.executorEnv.PYSPARK_PYTHON", py_exec)
-                # Tắt Hive để tránh gọi constructor lỗi HashMap
-                .config("spark.sql.catalogImplementation", "in-memory")
-                # Tránh auto load session từ context cũ
-                .config("spark.driver.bindAddress", "127.0.0.1")
-                .config("spark.driver.host", "127.0.0.1")
-                
-                .config("spark.executorEnv.PYTHONUNBUFFERED", "1") \
-                .config("spark.python.worker.debug", "true")
-
-                .config("spark.executorEnv.PYTHONPATH", os.environ.get("PYTHONPATH", "")) \
-                .config("spark.executorEnv.PYSPARK_PYTHON", sys.executable) \
-                .config("spark.executorEnv.PYSPARK_DRIVER_PYTHON", sys.executable)
-                .config("spark.sql.execution.arrow.pyspark.enabled", "false")
-
-                .config("spark.python.worker.reuse", "true") \
-                .config("spark.python.use.daemon", "true") \
-                .config("spark.executorEnv.PYSPARK_PYTHON", os.environ["PYSPARK_PYTHON"]) \
-                .config("spark.executorEnv.PYSPARK_DRIVER_PYTHON", os.environ["PYSPARK_DRIVER_PYTHON"])
-
-                # Temp dirs (avoid long UNC paths)
-                .config("spark.local.dir", os.environ.get("SPARK_LOCAL_DIRS", os.path.join(os.getcwd(), "tmp_spark")))
-                # .getOrCreate()
-        )
-        print(f"Spark PYSPARK_PYTHON = {os.environ.get('PYSPARK_PYTHON')}")
-        print(f"Spark PYSPARK_DRIVER_PYTHON = {os.environ.get('PYSPARK_DRIVER_PYTHON')}")
-        # Nếu bạn có danh sách cấu hình dạng list, hãy chuyển thành dict trước:
-        if isinstance(conf, list):
-            conf = dict(conf)
-
-        if isinstance(conf, dict):
-            for k, v in conf.items():
-                spark = spark.config(k, v)
-
-        spark = spark.getOrCreate()
-        
-        # Set log level
-        spark.sparkContext.setLogLevel("WARN")
-        return spark
-
-        # Quick sanity checks to detect worker/env issues early
-        try:
-            test_rdd = spark.sparkContext.parallelize([1]).map(lambda x: x + 1).collect()
-            print(f"Spark worker test OK: {test_rdd}")
-            test_df = spark.createDataFrame([{"a": 1}])
-            print(f"Spark DataFrame test OK, count: {test_df.count()}")
-        except Exception as diag_err:
-            print(f"Spark worker/DF diagnostic failed: {diag_err}")
-            # Continue; downstream logic will handle and report gracefully
-
-        # Save module-level session so it can be reused by the HTTP server.
-        # We intentionally do not mark the session as "owned" here to avoid
-        # stopping it from within request handlers. The web server should
-        # manage the Spark lifecycle (stop on shutdown) to avoid race
-        # conditions that leave py4j/jsc in a None state.
-        _SPARK_SESSION = spark
-        _SPARK_OWNED = False
-        return spark
-    except Exception as e:
-        print(f"Error creating Spark session: {e}")
-        raise
+    Get shared Spark session from centralized manager.
+    Legacy function kept for backward compatibility.
+    """
+    # Use centralized session manager
+    return get_spark_session()
 
 # Define schema for events
 events_schema = StructType([
@@ -287,6 +128,11 @@ def sessionize_and_counts(limit=None, user_id=None):
     try:
         print("\n=== Starting Spark Analysis ===")
         spark = create_spark()
+        
+        if spark is None:
+            print("⚠️ Spark not available - returning empty results")
+            return {"total_events": 0, "sessions": 0, "top_pages": [], "error": "Spark not available"}
+        
         spark.sparkContext.setLogLevel("WARN")
         print("Spark session created successfully")
         

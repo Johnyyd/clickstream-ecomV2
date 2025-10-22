@@ -5,9 +5,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Clickstream Dashboard</title>
-    <link rel="stylesheet" href="/static/styles.css?v=2.1">
-    <link rel="stylesheet" href="/static/llmDisplay.css?v=2.1">
-    <link rel="stylesheet" href="/static/comprehensiveAnalytics.css?v=1.0">
+    <link rel="stylesheet" href="/static/styles.css?v=2.3">
+    <link rel="stylesheet" href="/static/llmDisplay.css?v=2.3">
+    <link rel="stylesheet" href="/static/comprehensiveAnalytics.css?v=1.1">
     <script>
         (async function(){
           try {
@@ -82,8 +82,17 @@
             <div id="comprehensiveResults" class="comprehensive-results hidden">
                 <h2>📊 Comprehensive Analytics Results</h2>
                 
+                <!-- Tab Navigation -->
+                <div class="tab-nav">
+                    <button class="tab-btn active" data-tab="seoResults">🔍 SEO & Traffic</button>
+                    <button class="tab-btn" data-tab="cartResults">🛒 Cart Abandonment</button>
+                    <button class="tab-btn" data-tab="retentionResults">📈 Retention</button>
+                    <button class="tab-btn" data-tab="journeyResults">🗺️ Customer Journey</button>
+                    <button class="tab-btn" data-tab="recommendationsResults">⭐ Recommendations</button>
+                </div>
+                
                 <!-- SEO & Traffic Analysis -->
-                <div id="seoResults" class="analytics-section hidden">
+                <div id="seoResults" class="analytics-section tab-content active">
                     <h3>🔍 SEO & Traffic Source Analysis</h3>
                     <div class="metrics-grid">
                         <div id="trafficBySource" class="metric-card"></div>
@@ -94,7 +103,7 @@
                 </div>
                 
                 <!-- Cart Abandonment -->
-                <div id="cartResults" class="analytics-section hidden">
+                <div id="cartResults" class="analytics-section tab-content">
                     <h3>🛒 Cart Abandonment Analysis</h3>
                     <div class="metrics-grid">
                         <div id="abandonmentRate" class="metric-card"></div>
@@ -104,7 +113,7 @@
                 </div>
                 
                 <!-- Retention Analysis -->
-                <div id="retentionResults" class="analytics-section hidden">
+                <div id="retentionResults" class="analytics-section tab-content">
                     <h3>📈 Cohort & Retention Analysis</h3>
                     <div class="metrics-grid">
                         <div id="cohortTable" class="metric-card"></div>
@@ -114,7 +123,7 @@
                 </div>
                 
                 <!-- Customer Journey -->
-                <div id="journeyResults" class="analytics-section hidden">
+                <div id="journeyResults" class="analytics-section tab-content">
                     <h3>🗺️ Customer Journey Path Analysis</h3>
                     <div class="metrics-grid">
                         <div id="conversionPaths" class="metric-card"></div>
@@ -125,7 +134,7 @@
                 </div>
                 
                 <!-- Product Recommendations -->
-                <div id="recommendationsResults" class="analytics-section hidden">
+                <div id="recommendationsResults" class="analytics-section tab-content">
                     <h3>⭐ Product Recommendations (ALS)</h3>
                     <div id="alsRecommendations" class="metric-card"></div>
                 </div>
@@ -158,10 +167,10 @@
             </div>
         </div>
     </div>
-    <script src="/static/analytics.js?v=2.2"></script>
-    <script type="module" src="/static/dashboard.js?v=2.2"></script>
-    <script type="module" src="/static/analysisDisplay.js?v=2.2"></script>
-    <script src="/static/comprehensiveAnalytics.js?v=1.0"></script>
+    <script src="/static/analytics.js?v=2.4"></script>
+    <script type="module" src="/static/dashboard.js?v=2.4"></script>
+    <script type="module" src="/static/analysisDisplay.js?v=2.4"></script>
+    <script src="/static/comprehensiveAnalytics.js?v=1.2"></script>
 
 </body>
 

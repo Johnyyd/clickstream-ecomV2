@@ -390,6 +390,60 @@ def seed_sessions_for_users(user_ids: List[ObjectId], days: int, sessions_per_us
     return created
 
 
+def seed_recent_events(user_ids: List[ObjectId], minutes: int, total_sessions: int, avg_events: int, seed_products_first: bool) -> int:
+    """
+    Seed events in the last N minutes - perfect for real-time dashboard testing.
+    Spreads sessions evenly across the timeframe for realistic minute-by-minute data.
+    """
+    now = datetime.now(pytz.UTC)
+    product_count = ensure_products(seed_products_first)
+    if product_count == 0:
+        print("⚠️  No products found. Run with --seed-products or seed_products.py first.")
+        return 0
+    
+    products = list(products_col().find({}, {"_id": 1, "name": 1, "slug": 1, "category": 1, "price": 1}))
+    
+    PERSONAS = [
+        {"name": "bouncer", "weight": 0.15, "avg_events": 2,
+         "browse_rate": 0.8, "product_view_rate": 0.15, "cart_rate": 0.03, "checkout_rate": 0.02},
+        {"name": "browser", "weight": 0.35, "avg_events": 7,
+         "browse_rate": 0.5, "product_view_rate": 0.35, "cart_rate": 0.1, "checkout_rate": 0.05},
+        {"name": "shopper", "weight": 0.25, "avg_events": 10,
+         "browse_rate": 0.3, "product_view_rate": 0.4, "cart_rate": 0.2, "checkout_rate": 0.1},
+        {"name": "power_buyer", "weight": 0.15, "avg_events": 12,
+         "browse_rate": 0.2, "product_view_rate": 0.35, "cart_rate": 0.25, "checkout_rate": 0.2},
+        {"name": "returning_customer", "weight": 0.10, "avg_events": 9,
+         "browse_rate": 0.25, "product_view_rate": 0.4, "cart_rate": 0.2, "checkout_rate": 0.15},
+    ]
+    
+    total_est = 0
+    print(f"📊 Generating {total_sessions} sessions in last {minutes} minutes...")
+    
+    # Spread sessions evenly across the timeframe
+    for i in range(total_sessions):
+        # Random user
+        uid = random.choice(user_ids)
+        persona = random.choices(PERSONAS, weights=[p["weight"] for p in PERSONAS], k=1)[0]
+        
+        # Calculate timestamp - spread evenly with some randomness
+        minutes_ago = (i / total_sessions) * minutes
+        jitter = random.uniform(-minutes / (total_sessions * 2), minutes / (total_sessions * 2))
+        minutes_ago = max(0, min(minutes, minutes_ago + jitter))
+        
+        session_time = now - timedelta(minutes=minutes_ago)
+        start_ts = int(session_time.timestamp())
+        
+        # Generate session
+        events_count = persona["avg_events"]
+        if i % 10 == 0:  # Progress indicator
+            print(f"  Session {i+1}/{total_sessions}: {persona['name']} @ {session_time.strftime('%H:%M:%S')}")
+        
+        generate_session_for_user(uid, start_ts, events_count, products, persona)
+        total_est += events_count
+    
+    return total_est
+
+
 def main():
     parser = argparse.ArgumentParser(description="Seed realistic customer-like data")
     parser.add_argument("--username", type=str, default=None, help="Seed only for this username (create if missing)")
@@ -398,6 +452,8 @@ def main():
     parser.add_argument("--sessions-per-user", type=int, default=5, help="Sessions per user per day")
     parser.add_argument("--avg-events", type=int, default=7, help="Average events per session")
     parser.add_argument("--seed-products", action="store_true", help="Seed products first if empty")
+    parser.add_argument("--recent-minutes", type=int, default=None, help="Generate data in last N minutes (overrides --days)")
+    parser.add_argument("--recent-sessions", type=int, default=50, help="Number of sessions when using --recent-minutes")
 
     args = parser.parse_args()
 
@@ -406,6 +462,15 @@ def main():
     else:
         user_ids = ensure_users(None, args.user_count)
 
+    # Recent mode - for real-time dashboard testing
+    if args.recent_minutes is not None:
+        print(f"🚀 RECENT MODE: Seeding {args.recent_sessions} sessions in last {args.recent_minutes} minutes")
+        est = seed_recent_events(user_ids, args.recent_minutes, args.recent_sessions, args.avg_events, args.seed_products)
+        print(f"✅ Estimated events inserted: ~{est}")
+        print(f"💡 Refresh your dashboard to see live data!")
+        return
+
+    # Normal mode - historical data
     print(f"Seeding realistic data for {len(user_ids)} users...")
     est = seed_event_for_users(user_ids, args.days, args.sessions_per_user, args.avg_events, args.seed_products)
     sessions_created = seed_sessions_for_users(user_ids, args.days, args.sessions_per_user)

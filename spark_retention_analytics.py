@@ -16,28 +16,15 @@ python_exe = sys.executable
 os.environ["PYSPARK_PYTHON"] = python_exe
 os.environ["PYSPARK_DRIVER_PYTHON"] = python_exe
 
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, count, countDistinct, datediff, current_date
+from spark_session import get_spark_session
+from pyspark.sql.functions import col, count, countDistinct, datediff, first, last, to_date
 from db import users_col, events_col
 from bson import ObjectId
 
 
 def get_spark():
-    """Get or create Spark session"""
-    existing = SparkSession._instantiatedSession
-    if existing is not None:
-        return existing
-    
-    return SparkSession.builder \
-        .appName("Retention-Analytics") \
-        .master("local[*]") \
-        .config("spark.driver.memory", "2g") \
-        .config("spark.executor.memory", "2g") \
-        .config("spark.sql.adaptive.enabled", "false") \
-        .config("spark.ui.enabled", "false") \
-        .config("spark.driver.host", "localhost") \
-        .config("spark.driver.bindAddress", "127.0.0.1") \
-        .getOrCreate()
+    """Get shared Spark session"""
+    return get_spark_session()
 
 
 def load_events_to_spark(spark, username=None):
@@ -90,6 +77,8 @@ def analyze_cohort_retention(username=None):
     """
     try:
         spark = get_spark()
+        if spark is None:
+            return {"error": "Spark not available. Install Java 8/11 and set JAVA_HOME."}
         
         # Load user data
         query = {}

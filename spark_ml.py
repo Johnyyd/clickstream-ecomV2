@@ -18,7 +18,7 @@ python_exe = sys.executable
 os.environ["PYSPARK_PYTHON"] = python_exe
 os.environ["PYSPARK_DRIVER_PYTHON"] = python_exe
 
-from pyspark.sql import SparkSession
+from spark_session import get_spark_session
 from pyspark.sql.functions import col, count, avg, sum as spark_sum, when
 from pyspark.ml.feature import VectorAssembler, StringIndexer
 from pyspark.ml.clustering import KMeans
@@ -32,45 +32,8 @@ import traceback
 from bson import ObjectId
 
 def get_spark():
-    """Get or create Spark session for ML"""
-    # Try to get existing active session first
-    existing = SparkSession._instantiatedSession
-    if existing is not None:
-        return existing
-    
-    try:
-        # Create new session if none exists
-        return SparkSession.builder \
-            .appName("Clickstream-ML") \
-            .master("local[*]") \
-            .config("spark.driver.memory", "2g") \
-            .config("spark.executor.memory", "2g") \
-            .config("spark.sql.adaptive.enabled", "false") \
-            .config("spark.ui.enabled", "false") \
-            .config("spark.driver.host", "localhost") \
-            .config("spark.sql.warehouse.dir", "file:///tmp/spark-warehouse") \
-            .config("spark.driver.bindAddress", "127.0.0.1") \
-            .getOrCreate()
-    except Exception as e:
-        # If connection fails, try to stop all contexts and retry
-        from pyspark import SparkContext
-        try:
-            SparkContext.getOrCreate().stop()
-        except Exception:
-            pass
-        
-        # Retry creating session
-        return SparkSession.builder \
-            .appName("Clickstream-ML") \
-            .master("local[*]") \
-            .config("spark.driver.memory", "2g") \
-            .config("spark.executor.memory", "2g") \
-            .config("spark.sql.adaptive.enabled", "false") \
-            .config("spark.ui.enabled", "false") \
-            .config("spark.driver.host", "localhost") \
-            .config("spark.sql.warehouse.dir", "file:///tmp/spark-warehouse") \
-            .config("spark.driver.bindAddress", "127.0.0.1") \
-            .getOrCreate()
+    """Get shared Spark session"""
+    return get_spark_session()
 
 
 def ml_user_segmentation_kmeans(username=None):
@@ -86,6 +49,8 @@ def ml_user_segmentation_kmeans(username=None):
     """
     try:
         spark = get_spark()
+        if spark is None:
+            return {"error": "Spark not available. Install Java 8/11 and set JAVA_HOME.", "segments": []}
         
         # Aggregate user behavior from MongoDB
         pipeline = []
@@ -224,6 +189,8 @@ def ml_conversion_prediction_tree(username=None):
     """
     try:
         spark = get_spark()
+        if spark is None:
+            return {"error": "Spark not available. Install Java 8/11 and set JAVA_HOME.", "model_info": {}}
         
         # Get session data
         query = {}
@@ -358,6 +325,8 @@ def ml_pattern_mining_fpgrowth(username=None):
     """
     try:
         spark = get_spark()
+        if spark is None:
+            return {"error": "Spark not available. Install Java 8/11 and set JAVA_HOME.", "patterns": []}
         
         # Get sessions and their page sequences
         query = {}
@@ -485,6 +454,8 @@ def ml_purchase_prediction_logistic(username=None):
     """
     try:
         spark = get_spark()
+        if spark is None:
+            return {"error": "Spark not available. Install Java 8/11 and set JAVA_HOME.", "predictions": []}
         
         # Get user behavior
         query = {}

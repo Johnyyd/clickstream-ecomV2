@@ -41,9 +41,93 @@
         }
     }
     
+    // Utility: Show empty state
+    function showEmptyState(containerId, message = 'No data available') {
+        const container = document.getElementById(containerId);
+        if (container) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-icon">📊</div>
+                    <p class="empty-message">${message}</p>
+                    <button class="analytics-btn" onclick="window.location.reload()">Refresh Page</button>
+                </div>
+            `;
+        }
+    }
+    
+    // Helper: Switch to specific tab
+    function switchToTab(tabId) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelector(`[data-tab="${tabId}"]`)?.classList.add('active');
+        document.getElementById(tabId)?.classList.add('active');
+    }
+    
+    // Tab Switching Logic
+    function initTabSwitching() {
+        const tabButtons = document.querySelectorAll('.tab-btn');
+        tabButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tabId = btn.getAttribute('data-tab');
+                switchToTab(tabId);
+            });
+        });
+    }
+    
+    // Utility: Show toast notification
+    function showToast(message, duration = 3000) {
+        // Remove existing toast if any
+        const existingToast = document.getElementById('analyticsToast');
+        if (existingToast) {
+            existingToast.remove();
+        }
+        
+        const toast = document.createElement('div');
+        toast.id = 'analyticsToast';
+        toast.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            z-index: 10000;
+            font-size: 14px;
+            font-weight: 500;
+            animation: slideInUp 0.3s ease;
+        `;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.style.animation = 'slideOutDown 0.3s ease';
+            setTimeout(() => toast.remove(), 300);
+        }, duration);
+    }
+    
+    // Add animation styles
+    if (!document.getElementById('toastAnimations')) {
+        const style = document.createElement('style');
+        style.id = 'toastAnimations';
+        style.textContent = `
+            @keyframes slideInUp {
+                from { transform: translateY(100px); opacity: 0; }
+                to { transform: translateY(0); opacity: 1; }
+            }
+            @keyframes slideOutDown {
+                from { transform: translateY(0); opacity: 1; }
+                to { transform: translateY(100px); opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
     // ===== SEO & Traffic Analysis =====
     async function runSEOAnalysis() {
         try {
+            lastRefreshModule = 'seo'; // Track last used module
             showStatus('🔍 Running SEO & Traffic Analysis...');
             const result = await fetchAPI('/api/analytics/seo');
             
@@ -53,7 +137,7 @@
             }
             
             show('comprehensiveResults');
-            show('seoResults');
+            switchToTab('seoResults');
             
             // Traffic by Source
             displayTrafficBySource(result.traffic_by_source || []);
@@ -75,8 +159,21 @@
     
     function displayTrafficBySource(data) {
         const container = document.getElementById('trafficBySource');
+        
+        if (!data || data.length === 0) {
+            container.innerHTML = `
+                <h4>📊 Traffic by Source</h4>
+                <div class="empty-state">
+                    <div class="empty-icon">🔍</div>
+                    <p class="empty-message">No traffic data available yet</p>
+                </div>
+            `;
+            return;
+        }
+        
         container.innerHTML = `
             <h4>📊 Traffic by Source</h4>
+            <div class="analytics-table-container">
             <table class="analytics-table">
                 <thead>
                     <tr>
@@ -97,6 +194,7 @@
                     `).join('')}
                 </tbody>
             </table>
+            </div>
         `;
     }
     
@@ -104,6 +202,7 @@
         const container = document.getElementById('landingPages');
         container.innerHTML = `
             <h4>🎯 Top Landing Pages</h4>
+            <div class="analytics-table-container">
             <table class="analytics-table">
                 <thead>
                     <tr>
@@ -126,6 +225,7 @@
                     `).join('')}
                 </tbody>
             </table>
+            </div>
         `;
     }
     
@@ -133,6 +233,7 @@
         const container = document.getElementById('conversionBySource');
         container.innerHTML = `
             <h4>💰 Conversion by Source</h4>
+            <div class="analytics-table-container">
             <table class="analytics-table">
                 <thead>
                     <tr>
@@ -148,11 +249,12 @@
                             <td><strong>${row.source}</strong></td>
                             <td>${row.total_sessions}</td>
                             <td>${row.conversion_sessions}</td>
-                            <td class="${row.conversion_rate_pct > 5 ? 'good' : ''}">${row.conversion_rate_pct}%</td>
+                            <td class="${row.conversion_rate_pct > 10 ? 'good' : ''}">${row.conversion_rate_pct}%</td>
                         </tr>
                     `).join('')}
                 </tbody>
             </table>
+            </div>
         `;
     }
     
@@ -188,6 +290,7 @@
     // ===== Cart Abandonment Analysis =====
     async function runCartAnalysis() {
         try {
+            lastRefreshModule = 'cart'; // Track last used module
             showStatus('🛒 Running Cart Abandonment Analysis...');
             const result = await fetchAPI('/api/analytics/cart-abandonment');
             
@@ -197,7 +300,7 @@
             }
             
             show('comprehensiveResults');
-            show('cartResults');
+            switchToTab('cartResults');
             
             displayAbandonment(result);
             
@@ -257,6 +360,7 @@
         // Most Abandoned Products
         document.getElementById('abandonedProducts').innerHTML = `
             <h4>🎯 Most Abandoned Products</h4>
+            <div class="analytics-table-container">
             <table class="analytics-table">
                 <thead>
                     <tr>
@@ -277,12 +381,14 @@
                     `).join('')}
                 </tbody>
             </table>
+            </div>
         `;
     }
     
     // ===== Retention Analysis =====
     async function runRetentionAnalysis() {
         try {
+            lastRefreshModule = 'retention'; // Track last used module
             showStatus('📈 Running Retention Analysis...');
             const result = await fetchAPI('/api/analytics/retention');
             
@@ -292,7 +398,7 @@
             }
             
             show('comprehensiveResults');
-            show('retentionResults');
+            switchToTab('retentionResults');
             
             displayRetention(result);
             
@@ -306,6 +412,7 @@
         // Cohort Table
         document.getElementById('cohortTable').innerHTML = `
             <h4>📅 Cohort Analysis</h4>
+            <div class="analytics-table-container">
             <table class="analytics-table">
                 <thead>
                     <tr>
@@ -328,6 +435,7 @@
                     `).join('')}
                 </tbody>
             </table>
+            </div>
         `;
         
         // Average Retention
@@ -353,6 +461,7 @@
         // User Segments
         document.getElementById('userSegments').innerHTML = `
             <h4>👥 User Segments</h4>
+            <div class="analytics-table-container">
             <table class="analytics-table">
                 <thead>
                     <tr>
@@ -369,12 +478,14 @@
                     `).join('')}
                 </tbody>
             </table>
+            </div>
         `;
     }
     
     // ===== Customer Journey Analysis =====
     async function runJourneyAnalysis() {
         try {
+            lastRefreshModule = 'journey'; // Track last used module
             showStatus('🗺️ Running Customer Journey Analysis...');
             const result = await fetchAPI('/api/analytics/customer-journey');
             
@@ -384,7 +495,7 @@
             }
             
             show('comprehensiveResults');
-            show('journeyResults');
+            switchToTab('journeyResults');
             
             displayJourney(result);
             
@@ -411,6 +522,7 @@
         // Drop-off Points
         document.getElementById('dropoffPoints').innerHTML = `
             <h4>⚠️ Common Drop-off Points</h4>
+            <div class="analytics-table-container">
             <table class="analytics-table">
                 <thead>
                     <tr>
@@ -429,6 +541,7 @@
                     `).join('')}
                 </tbody>
             </table>
+            </div>
         `;
         
         // Path Statistics
@@ -458,6 +571,7 @@
         // Common Sequences
         document.getElementById('commonSequences').innerHTML = `
             <h4>🔄 Common Page Sequences</h4>
+            <div class="analytics-table-container">
             <table class="analytics-table">
                 <thead>
                     <tr>
@@ -474,12 +588,14 @@
                     `).join('')}
                 </tbody>
             </table>
+            </div>
         `;
     }
     
     // ===== Product Recommendations =====
     async function runRecommendations() {
         try {
+            lastRefreshModule = 'recommendations'; // Track last used module
             // Get current username from /api/me
             showStatus('⭐ Getting Recommendations...');
             const me = await fetchAPI('/api/me');
@@ -493,7 +609,7 @@
             }
             
             show('comprehensiveResults');
-            show('recommendationsResults');
+            switchToTab('recommendationsResults');
             
             displayRecommendations(result);
             
@@ -582,5 +698,146 @@
         if (journeyBtn) journeyBtn.addEventListener('click', runJourneyAnalysis);
         if (recsBtn) recsBtn.addEventListener('click', runRecommendations);
     });
+    
+    // ===== Auto-refresh when data is updated =====
+    let lastRefreshModule = null;
+    let refreshDebounceTimer = null;
+    
+    window.addEventListener('dataUpdated', (event) => {
+        console.log('📊 Data updated, refreshing analytics...', event.detail);
+        
+        // Show notification
+        showToast('🔄 New data detected! Refreshing analytics in 2 seconds...', 2000);
+        
+        // Clear previous debounce timer
+        if (refreshDebounceTimer) {
+            clearTimeout(refreshDebounceTimer);
+        }
+        
+        // Debounce refresh to avoid multiple rapid calls
+        refreshDebounceTimer = setTimeout(() => {
+            // Check which sections are currently visible
+            const seoVisible = !document.getElementById('seoResults')?.classList.contains('hidden');
+            const cartVisible = !document.getElementById('cartResults')?.classList.contains('hidden');
+            const retentionVisible = !document.getElementById('retentionResults')?.classList.contains('hidden');
+            const journeyVisible = !document.getElementById('journeyResults')?.classList.contains('hidden');
+            const recsVisible = !document.getElementById('recommendationsResults')?.classList.contains('hidden');
+            
+            let refreshed = false;
+            
+            // Refresh visible sections
+            if (seoVisible) {
+                console.log('🔄 Auto-refreshing SEO analytics...');
+                runSEOAnalysis();
+                refreshed = true;
+            }
+            if (cartVisible) {
+                console.log('🔄 Auto-refreshing Cart analytics...');
+                runCartAnalysis();
+                refreshed = true;
+            }
+            if (retentionVisible) {
+                console.log('🔄 Auto-refreshing Retention analytics...');
+                runRetentionAnalysis();
+                refreshed = true;
+            }
+            if (journeyVisible) {
+                console.log('🔄 Auto-refreshing Journey analytics...');
+                runJourneyAnalysis();
+                refreshed = true;
+            }
+            if (recsVisible) {
+                console.log('🔄 Auto-refreshing Recommendations...');
+                runRecommendations();
+                refreshed = true;
+            }
+            
+            // If nothing is visible but comprehensive results is, refresh the last used module
+            const comprehensiveVisible = !document.getElementById('comprehensiveResults')?.classList.contains('hidden');
+            if (comprehensiveVisible && !refreshed && lastRefreshModule) {
+                console.log('🔄 Refreshing last used module:', lastRefreshModule);
+                switch(lastRefreshModule) {
+                    case 'seo': runSEOAnalysis(); break;
+                    case 'cart': runCartAnalysis(); break;
+                    case 'retention': runRetentionAnalysis(); break;
+                    case 'journey': runJourneyAnalysis(); break;
+                    case 'recommendations': runRecommendations(); break;
+                }
+                refreshed = true;
+            }
+            
+            if (refreshed) {
+                showToast('✅ Analytics refreshed with latest data!', 2000);
+            }
+        }, 2000); // Wait 2 seconds after last data update
+    });
+    
+    // Setup Event Listeners
+    function setupEventListeners() {
+        // Run All Analytics
+        const runAllBtn = document.getElementById('runAllAnalyticsBtn');
+        if (runAllBtn) {
+            runAllBtn.addEventListener('click', async () => {
+                show('comprehensiveResults');
+                await runSEOAnalysis();
+                await runCartAnalysis();
+                await runRetentionAnalysis();
+                await runJourneyAnalysis();
+                await runRecommendations();
+            });
+        }
+        
+        // Individual Analytics Buttons
+        const seoBtn = document.getElementById('seoAnalyticsBtn');
+        if (seoBtn) {
+            seoBtn.addEventListener('click', () => {
+                show('comprehensiveResults');
+                runSEOAnalysis();
+            });
+        }
+        
+        const cartBtn = document.getElementById('cartAnalyticsBtn');
+        if (cartBtn) {
+            cartBtn.addEventListener('click', () => {
+                show('comprehensiveResults');
+                runCartAnalysis();
+            });
+        }
+        
+        const retentionBtn = document.getElementById('retentionAnalyticsBtn');
+        if (retentionBtn) {
+            retentionBtn.addEventListener('click', () => {
+                show('comprehensiveResults');
+                runRetentionAnalysis();
+            });
+        }
+        
+        const journeyBtn = document.getElementById('journeyAnalyticsBtn');
+        if (journeyBtn) {
+            journeyBtn.addEventListener('click', () => {
+                show('comprehensiveResults');
+                runJourneyAnalysis();
+            });
+        }
+        
+        const recsBtn = document.getElementById('recommendationsBtn');
+        if (recsBtn) {
+            recsBtn.addEventListener('click', () => {
+                show('comprehensiveResults');
+                runRecommendations();
+            });
+        }
+    }
+    
+    // Initialize on DOM ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            initTabSwitching();
+            setupEventListeners();
+        });
+    } else {
+        initTabSwitching();
+        setupEventListeners();
+    }
     
 })();

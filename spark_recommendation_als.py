@@ -15,7 +15,7 @@ python_exe = sys.executable
 os.environ["PYSPARK_PYTHON"] = python_exe
 os.environ["PYSPARK_DRIVER_PYTHON"] = python_exe
 
-from pyspark.sql import SparkSession
+from spark_session import get_spark_session
 from pyspark.ml.recommendation import ALS
 from pyspark.ml.evaluation import RegressionEvaluator
 from db import events_col, products_col, users_col
@@ -23,21 +23,8 @@ from bson import ObjectId
 
 
 def get_spark():
-    """Get or create Spark session"""
-    existing = SparkSession._instantiatedSession
-    if existing is not None:
-        return existing
-    
-    return SparkSession.builder \
-        .appName("ALS-Recommendation") \
-        .master("local[*]") \
-        .config("spark.driver.memory", "2g") \
-        .config("spark.executor.memory", "2g") \
-        .config("spark.sql.adaptive.enabled", "false") \
-        .config("spark.ui.enabled", "false") \
-        .config("spark.driver.host", "localhost") \
-        .config("spark.driver.bindAddress", "127.0.0.1") \
-        .getOrCreate()
+    """Get shared Spark session"""
+    return get_spark_session()
 
 
 def ml_product_recommendations_als(username=None, top_n=5):
@@ -52,6 +39,8 @@ def ml_product_recommendations_als(username=None, top_n=5):
     """
     try:
         spark = get_spark()
+        if spark is None:
+            return {"error": "Spark not available. Install Java 8/11 and set JAVA_HOME.", "recommendations": []}
         
         # Load user-product interactions
         pipeline = []

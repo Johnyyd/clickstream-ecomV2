@@ -126,8 +126,8 @@ def analyze_traffic_sources(username=None):
                 first_page,
                 COUNT(*) as sessions,
                 AVG(events_per_session) as avg_events,
-                SUM(CASE WHEN has_conversion THEN 1 ELSE 0 END) * 1.0 / COUNT(*) as conversion_rate,
-                SUM(CASE WHEN is_bounce THEN 1 ELSE 0 END) * 1.0 / COUNT(*) as bounce_rate
+                SUM(has_conversion) * 1.0 / COUNT(*) as conversion_rate,
+                SUM(is_bounce) * 1.0 / COUNT(*) as bounce_rate
             FROM (
                 SELECT 
                     session_id,
@@ -169,15 +169,21 @@ def analyze_traffic_sources(username=None):
         # 4. Peak traffic hours
         hourly_traffic = spark.sql("""
             SELECT 
-                HOUR(timestamp) as hour,
-                CASE 
-                    WHEN referrer LIKE '%google%' THEN 'organic'
-                    WHEN referrer LIKE '%facebook%' OR referrer LIKE '%twitter%' THEN 'social'
-                    WHEN referrer = '' OR referrer = 'direct' THEN 'direct'
-                    ELSE 'other'
-                END as source,
+                hour,
+                source,
                 COUNT(DISTINCT session_id) as sessions
-            FROM events
+            FROM (
+                SELECT 
+                    session_id,
+                    HOUR(timestamp) as hour,
+                    CASE 
+                        WHEN referrer LIKE '%google%' THEN 'organic'
+                        WHEN referrer LIKE '%facebook%' OR referrer LIKE '%twitter%' THEN 'social'
+                        WHEN referrer = '' OR referrer = 'direct' THEN 'direct'
+                        ELSE 'other'
+                    END as source
+                FROM events
+            )
             GROUP BY hour, source
             ORDER BY hour, sessions DESC
         """).collect()

@@ -54,10 +54,20 @@ def ml_user_segmentation_kmeans(username=None):
         
         # Aggregate user behavior from MongoDB
         pipeline = []
+        is_admin_request = False
+        original_username = username
+        
         if username:
             user = events_col().database.users.find_one({"username": username})
             if user:
-                pipeline.append({"$match": {"user_id": user["_id"]}})
+                # Check if admin - analyze all users instead
+                user_role = user.get("role", "user")
+                if user_role == "admin":
+                    print(f"[K-Means] User '{username}' is admin - analyzing ALL users")
+                    is_admin_request = True
+                    username = None  # Analyze all users
+                else:
+                    pipeline.append({"$match": {"user_id": user["_id"]}})
         
         pipeline.extend([
             {
@@ -161,7 +171,7 @@ def ml_user_segmentation_kmeans(username=None):
                 "cart_rate": round(float(row["cart_rate"]), 4)
             }
         
-        return {
+        result = {
             "algorithm": "K-Means Clustering",
             "silhouette_score": round(silhouette, 4),
             "num_clusters": 3,
@@ -170,6 +180,13 @@ def ml_user_segmentation_kmeans(username=None):
             "user_clusters": user_clusters,
             "centers": [center.tolist() for center in model.clusterCenters()]
         }
+        
+        # Add admin message
+        if is_admin_request:
+            result["admin_view"] = True
+            result["message"] = f"Admin user '{original_username}' - showing segmentation for ALL {len(user_data)} users"
+        
+        return result
         
     except Exception as e:
         print(f"Error in K-Means clustering: {e}")

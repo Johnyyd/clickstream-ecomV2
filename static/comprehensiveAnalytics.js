@@ -72,6 +72,30 @@
                 switchToTab(tabId);
             });
         });
+        
+        // Subtab switching
+        const subtabButtons = document.querySelectorAll('.subtab-btn');
+        subtabButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                // Get parent section
+                const parentSection = btn.closest('.analytics-section');
+                if (!parentSection) return;
+                
+                // Remove active from all subtabs in this section
+                parentSection.querySelectorAll('.subtab-btn').forEach(b => b.classList.remove('active'));
+                parentSection.querySelectorAll('.subtab-content').forEach(c => c.classList.remove('active'));
+                
+                // Add active to clicked button
+                btn.classList.add('active');
+                
+                // Show corresponding content
+                const subtabId = btn.getAttribute('data-subtab');
+                const subtabContent = document.getElementById(subtabId);
+                if (subtabContent) {
+                    subtabContent.classList.add('active');
+                }
+            });
+        });
     }
     
     // Utility: Show toast notification
@@ -162,10 +186,10 @@
         
         if (!data || data.length === 0) {
             container.innerHTML = `
-                <h4>📊 Traffic by Source</h4>
                 <div class="empty-state">
                     <div class="empty-icon">🔍</div>
                     <p class="empty-message">No traffic data available yet</p>
+                    <p style="font-size: 0.9em; color: #7f8c8d;">Run SEO analysis to see traffic sources</p>
                 </div>
             `;
             return;
@@ -594,10 +618,22 @@
     
     // ===== Product Recommendations =====
     async function runRecommendations() {
+        const container = document.getElementById('alsRecommendations');
+        
         try {
             lastRefreshModule = 'recommendations'; // Track last used module
-            // Get current username from /api/me
+            
+            // Show loading state
             showStatus('⭐ Getting Recommendations...');
+            container.innerHTML = `
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                    <p>Loading Product Recommendations...</p>
+                    <p style="font-size: 0.9em; color: #7f8c8d; margin-top: 10px;">This may take a few seconds</p>
+                </div>
+            `;
+            
+            // Get current username from /api/me
             const me = await fetchAPI('/api/me');
             const username = me.username;
             
@@ -605,6 +641,7 @@
             
             if (result.error) {
                 showStatus(`❌ Error: ${result.error}`, true);
+                displayRecommendations(result); // Show error state
                 return;
             }
             
@@ -614,17 +651,114 @@
             displayRecommendations(result);
             
             showStatus('✅ Recommendations Generated');
+            showToast('✅ Product recommendations loaded successfully');
         } catch (error) {
             showStatus(`❌ ${error.message}`, true);
+            container.innerHTML = `
+                <div class="error-state">
+                    <div class="error-icon">❌</div>
+                    <p class="error-message">Failed to load recommendations</p>
+                    <p style="color: #7f8c8d;">${error.message}</p>
+                    <button class="analytics-btn" onclick="location.reload()">Retry</button>
+                </div>
+            `;
         }
     }
     
     function displayRecommendations(data) {
-        document.getElementById('alsRecommendations').innerHTML = `
+        const container = document.getElementById('alsRecommendations');
+        
+        // Handle errors
+        if (data.error) {
+            container.innerHTML = `
+                <div class="error-state">
+                    <div class="error-icon">❌</div>
+                    <p class="error-message">${data.error}</p>
+                    ${data.suggestions ? `
+                        <div class="suggestions">
+                            <h5>Suggestions:</h5>
+                            <ul>
+                                ${data.suggestions.map(s => `<li>${s}</li>`).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            return;
+        }
+        
+        // Admin view - show sample recommendations from all users
+        if (data.admin_view) {
+            const sampleRecs = data.sample_recommendations || [];
+            
+            container.innerHTML = `
+                <div class="admin-banner">
+                    <h4>👑 Admin View: Product Recommendations</h4>
+                    <p style="color: #667eea; font-weight: 500;">${data.message || 'Showing recommendations for all users'}</p>
+                </div>
+                
+                <div class="model-info-card">
+                    <p><strong>Algorithm:</strong> ${data.algorithm || 'ALS Collaborative Filtering'}</p>
+                    <p><strong>RMSE:</strong> ${data.rmse || 'N/A'}</p>
+                    <p><strong>Total Users with Recommendations:</strong> ${data.total_users_with_recs || 0}</p>
+                    <p><strong>Model Info:</strong> ${data.model_info?.total_users || 0} users, ${data.model_info?.total_products || 0} products, ${data.model_info?.total_interactions?.toLocaleString() || 0} interactions</p>
+                </div>
+                
+                <h5 style="margin-top: 20px;">📋 Sample Recommendations (Top ${sampleRecs.length} Users)</h5>
+                ${sampleRecs.length === 0 ? `
+                    <div class="empty-state">
+                        <p>No sample recommendations available</p>
+                    </div>
+                ` : `
+                    <div class="user-recommendations-list">
+                        ${sampleRecs.map((userRec, idx) => `
+                            <div class="user-recommendation-section">
+                                <h6>User ${idx + 1} (ID: ${userRec.user_id.substring(0, 8)}...)</h6>
+                                <div class="recommendations-grid">
+                                    ${(userRec.recommendations || []).map(rec => `
+                                        <div class="recommendation-card">
+                                            <h5>${rec.product_name || 'Unknown Product'}</h5>
+                                            <p><strong>Category:</strong> ${rec.category || 'N/A'}</p>
+                                            <p><strong>Price:</strong> $${rec.price || 0}</p>
+                                            <p><strong>Predicted Score:</strong> <span class="badge good">${rec.predicted_rating || 0}</span></p>
+                                            <p class="reason">${rec.reason || ''}</p>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `}
+            `;
+            return;
+        }
+        
+        // Regular user view
+        const recommendations = data.recommendations || [];
+        
+        if (recommendations.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-icon">⭐</div>
+                    <p class="empty-message">No recommendations available yet</p>
+                    <p style="font-size: 0.9em; color: #7f8c8d;">More product interactions are needed to generate recommendations</p>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = `
             <h4>⭐ Personalized Recommendations</h4>
-            <p><strong>Algorithm:</strong> ${data.algorithm || 'ALS'} | <strong>RMSE:</strong> ${data.rmse || 'N/A'}</p>
+            <div class="model-info-card">
+                <p><strong>Algorithm:</strong> ${data.algorithm || 'ALS'}</p>
+                <p><strong>RMSE:</strong> ${data.rmse || 'N/A'}</p>
+                <p><strong>User:</strong> ${data.user || 'Current User'}</p>
+                ${data.model_info ? `
+                    <p><strong>Model:</strong> ${data.model_info.total_users} users, ${data.model_info.total_products} products</p>
+                ` : ''}
+            </div>
             <div class="recommendations-grid">
-                ${(data.recommendations || []).map(rec => `
+                ${recommendations.map(rec => `
                     <div class="recommendation-card">
                         <h5>${rec.product_name}</h5>
                         <p><strong>Category:</strong> ${rec.category}</p>

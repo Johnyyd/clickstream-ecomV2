@@ -91,13 +91,31 @@ async def get_product_recommendations(
     top_n: int = Query(default=5, ge=1, le=20)
 ):
     """
-    Product Recommendations using ALS
+    Product Recommendations using ALS - For Specific User
     - Personalized recommendations
     - Predicted ratings
     """
     try:
         from spark_recommendation_als import ml_product_recommendations_als
         result = ml_product_recommendations_als(username=username, top_n=top_n)
+        return result
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/recommendations")
+async def get_all_recommendations(
+    top_n: int = Query(default=5, ge=1, le=20)
+):
+    """
+    Product Recommendations using ALS - For All Users
+    - Sample recommendations from all users
+    - Top-N predictions per user
+    """
+    try:
+        from spark_recommendation_als import ml_product_recommendations_als
+        result = ml_product_recommendations_als(username=None, top_n=top_n)
         return result
     except Exception as e:
         traceback.print_exc()

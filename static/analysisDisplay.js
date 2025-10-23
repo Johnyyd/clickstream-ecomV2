@@ -620,7 +620,8 @@ const styles = `
 .summary-content {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 16px;
+  gap: 20px;
+  margin-bottom: 20px;
 }
 
 .metric-card {
@@ -630,6 +631,7 @@ const styles = `
   text-align: center;
   border-left: 3px solid var(--primary);
   transition: transform 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
 }
 
 .metric-card:hover {
@@ -658,7 +660,8 @@ const styles = `
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 16px;
+  gap: 20px;
+  margin-bottom: 20px;
 }
 
 /* Funnel Section */

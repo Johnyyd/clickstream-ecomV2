@@ -94,11 +94,20 @@
                 <!-- SEO & Traffic Analysis -->
                 <div id="seoResults" class="analytics-section tab-content active">
                     <h3>🔍 SEO & Traffic Source Analysis</h3>
+                    
+                    <!-- SEO Subtabs -->
+                    <div class="subtab-nav">
+                        <button class="subtab-btn active" data-subtab="trafficBySource">📊 Traffic by Source</button>
+                        <button class="subtab-btn" data-subtab="landingPages">🎯 Top Landing Pages</button>
+                        <button class="subtab-btn" data-subtab="conversionBySource">💰 Conversion by Source</button>
+                        <button class="subtab-btn" data-subtab="hourlyTraffic">⏰ Peak Traffic Hours</button>
+                    </div>
+                    
                     <div class="metrics-grid">
-                        <div id="trafficBySource" class="metric-card"></div>
-                        <div id="landingPages" class="metric-card"></div>
-                        <div id="conversionBySource" class="metric-card"></div>
-                        <div id="hourlyTraffic" class="metric-card"></div>
+                        <div id="trafficBySource" class="metric-card subtab-content active"></div>
+                        <div id="landingPages" class="metric-card subtab-content"></div>
+                        <div id="conversionBySource" class="metric-card subtab-content"></div>
+                        <div id="hourlyTraffic" class="metric-card subtab-content"></div>
                     </div>
                 </div>
                 

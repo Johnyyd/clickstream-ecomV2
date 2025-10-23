@@ -313,16 +313,25 @@ def seed_event_for_users(user_ids: List[ObjectId], days: int, sessions_per_user:
     
     # More diverse user personas with realistic behavior patterns
     PERSONAS = [
-        {"name": "bouncer", "weight": 0.15, "extra_sessions": 0, "avg_events": 2, 
-         "browse_rate": 0.8, "product_view_rate": 0.15, "cart_rate": 0.03, "checkout_rate": 0.02},
-        {"name": "browser", "weight": 0.35, "extra_sessions": 0, "avg_events": avg_events - 1,
-         "browse_rate": 0.5, "product_view_rate": 0.35, "cart_rate": 0.1, "checkout_rate": 0.05},
-        {"name": "shopper", "weight": 0.25, "extra_sessions": 2, "avg_events": avg_events,
-         "browse_rate": 0.3, "product_view_rate": 0.4, "cart_rate": 0.2, "checkout_rate": 0.1},
-        {"name": "power_buyer", "weight": 0.15, "extra_sessions": 3, "avg_events": avg_events + 2,
-         "browse_rate": 0.2, "product_view_rate": 0.35, "cart_rate": 0.25, "checkout_rate": 0.2},
-        {"name": "returning_customer", "weight": 0.10, "extra_sessions": 4, "avg_events": avg_events + 1,
-         "browse_rate": 0.25, "product_view_rate": 0.4, "cart_rate": 0.2, "checkout_rate": 0.15},
+        # Bouncer: 0.5% for target bounce rate (1 event only)
+        {"name": "bouncer", "weight": 0.005, "extra_sessions": 0, "avg_events": 1, 
+         "browse_rate": 1.0, "product_view_rate": 0.0, "cart_rate": 0.0, "checkout_rate": 0.0},
+        
+        # Product Browsers: High product view rate (40%)
+        {"name": "product_browser", "weight": 0.40, "extra_sessions": 0, "avg_events": max(6, avg_events - 1),
+         "browse_rate": 0.15, "product_view_rate": 0.70, "cart_rate": 0.10, "checkout_rate": 0.05},
+        
+        # Window Shoppers: Browse products but rarely buy (25%)
+        {"name": "window_shopper", "weight": 0.25, "extra_sessions": 2, "avg_events": max(8, avg_events),
+         "browse_rate": 0.20, "product_view_rate": 0.60, "cart_rate": 0.15, "checkout_rate": 0.05},
+        
+        # Active Shoppers: View products and add to cart (20%)
+        {"name": "shopper", "weight": 0.20, "extra_sessions": 3, "avg_events": max(10, avg_events + 1),
+         "browse_rate": 0.15, "product_view_rate": 0.50, "cart_rate": 0.25, "checkout_rate": 0.10},
+        
+        # Power Buyers: High conversion (10%)
+        {"name": "power_buyer", "weight": 0.10, "extra_sessions": 4, "avg_events": max(12, avg_events + 3),
+         "browse_rate": 0.10, "product_view_rate": 0.45, "cart_rate": 0.30, "checkout_rate": 0.15},
     ]
     
     for uid in user_ids:
@@ -404,16 +413,25 @@ def seed_recent_events(user_ids: List[ObjectId], minutes: int, total_sessions: i
     products = list(products_col().find({}, {"_id": 1, "name": 1, "slug": 1, "category": 1, "price": 1}))
     
     PERSONAS = [
-        {"name": "bouncer", "weight": 0.15, "avg_events": 2,
-         "browse_rate": 0.8, "product_view_rate": 0.15, "cart_rate": 0.03, "checkout_rate": 0.02},
-        {"name": "browser", "weight": 0.35, "avg_events": 7,
-         "browse_rate": 0.5, "product_view_rate": 0.35, "cart_rate": 0.1, "checkout_rate": 0.05},
-        {"name": "shopper", "weight": 0.25, "avg_events": 10,
-         "browse_rate": 0.3, "product_view_rate": 0.4, "cart_rate": 0.2, "checkout_rate": 0.1},
-        {"name": "power_buyer", "weight": 0.15, "avg_events": 12,
-         "browse_rate": 0.2, "product_view_rate": 0.35, "cart_rate": 0.25, "checkout_rate": 0.2},
-        {"name": "returning_customer", "weight": 0.10, "avg_events": 9,
-         "browse_rate": 0.25, "product_view_rate": 0.4, "cart_rate": 0.2, "checkout_rate": 0.15},
+        # Bouncer: 0.5% for target bounce rate (1 event only)
+        {"name": "bouncer", "weight": 0.005, "avg_events": 1,
+         "browse_rate": 1.0, "product_view_rate": 0.0, "cart_rate": 0.0, "checkout_rate": 0.0},
+        
+        # Product Browsers: High product view rate (40%)
+        {"name": "product_browser", "weight": 0.40, "avg_events": 8,
+         "browse_rate": 0.15, "product_view_rate": 0.70, "cart_rate": 0.10, "checkout_rate": 0.05},
+        
+        # Window Shoppers: Browse products but rarely buy (25%)
+        {"name": "window_shopper", "weight": 0.25, "avg_events": 10,
+         "browse_rate": 0.20, "product_view_rate": 0.60, "cart_rate": 0.15, "checkout_rate": 0.05},
+        
+        # Active Shoppers: View products and add to cart (20%)
+        {"name": "shopper", "weight": 0.20, "avg_events": 12,
+         "browse_rate": 0.15, "product_view_rate": 0.50, "cart_rate": 0.25, "checkout_rate": 0.10},
+        
+        # Power Buyers: High conversion (10%)
+        {"name": "power_buyer", "weight": 0.10, "avg_events": 15,
+         "browse_rate": 0.10, "product_view_rate": 0.45, "cart_rate": 0.30, "checkout_rate": 0.15},
     ]
     
     total_est = 0

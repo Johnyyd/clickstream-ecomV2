@@ -582,6 +582,14 @@ def run_analysis(user_id, params):
     try:
         print("Running detailed analysis...")
         detailed_metrics = calculate_detailed_metrics(limit=params.get("limit"), user_id=user_id)
+        
+        # If Spark was used and has bounce_rate, use it
+        if engine_is_spark and spark_summary.get("session_metrics", {}).get("bounce_rate") is not None:
+            if "basic_metrics" not in detailed_metrics:
+                detailed_metrics["basic_metrics"] = {}
+            detailed_metrics["basic_metrics"]["bounce_rate"] = spark_summary["session_metrics"]["bounce_rate"]
+            print(f"Using Spark bounce_rate: {detailed_metrics['basic_metrics']['bounce_rate']:.4f}")
+        
         print("Detailed analysis completed successfully")
     except Exception as e:
         print(f"Error in detailed analysis: {str(e)}")

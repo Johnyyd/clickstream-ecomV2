@@ -29,6 +29,19 @@ const AUTO_ANALYZE_INTERVAL_MS = 60000;
 let autoAnalyzeTimer = null;
 let cachedProducts = [];
 
+// Real-time metrics time range
+let currentTimeRange = 60; // minutes
+const TIME_RANGES = {
+  '15min': { minutes: 15, label: '15 Phút', points: 15 },
+  '30min': { minutes: 30, label: '30 Phút', points: 30 },
+  '1hour': { minutes: 60, label: '1 Giờ', points: 60 },
+  '3hours': { minutes: 180, label: '3 Giờ', points: 60 },
+  '6hours': { minutes: 360, label: '6 Giờ', points: 72 },
+  '12hours': { minutes: 720, label: '12 Giờ', points: 72 },
+  '1day': { minutes: 1440, label: '1 Ngày', points: 96 },
+  '7days': { minutes: 10080, label: '7 Ngày', points: 168 }
+};
+
 function ensureMetricsPanel() {
   let panel = document.getElementById('rt-metrics');
   if (!panel) {
@@ -37,11 +50,23 @@ function ensureMetricsPanel() {
     panel.id = 'rt-metrics';
     panel.className = 'analysis-section';
     panel.innerHTML = `
-      <h2 class="section-title">Real-time Metrics (last 60 min)</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h2 class="section-title" id="rt-title" style="margin:0;">Real-time Metrics (last 1 Giờ)</h2>
+        <div class="time-range-selector" id="timeRangeSelector">
+          <button class="time-range-btn" data-range="15min">15p</button>
+          <button class="time-range-btn" data-range="30min">30p</button>
+          <button class="time-range-btn active" data-range="1hour">1h</button>
+          <button class="time-range-btn" data-range="3hours">3h</button>
+          <button class="time-range-btn" data-range="6hours">6h</button>
+          <button class="time-range-btn" data-range="12hours">12h</button>
+          <button class="time-range-btn" data-range="1day">1d</button>
+          <button class="time-range-btn" data-range="7days">7d</button>
+        </div>
+      </div>
       <div id="rt-summary" class="metrics-grid"></div>
       <div style="display:grid; gap:12px; margin-top:12px">
         <div style="position:relative">
-          <h3 style="margin:6px 0">Events per minute (last 60 min)</h3>
+          <h3 style="margin:6px 0" id="rt-chart-title">Events per minute (last 1 Giờ)</h3>
           <div id="rt-line"></div>
           <div id="chart-tooltip" style="display:none; position:absolute; background:#1e293b; color:#e2e8f0; padding:8px 12px; border-radius:6px; font-size:12px; pointer-events:none; box-shadow:0 4px 6px rgba(0,0,0,0.3); z-index:1000; white-space:nowrap;">
             <div style="font-weight:600; margin-bottom:4px;" id="tooltip-time"></div>
@@ -50,7 +75,7 @@ function ensureMetricsPanel() {
           </div>
         </div>
         <div>
-          <h3 style="margin:6px 0">Top pages (60m)</h3>
+          <h3 style="margin:6px 0" id="rt-pages-title">Top pages (1h)</h3>
           <div id="rt-bars"></div>
         </div>
       </div>
@@ -60,11 +85,54 @@ function ensureMetricsPanel() {
       </details>
     `;
     controls.appendChild(panel);
+    
+    // Add event listeners for time range buttons
+    const timeRangeButtons = panel.querySelectorAll('.time-range-btn');
+    timeRangeButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const range = btn.getAttribute('data-range');
+        changeTimeRange(range);
+      });
+    });
   }
   return panel;
 }
 
-// Global functions for SVG inline handlers
+function changeTimeRange(rangeKey) {
+  const range = TIME_RANGES[rangeKey];
+  if (!range) return;
+  
+  currentTimeRange = range.minutes;
+  
+  // Update active button
+  const panel = document.getElementById('rt-metrics');
+  if (panel) {
+    panel.querySelectorAll('.time-range-btn').forEach(btn => {
+      if (btn.getAttribute('data-range') === rangeKey) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+    
+    // Update titles
+    const title = panel.querySelector('#rt-title');
+    const chartTitle = panel.querySelector('#rt-chart-title');
+    const pagesTitle = panel.querySelector('#rt-pages-title');
+    const summaryLabel = panel.querySelector('.metric-label');
+    
+    const shortLabel = rangeKey.replace('min', 'p').replace('hour', 'h').replace('day', 'd');
+    
+    if (title) title.textContent = `Real-time Metrics (last ${range.label})`;
+    if (chartTitle) chartTitle.textContent = `Events per minute (last ${range.label})`;
+    if (pagesTitle) pagesTitle.textContent = `Top pages (${shortLabel})`;
+  }
+  
+  // Fetch new data
+  console.log(`[changeTimeRange] Switching to ${rangeKey} (${range.minutes} minutes)`);
+  pollMetricsOnce();
+}
+
 window.showChartTooltip = function(event, timeStr, dateStr, count) {
   const tooltip = document.getElementById('chart-tooltip');
   if (!tooltip) return;
@@ -103,8 +171,10 @@ window.hideChartTooltip = function() {
 
 async function fetchAggregates() {
   try {
-    // Fetch 60 minutes to match line chart display
-    const resp = await fetch('/api/metrics/aggregates?minutes=60');
+    // Fetch data based on current time range
+    const minutes = Math.min(currentTimeRange, 10080); // API max is 10080 (7 days)
+    console.log(`[fetchAggregates] Fetching ${minutes} minutes of data`);
+    const resp = await fetch(`/api/metrics/aggregates?minutes=${minutes}`);
     if (!resp.ok) {
       console.error('[fetchAggregates] API error:', resp.status, resp.statusText);
       return null;
@@ -170,9 +240,19 @@ function renderAggregates(data) {
   console.log('[renderAggregates] byMinute Map size:', byMinute.size, 'Total events:', total);
   const topEvent = Object.entries(byEvent).sort((a,b)=>b[1]-a[1])[0] || ['',0];
   const topPage = Object.entries(byPage).sort((a,b)=>b[1]-a[1])[0] || ['',0];
+  
+  // Get current time range label
+  let timeLabel = '1h';
+  for (const [key, range] of Object.entries(TIME_RANGES)) {
+    if (range.minutes === currentTimeRange) {
+      timeLabel = key.replace('min', 'p').replace('hour', 'h').replace('day', 'd');
+      break;
+    }
+  }
+  
   const grid = panel.querySelector('#rt-summary');
   grid.innerHTML = `
-    <div class="metric-card"><div class="metric-value">${total}</div><div class="metric-label">Events (60m)</div></div>
+    <div class="metric-card"><div class="metric-value">${total}</div><div class="metric-label">Events (${timeLabel})</div></div>
     <div class="metric-card"><div class="metric-value">${topEvent[0]||'-'}: ${topEvent[1]||0}</div><div class="metric-label">Top Event</div></div>
     <div class="metric-card"><div class="metric-value">${topPage[0]||'-'}: ${topPage[1]||0}</div><div class="metric-label">Top Page</div></div>
   `;
@@ -199,13 +279,25 @@ function startMetricsPolling() {
 }
 
 function renderLineChartSVG(byMinuteMap) {
-  // Prepare last 60 minute timeline
+  // Prepare timeline based on current time range
   const now = new Date();
   const labels = [];
   const timeLabels = []; // Store Date objects for X-axis labels
   const values = [];
-  for (let i = 59; i >= 0; i--) {
-    const t = new Date(now.getTime() - i*60000);
+  
+  // Determine number of data points and interval
+  const minutes = currentTimeRange;
+  let dataPoints = minutes;
+  let intervalMinutes = 1;
+  
+  // For longer periods, aggregate data points
+  if (minutes > 180) {
+    dataPoints = 120; // Max 120 points on chart
+    intervalMinutes = Math.ceil(minutes / dataPoints);
+  }
+  
+  for (let i = dataPoints - 1; i >= 0; i--) {
+    const t = new Date(now.getTime() - i * intervalMinutes * 60000);
     const key = `${t.getUTCFullYear()}-${String(t.getUTCMonth()+1).padStart(2,'0')}-${String(t.getUTCDate()).padStart(2,'0')} ${String(t.getUTCHours()).padStart(2,'0')}:${String(t.getUTCMinutes()).padStart(2,'0')}`;
     labels.push(key);
     timeLabels.push(t);
@@ -215,7 +307,7 @@ function renderLineChartSVG(byMinuteMap) {
   
   const nonZeroCount = values.filter(v => v > 0).length;
   const totalEvents = values.reduce((sum, v) => sum + v, 0);
-  console.log(`[renderLineChartSVG] ${nonZeroCount}/60 minutes with data, ${totalEvents} total events`);
+  console.log(`[renderLineChartSVG] ${nonZeroCount}/${dataPoints} data points with events, ${totalEvents} total events`);
   
   const width = 600, height = 180, pad = 24, bottomPad = 40; // Extra space for X-axis labels
   const maxV = Math.max(1, ...values);
@@ -252,7 +344,7 @@ function renderLineChartSVG(byMinuteMap) {
   const xAxisLine = `<line x1="${pad}" y1="${chartHeight}" x2="${width-pad}" y2="${chartHeight}" stroke="#233046" stroke-width="1" />`;
   
   // Interactive data points with hover
-  const dataPoints = values.map((v, idx) => {
+  const interactivePoints = values.map((v, idx) => {
     const x = pad + (idx/(values.length-1))*(width-2*pad);
     const y = pad + (1 - (v/maxV))*(chartHeight-pad);
     const t = timeLabels[idx];
@@ -276,7 +368,7 @@ function renderLineChartSVG(byMinuteMap) {
     ${xAxisLine}
     ${xAxisLabels.join('')}
     <polyline fill=\"none\" stroke=\"#2563eb\" stroke-width=\"2\" points=\"${pts}\" />
-    ${dataPoints}
+    ${interactivePoints}
   </svg>`;
 }
 

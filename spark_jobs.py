@@ -124,17 +124,23 @@ def load_events_as_list(limit=None, user_id=None):
         return []
 
 def sessionize_and_counts(limit=None, user_id=None):
+    """
+    Optimized sessionization with DataFrame caching
+    """
     spark = None
+    cached_df = None
+    
     try:
-        print("\n=== Starting Spark Analysis ===")
-        spark = create_spark()
+        print("\n=== Starting Optimized Spark Analysis ===")
+        from spark_session import get_spark_session, cache_dataframe, optimize_dataframe
+        
+        spark = get_spark_session()
         
         if spark is None:
             print("⚠️ Spark not available - returning empty results")
             return {"total_events": 0, "sessions": 0, "top_pages": [], "error": "Spark not available"}
         
-        spark.sparkContext.setLogLevel("WARN")
-        print("Spark session created successfully")
+        print("✅ Using shared Spark session")
         
         docs = load_events_as_list(limit=limit, user_id=user_id)
         print(f"Loaded {len(docs)} documents from MongoDB (filtered)")
@@ -223,27 +229,29 @@ def sessionize_and_counts(limit=None, user_id=None):
             return {"total_events": 0, "sessions": 0, "top_pages": [], "funnel_home_to_product": 0}
         
         try:
+            print("Creating DataFrame...")
             df = spark.createDataFrame(valid_docs, schema=simple_schema)
-            print(f"Created DataFrame with {df.count()} rows")
+            
+            # Optimize partitioning
+            df = df.coalesce(4)  # Reduce to 4 partitions for better performance
+            
+            # Cache with optimized storage level
+            cached_df = cache_dataframe(df, "MEMORY_AND_DISK")
+            df = cached_df
+            
+            # Trigger caching by counting
+            row_count = df.count()
+            print(f"✅ Created and cached DataFrame: {row_count} rows")
+            
         except Exception as e:
             print(f"Error creating DataFrame: {e}")
+            import traceback
+            traceback.print_exc()
             return {"total_events": 0, "sessions": 0, "top_pages": [], "funnel_home_to_product": 0}
-        
-        # Validate DataFrame
-        try:
-            # Test if DataFrame is valid
-            test_count = df.take(1)
-            print(f"DataFrame validation successful, sample count: {len(test_count)}")
-        except Exception as e:
-            print(f"Invalid DataFrame: {e}")
-            return {"total_events": 0, "sessions": 0, "top_pages": [], "funnel_home_to_product": 0}
-        
-        # Optimize the DataFrame
-        df = df.repartition(1, "session_id")  # Use a single partition to minimize Python workers on Windows
-        df.cache()  # Cache for multiple operations
         
         # Create a view for SQL queries
         df.createOrReplaceTempView("events")
+        print("Created temporary view 'events'")
         
         print("\n=== Calculating Metrics ===")
         
@@ -416,7 +424,8 @@ def sessionize_and_counts(limit=None, user_id=None):
                         PERCENTILE(CAST(events_per_session AS DOUBLE), 0.5) as median_events_per_session,
                         AVG(session_duration_seconds) as avg_session_duration_seconds,
                         MAX(session_duration_seconds) as max_session_duration_seconds,
-                        PERCENTILE(CAST(session_duration_seconds AS DOUBLE), 0.5) as median_session_duration_seconds
+                        PERCENTILE(CAST(session_duration_seconds AS DOUBLE), 0.5) as median_session_duration_seconds,
+                        SUM(CASE WHEN events_per_session = 1 THEN 1 ELSE 0 END) * 1.0 / COUNT(DISTINCT session_id) as bounce_rate
                     FROM (
                         SELECT 
                             session_id,
@@ -437,7 +446,8 @@ def sessionize_and_counts(limit=None, user_id=None):
                     "median_events_per_session": round(session_stats["median_events_per_session"], 2),
                     "avg_session_duration_seconds": round(session_stats["avg_session_duration_seconds"], 2),
                     "max_session_duration_seconds": session_stats["max_session_duration_seconds"],
-                    "median_session_duration_seconds": round(session_stats["median_session_duration_seconds"], 2)
+                    "median_session_duration_seconds": round(session_stats["median_session_duration_seconds"], 2),
+                    "bounce_rate": round(session_stats["bounce_rate"], 4)
                 }
                 
                 print("\nSession Metrics:")
@@ -492,26 +502,28 @@ def sessionize_and_counts(limit=None, user_id=None):
             "funnel_home_to_product": 0
         }
     finally:
-        # Clean up Spark session and resources
+        # Clean up cached DataFrames (but NOT the shared session)
         try:
-            if 'df' in locals() and df is not None:
+            # Unpersist cached DataFrame to free memory
+            if cached_df is not None:
                 try:
-                    df.unpersist()
+                    cached_df.unpersist()
+                    print("✅ Unpersisted cached DataFrame")
+                except Exception as e:
+                    print(f"Warning unpersisting DataFrame: {e}")
+            
+            # Clear temp views
+            if spark is not None:
+                try:
+                    spark.catalog.dropTempView("events")
                 except:
                     pass
-            # Only stop the Spark session if this module owns it. When the
-            # session is reused across requests (HTTP server), stopping it
-            # here can cause PySpark internals to have a None _jsc and raise
-            # AttributeError in signal handlers.
-            global _SPARK_SESSION, _SPARK_OWNED
-            if spark and _SPARK_OWNED:
-                try:
-                    spark.stop()
-                except Exception:
-                    pass
-
-            # Force cleanup
+            
+            # DO NOT stop shared Spark session - it's reused across requests
+            # Force garbage collection
             gc.collect()
+            print("✅ Cleanup complete")
+            
         except Exception as cleanup_error:
             print(f"Error during cleanup: {cleanup_error}")
 

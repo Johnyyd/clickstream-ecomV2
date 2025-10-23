@@ -6,7 +6,7 @@ from db import get_db, events_col
 router = APIRouter(prefix="/api/metrics", tags=["metrics"])
 
 @router.get("/aggregates")
-def get_aggregates(minutes: int = Query(default=60, ge=1, le=1440)) -> Dict[str, Any]:
+def get_aggregates(minutes: int = Query(default=60, ge=1, le=10080)) -> Dict[str, Any]:
     """
     Return minute-window aggregates for the last N minutes from Mongo collection `aggregates_minute`.
     Output shape:

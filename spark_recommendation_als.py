@@ -44,9 +44,32 @@ def ml_product_recommendations_als(username=None, top_n=5):
         
         # Load user-product interactions
         pipeline = []
+        target_user_id = None
+        is_admin_request = False
+        original_username = username
+        
         if username:
             user = users_col().find_one({"username": username})
-            if user:
+            if not user:
+                return {
+                    "error": f"User '{username}' not found in database",
+                    "suggestions": [
+                        "Check username spelling",
+                        "List available users: python list_active_users.py",
+                        "Try without username to get recommendations for all users"
+                    ]
+                }
+            
+            # Check if user is admin - analyze all users instead
+            user_role = user.get("role", "user")
+            if user_role == "admin":
+                print(f"[ALS] User '{username}' is admin - analyzing ALL users instead")
+                is_admin_request = True
+                # Don't filter by user_id - analyze entire database
+                username = None  # Reset to None to trigger all-users mode
+                target_user_id = None
+            else:
+                target_user_id = user["_id"]
                 pipeline.append({"$match": {"user_id": user["_id"]}})
         
         pipeline.extend([
@@ -59,10 +82,41 @@ def ml_product_recommendations_als(username=None, top_n=5):
         
         events = list(events_col().aggregate(pipeline))
         
-        if len(events) < 10:
+        # Check if we have enough data
+        if len(events) == 0:
+            if username:
+                # Specific user has no product interactions
+                return {
+                    "error": f"User '{username}' has no product interactions (pageview/add_to_cart/purchase on product pages)",
+                    "event_count": 0,
+                    "suggestions": [
+                        f"User '{username}' needs to view products, add to cart, or make purchases",
+                        "Generate activity: Simulate user browsing products",
+                        "Try a different user with product activity",
+                        "Check: python check_als_data.py"
+                    ]
+                }
+            else:
+                # No product interactions in entire database
+                return {
+                    "error": "No product interactions found in database. Events must have 'properties.product_id' field.",
+                    "event_count": 0,
+                    "suggestions": [
+                        "Seed product data: python seed_realistic_data.py",
+                        "Check that events contain product_id in properties field",
+                        "Verify: python check_als_data.py"
+                    ]
+                }
+        
+        if len(events) < 5:
             return {
-                "error": "Need at least 10 product interactions for ALS",
-                "event_count": len(events)
+                "warning": f"Only {len(events)} product interactions found. ALS works better with more data.",
+                "error": "Need at least 5 product interactions for ALS model training",
+                "event_count": len(events),
+                "suggestions": [
+                    "Generate more realistic data with product interactions",
+                    "Run: python seed_realistic_data.py"
+                ]
             }
         
         # Create user-product interaction matrix with ratings
@@ -102,14 +156,37 @@ def ml_product_recommendations_als(username=None, top_n=5):
         idx_to_user = {v: k for k, v in user_idx_map.items()}
         idx_to_product = {v: k for k, v in product_idx_map.items()}
         
+        # Validate we have enough users and products
+        if len(user_idx_map) < 2:
+            return {
+                "error": "Need at least 2 users for collaborative filtering",
+                "user_count": len(user_idx_map),
+                "suggestions": ["Generate data with multiple users interacting with products"]
+            }
+        
+        if len(product_idx_map) < 2:
+            return {
+                "error": "Need at least 2 products for recommendations",
+                "product_count": len(product_idx_map),
+                "suggestions": ["Seed more products: python seed_realistic_data.py"]
+            }
+        
         # Create DataFrame
         df = spark.createDataFrame(interactions, ["user_idx", "product_idx", "rating"])
         
         # Aggregate ratings (sum ratings for same user-product pairs)
         df = df.groupBy("user_idx", "product_idx").sum("rating").withColumnRenamed("sum(rating)", "rating")
         
-        print(f"Created interaction matrix: {df.count()} interactions")
+        interaction_count = df.count()
+        print(f"Created interaction matrix: {interaction_count} interactions")
         print(f"Users: {len(user_idx_map)}, Products: {len(product_idx_map)}")
+        
+        # Final validation
+        if interaction_count < 5:
+            return {
+                "error": f"Insufficient interactions ({interaction_count}) after aggregation",
+                "suggestions": ["Generate more user-product interactions"]
+            }
         
         # Split data for evaluation
         train_data, test_data = df.randomSplit([0.8, 0.2], seed=42)
@@ -197,7 +274,7 @@ def ml_product_recommendations_als(username=None, top_n=5):
                         }
                     }
         
-        return {
+        result = {
             "algorithm": "ALS Collaborative Filtering",
             "rmse": round(rmse, 4),
             "total_users_with_recs": len(recommendations),
@@ -210,6 +287,13 @@ def ml_product_recommendations_als(username=None, top_n=5):
                 "test_samples": test_data.count()
             }
         }
+        
+        # Add admin-specific message
+        if is_admin_request:
+            result["admin_view"] = True
+            result["message"] = f"Admin user '{original_username}' - showing recommendations for ALL {len(recommendations)} users in the system"
+        
+        return result
         
     except Exception as e:
         print(f"Error in ALS recommendations: {e}")

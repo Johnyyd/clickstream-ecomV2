@@ -813,3 +813,41 @@ details pre {
   color: var(--muted);
   opacity: 0.7;
 }
+
+/* Time Range Selector */
+.time-range-selector {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.time-range-btn {
+  padding: 6px 12px;
+  background: var(--btn);
+  color: var(--text);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.time-range-btn:hover {
+  background: var(--btn-hover);
+  border-color: var(--primary-border);
+  transform: translateY(-1px);
+}
+
+.time-range-btn.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+}
+
+.time-range-btn:active {
+  transform: translateY(0);
+}

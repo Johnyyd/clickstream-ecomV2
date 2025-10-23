@@ -135,12 +135,13 @@ html {
 /* Metrics Grid */
 .metrics-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
-    gap: 24px;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
     margin-top: 20px;
+    width: 100%;
 }
 
-@media (max-width: 1400px) {
+@media (max-width: 768px) {
     .metrics-grid {
         grid-template-columns: 1fr;
     }
@@ -148,12 +149,12 @@ html {
 
 .metric-card {
     background: white;
-    padding: 25px;
+    padding: 20px;
     border-radius: 10px;
     box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
     border: 1px solid #e8e8e8;
     width: 100%;
-    overflow: hidden;
+    overflow: visible;
     transition: all 0.3s ease;
 }
 
@@ -177,30 +178,10 @@ html {
 /* Analytics Table */
 .analytics-table-container {
     width: 100%;
-    overflow-x: auto;
+    overflow-x: visible;
     margin-top: 15px;
     border-radius: 8px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    scrollbar-width: thin;
-    scrollbar-color: #3498db #f0f0f0;
-}
-
-.analytics-table-container::-webkit-scrollbar {
-    height: 8px;
-}
-
-.analytics-table-container::-webkit-scrollbar-track {
-    background: #f0f0f0;
-    border-radius: 4px;
-}
-
-.analytics-table-container::-webkit-scrollbar-thumb {
-    background: #3498db;
-    border-radius: 4px;
-}
-
-.analytics-table-container::-webkit-scrollbar-thumb:hover {
-    background: #2980b9;
 }
 
 .analytics-table {
@@ -209,7 +190,7 @@ html {
     border-spacing: 0;
     font-size: 14px;
     background: white;
-    min-width: 600px;
+    table-layout: auto;
 }
 
 .analytics-table thead {
@@ -226,7 +207,8 @@ html {
 
 .analytics-table th,
 .analytics-table td {
-    padding: 14px 16px;
+    padding: 12px 10px;
+    word-wrap: break-word;
     text-align: left;
     border-bottom: 1px solid #e8e8e8;
     white-space: nowrap;
@@ -1004,4 +986,190 @@ html {
     .admin-banner {
         padding: 15px 20px;
     }
+    
+    .analytics-table th,
+    .analytics-table td {
+        font-size: 12px;
+        padding: 8px 6px;
+        max-width: 150px;
+    }
+}
+
+/* Chart Container */
+.chart-container {
+    position: relative;
+    width: 100%;
+    height: 300px;
+    margin: 20px 0;
+    background: white;
+    padding: 15px;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.chart-container canvas {
+    max-height: 280px;
+}
+
+.chart-title {
+    font-size: 1.1em;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #3498db;
+}
+
+/* ML Algorithm Stats */
+.ml-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin: 20px 0;
+}
+
+.ml-stat-box {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.ml-stat-box .label {
+    font-size: 0.9em;
+    opacity: 0.9;
+    margin-bottom: 5px;
+}
+
+.ml-stat-box .value {
+    font-size: 2em;
+    font-weight: 700;
+}
+
+/* Cluster Visualization */
+.cluster-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+    margin: 20px 0;
+}
+
+.cluster-card {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    border-left: 5px solid #3498db;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.cluster-card h5 {
+    margin: 0 0 15px 0;
+    color: #2c3e50;
+    font-size: 1.1em;
+}
+
+.cluster-card .cluster-stat {
+    display: flex;
+    justify-content: space-between;
+    margin: 8px 0;
+    font-size: 0.95em;
+}
+
+.cluster-card .cluster-stat .label {
+    color: #7f8c8d;
+}
+
+.cluster-card .cluster-stat .value {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+/* Confusion Matrix */
+.confusion-matrix {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 2px;
+    max-width: 400px;
+    margin: 20px auto;
+    background: #ecf0f1;
+    padding: 2px;
+    border-radius: 8px;
+}
+
+.confusion-cell {
+    padding: 30px;
+    text-align: center;
+    background: white;
+    border-radius: 6px;
+}
+
+.confusion-cell .label {
+    font-size: 0.85em;
+    color: #7f8c8d;
+    margin-bottom: 10px;
+}
+
+.confusion-cell .value {
+    font-size: 2em;
+    font-weight: 700;
+    color: #2c3e50;
+}
+
+.confusion-cell.true-positive {
+    background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+    color: white;
+}
+
+.confusion-cell.true-positive .label,
+.confusion-cell.true-positive .value {
+    color: white;
+}
+
+.confusion-cell.false-negative {
+    background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+    color: white;
+}
+
+.confusion-cell.false-negative .label,
+.confusion-cell.false-negative .value {
+    color: white;
+}
+
+/* Feature Importance */
+.feature-importance-list {
+    margin: 20px 0;
+}
+
+.feature-item {
+    display: flex;
+    align-items: center;
+    margin: 12px 0;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 6px;
+}
+
+.feature-name {
+    min-width: 150px;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.feature-bar {
+    flex-grow: 1;
+    height: 24px;
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    border-radius: 4px;
+    margin: 0 15px;
+    position: relative;
+    box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3);
+}
+
+.feature-value {
+    min-width: 60px;
+    text-align: right;
+    font-weight: 600;
+    color: #2c3e50;
 }

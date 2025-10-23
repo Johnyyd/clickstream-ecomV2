@@ -7,7 +7,9 @@
     <title>Clickstream Dashboard</title>
     <link rel="stylesheet" href="/static/styles.css?v=2.3">
     <link rel="stylesheet" href="/static/llmDisplay.css?v=2.3">
-    <link rel="stylesheet" href="/static/comprehensiveAnalytics.css?v=1.1">
+    <link rel="stylesheet" href="/static/comprehensiveAnalytics.css?v=1.2">
+    <!-- Chart.js for ML visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
     <script>
         (async function(){
           try {
@@ -65,7 +67,7 @@
                     <button id="mlLogisticBtn" class="ml-btn">Logistic Regression</button>
                 </div>
             </div>
-            <div class="key-controls hidden">
+            <div class="key-controls">
                 <h2>API Key (Auto-managed)</h2>
                 <p class="info-text">✅ API keys are automatically managed. No manual input needed!</p>
                 <details>
@@ -179,7 +181,8 @@
     <script src="/static/analytics.js?v=2.4"></script>
     <script type="module" src="/static/dashboard.js?v=2.4"></script>
     <script type="module" src="/static/analysisDisplay.js?v=2.4"></script>
-    <script src="/static/comprehensiveAnalytics.js?v=1.2"></script>
+    <script src="/static/mlCharts.js?v=1.0"></script>
+    <script src="/static/comprehensiveAnalytics.js?v=1.4"></script>
 
 </body>
 

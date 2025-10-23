@@ -163,8 +163,8 @@
             show('comprehensiveResults');
             switchToTab('seoResults');
             
-            // Traffic by Source
-            displayTrafficBySource(result.traffic_by_source || []);
+            // Traffic by Source with Chart
+            displayTrafficBySource(result.traffic_by_source || [], result);
             
             // Landing Pages
             displayLandingPages(result.landing_pages || []);
@@ -181,7 +181,7 @@
         }
     }
     
-    function displayTrafficBySource(data) {
+    function displayTrafficBySource(data, fullResult) {
         const container = document.getElementById('trafficBySource');
         
         if (!data || data.length === 0) {
@@ -197,6 +197,7 @@
         
         container.innerHTML = `
             <h4>📊 Traffic by Source</h4>
+            <div id="seoChartContainer"></div>
             <div class="analytics-table-container">
             <table class="analytics-table">
                 <thead>
@@ -220,6 +221,14 @@
             </table>
             </div>
         `;
+        
+        // Render SEO chart if available
+        if (window.MLCharts && window.MLCharts.createSEOChart && fullResult) {
+            const chartContainer = document.getElementById('seoChartContainer');
+            if (chartContainer) {
+                window.MLCharts.createSEOChart(chartContainer, fullResult);
+            }
+        }
     }
     
     function displayLandingPages(data) {
@@ -704,6 +713,8 @@
                     <p><strong>Model Info:</strong> ${data.model_info?.total_users || 0} users, ${data.model_info?.total_products || 0} products, ${data.model_info?.total_interactions?.toLocaleString() || 0} interactions</p>
                 </div>
                 
+                <div id="alsChartContainer"></div>
+                
                 <h5 style="margin-top: 20px;">📋 Sample Recommendations (Top ${sampleRecs.length} Users)</h5>
                 ${sampleRecs.length === 0 ? `
                     <div class="empty-state">
@@ -730,6 +741,15 @@
                     </div>
                 `}
             `;
+            
+            // Render ALS chart if MLCharts is available
+            if (window.MLCharts && window.MLCharts.createALSChart) {
+                const chartContainer = document.getElementById('alsChartContainer');
+                if (chartContainer) {
+                    window.MLCharts.createALSChart(chartContainer, data);
+                }
+            }
+            
             return;
         }
         

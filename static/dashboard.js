@@ -29,6 +29,86 @@ const AUTO_ANALYZE_INTERVAL_MS = 60000;
 let autoAnalyzeTimer = null;
 let cachedProducts = [];
 
+// Persistence keys
+const ANALYTICS_KEYS = {
+  analysis: 'analytics:analysis',
+  mlPrefix: 'analytics:ml:'
+};
+
+function saveAnalysisToStorage(analysis) {
+  try {
+    localStorage.setItem(ANALYTICS_KEYS.analysis, JSON.stringify({ ts: Date.now(), data: analysis }));
+  } catch (e) { console.warn('Failed to save analysis to storage', e); }
+}
+
+function loadAnalysisFromStorage() {
+  try {
+    const raw = localStorage.getItem(ANALYTICS_KEYS.analysis);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && parsed.data ? parsed.data : null;
+  } catch (e) { console.warn('Failed to load analysis from storage', e); return null; }
+}
+
+function saveMLResultToStorage(algorithmName, result) {
+  try {
+    const key = ANALYTICS_KEYS.mlPrefix + algorithmName.replace(/\s+/g, '_').toLowerCase();
+    localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data: result }));
+  } catch (e) { console.warn('Failed to save ML result to storage', e); }
+}
+
+function loadMLResultFromStorage(algorithmName) {
+  try {
+    const key = ANALYTICS_KEYS.mlPrefix + algorithmName.replace(/\s+/g, '_').toLowerCase();
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && parsed.data ? parsed.data : null;
+  } catch (e) { console.warn('Failed to load ML result from storage', e); return null; }
+}
+
+function clearStoredAnalysisAndML() {
+  try {
+    localStorage.removeItem(ANALYTICS_KEYS.analysis);
+    // remove ml keys
+    for (const k in localStorage) {
+      if (k && k.startsWith(ANALYTICS_KEYS.mlPrefix)) localStorage.removeItem(k);
+    }
+  } catch (e) { console.warn('Failed to clear stored analysis/ML', e); }
+}
+
+// Handle clearOnLoad flag from hard reload (set by comprehensiveAnalytics.js)
+function handleClearOnLoadFlag_dashboard() {
+  try {
+    if (sessionStorage.getItem('clearOnLoad')) {
+      clearStoredAnalysisAndML();
+      sessionStorage.removeItem('clearOnLoad');
+      console.log('Dashboard: cleared persisted analysis/ML due to hard reload');
+    }
+  } catch (e) { console.warn('Error handling clearOnLoad flag (dashboard)', e); }
+}
+
+// Load stored analysis + ML into UI
+function loadStoredAnalysisAndMLToUI() {
+  try {
+    const analysis = loadAnalysisFromStorage();
+    if (analysis) {
+      const resultsContainer = document.getElementById('results');
+      if (resultsContainer) displayAnalysisResults(analysis, resultsContainer);
+      output.innerText = 'Loaded persisted analysis results';
+    }
+
+    // Try to load common ML algorithms and display them if present
+    const mlAlgos = ['K-Means Clustering','Decision Tree','FP-Growth Patterns','Logistic Regression'];
+    for (const algo of mlAlgos) {
+      const ml = loadMLResultFromStorage(algo);
+      if (ml) {
+        displayMLResults(algo, ml);
+      }
+    }
+  } catch (e) { console.warn('Failed to load stored analysis/ML to UI', e); }
+}
+
 // Real-time metrics time range
 let currentTimeRange = 60; // minutes
 const TIME_RANGES = {
@@ -413,10 +493,13 @@ function renderBarChartSVG(byPageObj) {
     }
     
     // Load initial data
-    try { await checkKey(); } catch(e) {}
-    try { await loadRecommendations(); } catch(e) {}
-    try { await loadProducts(); } catch(e) {}
-    startMetricsPolling();
+  try { await checkKey(); } catch(e) {}
+  try { await loadRecommendations(); } catch(e) {}
+  try { await loadProducts(); } catch(e) {}
+  // Respect hard-reload clear flag and restore any stored analysis/ML results
+  handleClearOnLoadFlag_dashboard();
+  loadStoredAnalysisAndMLToUI();
+  startMetricsPolling();
     ensureAutoAnalyzeButton();
     if (autoAnalyzeBtn) {
       autoAnalyzeBtn.onclick = () => {
@@ -809,6 +892,8 @@ async function runAnalysis({ skipLLM = false, limit = null, useSparkFlag = null,
     const resultsContainer = document.getElementById('results');
     displayAnalysisResults(analysis, resultsContainer);
     checkAnalysisMode();
+  // Persist analysis so a normal reload (F5) will restore it
+  try { saveAnalysisToStorage(analysis); } catch (e) { console.warn('Failed to persist analysis', e); }
     output.innerText = `Analysis completed with ${mode}!`;
     return analysis;
   } catch (e) {
@@ -1092,9 +1177,11 @@ async function runMLAlgorithm(endpoint, algorithmName) {
       return;
     }
     
-    // Display results
-    displayMLResults(algorithmName, result);
-    output.innerText = `${algorithmName} completed successfully`;
+  // Display results
+  displayMLResults(algorithmName, result);
+  // Persist ML result so normal reload restores it
+  try { saveMLResultToStorage(algorithmName, result); } catch (e) { console.warn('Failed to persist ML result', e); }
+  output.innerText = `${algorithmName} completed successfully`;
   } catch (error) {
     console.error(`Error running ${algorithmName}:`, error);
     output.innerText = `Error: ${error.message}`;

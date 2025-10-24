@@ -7,6 +7,152 @@
     'use strict';
 
     const token = localStorage.getItem('token');
+    // Persistence keys for analytics
+    const ANALYTICS_KEYS = {
+        seo: 'analytics:seo',
+        cart: 'analytics:cart',
+        retention: 'analytics:retention',
+        journey: 'analytics:journey',
+        recommendations: 'analytics:recommendations',
+        comprehensive: 'analytics:comprehensive'
+    };
+
+    // Save analytics result to localStorage with timestamp
+    function saveAnalytics(moduleName, data) {
+        try {
+            const payload = { ts: Date.now(), data };
+            const key = ANALYTICS_KEYS[moduleName];
+            if (key) localStorage.setItem(key, JSON.stringify(payload));
+        } catch (e) {
+            console.warn('Failed to save analytics to localStorage', e);
+        }
+    }
+
+    // Load analytics result from localStorage
+    function loadAnalytics(moduleName) {
+        try {
+            const key = ANALYTICS_KEYS[moduleName];
+            if (!key) return null;
+            const raw = localStorage.getItem(key);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            return parsed && parsed.data ? parsed.data : null;
+        } catch (e) {
+            console.warn('Failed to load analytics from localStorage', e);
+            return null;
+        }
+    }
+
+    // Clear all stored analytics data
+    function clearStoredAnalytics() {
+        Object.values(ANALYTICS_KEYS).forEach(k => localStorage.removeItem(k));
+    }
+
+    // Detect hard-reload key combos (Ctrl+Shift+R or Ctrl+F5) before the reload occurs.
+    // On detection we set a short-lived sessionStorage flag so the next load can clear stored analytics.
+    window.addEventListener('keydown', (e) => {
+        // e.key may be 'R' or 'F5'
+        const isCtrl = e.ctrlKey || e.metaKey;
+        const isShift = e.shiftKey;
+        const key = (e.key || '').toLowerCase();
+
+        // Ctrl+Shift+R (Chrome/Edge) or Ctrl+F5 (some browsers)
+        if (isCtrl && isShift && key === 'r') {
+            sessionStorage.setItem('clearOnLoad', '1');
+            // allow reload to proceed
+        }
+        if (isCtrl && !isShift && key === 'f5') {
+            // treat Ctrl+F5 as hard reload
+            sessionStorage.setItem('clearOnLoad', '1');
+        }
+    }, { passive: true });
+
+    // On page load, if the 'clearOnLoad' flag is set, clear stored analytics and remove the flag.
+    function handleClearOnLoadFlag() {
+        try {
+            const flag = sessionStorage.getItem('clearOnLoad');
+            if (flag) {
+                clearStoredAnalytics();
+                sessionStorage.removeItem('clearOnLoad');
+                console.log('Cleared persisted analytics due to hard reload flag');
+            }
+        } catch (e) {
+            console.warn('Error handling clearOnLoad flag', e);
+        }
+    }
+
+    // Load any stored analytics into the UI (called on DOMContentLoaded)
+    function loadStoredAnalyticsToUI() {
+        try {
+            // If comprehensive result exists, prefer to render it (it contains modules)
+            const comprehensive = loadAnalytics('comprehensive');
+            if (comprehensive && comprehensive.results) {
+                show('comprehensiveResults');
+                const res = comprehensive.results;
+                if (res.seo) {
+                    show('seoResults');
+                    displayTrafficBySource(res.seo.traffic_by_source || [], res.seo);
+                    displayLandingPages(res.seo.landing_pages || []);
+                    displayConversionBySource(res.seo.conversion_by_source || []);
+                    displayHourlyTraffic(res.seo.hourly_traffic || []);
+                }
+                if (res.cart) {
+                    show('cartResults');
+                    displayAbandonment(res.cart);
+                }
+                if (res.retention) {
+                    show('retentionResults');
+                    displayRetention(res.retention);
+                }
+                if (res.journey) {
+                    show('journeyResults');
+                    displayJourney(res.journey);
+                }
+                return;
+            }
+
+            // Otherwise load per-module stored results
+            const seo = loadAnalytics('seo');
+            if (seo) {
+                show('comprehensiveResults');
+                show('seoResults');
+                displayTrafficBySource(seo.traffic_by_source || [], seo);
+                displayLandingPages(seo.landing_pages || []);
+                displayConversionBySource(seo.conversion_by_source || []);
+                displayHourlyTraffic(seo.hourly_traffic || []);
+            }
+
+            const cart = loadAnalytics('cart');
+            if (cart) {
+                show('comprehensiveResults');
+                show('cartResults');
+                displayAbandonment(cart);
+            }
+
+            const retention = loadAnalytics('retention');
+            if (retention) {
+                show('comprehensiveResults');
+                show('retentionResults');
+                displayRetention(retention);
+            }
+
+            const journey = loadAnalytics('journey');
+            if (journey) {
+                show('comprehensiveResults');
+                show('journeyResults');
+                displayJourney(journey);
+            }
+
+            const recs = loadAnalytics('recommendations');
+            if (recs) {
+                show('comprehensiveResults');
+                show('recommendationsResults');
+                displayRecommendations(recs);
+            }
+        } catch (e) {
+            console.warn('Failed to load stored analytics to UI', e);
+        }
+    }
     
     // Utility: Show/hide elements
     function show(el) {
@@ -176,6 +322,8 @@
             displayHourlyTraffic(result.hourly_traffic || []);
             
             showStatus('✅ SEO Analysis Complete');
+            // Persist SEO results so they survive a normal reload (F5)
+            saveAnalytics('seo', result);
         } catch (error) {
             showStatus(`❌ ${error.message}`, true);
         }
@@ -338,6 +486,8 @@
             displayAbandonment(result);
             
             showStatus('✅ Cart Analysis Complete');
+            // Persist Cart results
+            saveAnalytics('cart', result);
         } catch (error) {
             showStatus(`❌ ${error.message}`, true);
         }
@@ -436,6 +586,8 @@
             displayRetention(result);
             
             showStatus('✅ Retention Analysis Complete');
+            // Persist Retention results
+            saveAnalytics('retention', result);
         } catch (error) {
             showStatus(`❌ ${error.message}`, true);
         }
@@ -533,6 +685,8 @@
             displayJourney(result);
             
             showStatus('✅ Journey Analysis Complete');
+            // Persist Journey results
+            saveAnalytics('journey', result);
         } catch (error) {
             showStatus(`❌ ${error.message}`, true);
         }
@@ -661,6 +815,8 @@
             
             showStatus('✅ Recommendations Generated');
             showToast('✅ Product recommendations loaded successfully');
+            // Persist recommendations for reload
+            saveAnalytics('recommendations', result);
         } catch (error) {
             showStatus(`❌ ${error.message}`, true);
             container.innerHTML = `
@@ -830,6 +986,8 @@
             }
             
             showStatus('✅ All Analytics Complete');
+            // Persist comprehensive result
+            saveAnalytics('comprehensive', result);
         } catch (error) {
             showStatus(`❌ ${error.message}`, true);
         }
@@ -986,10 +1144,15 @@
     // Initialize on DOM ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
+            // Handle hard-reload flag and restore any stored analytics before wiring UI
+            handleClearOnLoadFlag();
+            loadStoredAnalyticsToUI();
             initTabSwitching();
             setupEventListeners();
         });
     } else {
+        handleClearOnLoadFlag();
+        loadStoredAnalyticsToUI();
         initTabSwitching();
         setupEventListeners();
     }

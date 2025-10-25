@@ -64,7 +64,6 @@ def create_session_with_real_user():
         # Fallback to string IDs if no users found
         return {
             "session_id": f"session_{random.randint(1,1000)}",
-            "client_id": f"client_{random.randint(1,50)}",
             "user_id": f"user_{random.randint(1,20)}",
             "start_time": int(time.time()) - random.randint(0, 86400)
         }
@@ -75,11 +74,9 @@ def create_session_with_real_user():
     
     # Create a unique session ID using user's ObjectId
     session_id = f"session_{str(user_id)[-6:]}_{random.randint(1000, 9999)}"
-    client_id = f"client_{str(user_id)[-6:]}_{random.randint(1, 100)}"
     
     return {
         "session_id": session_id,
-        "client_id": client_id,
         "user_id": str(user_id),
         "start_time": int(time.time()) - random.randint(0, 86400)
     }
@@ -103,7 +100,6 @@ def simulate_session(session, num_events=5, products=None):
     # Start with home page
     events.append({
         "session_id": session["session_id"],
-        "client_id": session["client_id"],
         "user_id": session["user_id"],
         "page": "/home",
         "event_type": "pageview",
@@ -181,7 +177,6 @@ def simulate_session(session, num_events=5, products=None):
         
         events.append({
             "session_id": session["session_id"],
-            "client_id": session["client_id"],
             "user_id": session["user_id"],
             "page": page,
             "event_type": event_type,
@@ -248,7 +243,6 @@ def simulate_realistic_ecommerce(num_sessions=50):
                 # Add checkout event
                 checkout_event = {
                     "session_id": session["session_id"],
-                    "client_id": session["client_id"],
                     "user_id": session["user_id"],
                     "page": "/checkout",
                     "event_type": "purchase",

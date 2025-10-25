@@ -26,7 +26,6 @@ def test_ingest_route_exists():
     client = TestClient(app)
     # Minimal valid event payload
     evt = {
-        "client_id": "client-1",
         "user_id": "test-user",
         "session_id": "sess-1",
         "event_type": "pageview",

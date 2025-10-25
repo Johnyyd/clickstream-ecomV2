@@ -164,6 +164,7 @@ html {
     flex-direction: column;
     justify-content: flex-start;
     align-items: stretch;
+    color: black;
     gap: 12px;
     word-break: break-word; /* prevent overflow from long words/urls */
 }
@@ -348,17 +349,25 @@ html {
 /* Bar Chart */
 .chart-container {
     display: flex;
+    /* Stack rows vertically so each bar-row appears on its own line */
+    flex-direction: column;
+    gap: 12px;
     margin-top: 20px;
     background: white;
     padding: 15px;
     border-radius: 8px;
+    overflow-x: visible;
+    /* Responsive height*/
+    height: auto;
+    overflow: scroll;
 }
 
 .bar-chart-row {
+    /* Each row will lay out horizontally: label | bar-fill | value */
     display: flex;
+    flex-direction: row;
     align-items: center;
-    margin-bottom: 12px;
-    padding: 8px;
+    padding: 8px 0;
     border-radius: 6px;
     transition: background 0.2s ease;
 }
@@ -369,19 +378,24 @@ html {
 
 .bar-label {
     width: 70px;
+    min-width: 56px;
+    margin-right: 12px;
     font-size: 0.9em;
     font-weight: 600;
     color: #5a6c7d;
+    text-align: left;
 }
 
 .bar-fill {
-    height: 28px;
+    /* horizontal bar that fills remaining space in the row */
+    height: 18px;
     background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
     border-radius: 6px;
     margin-right: 12px;
     transition: all 0.5s ease;
     box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3);
-    flex-grow: 1;
+    flex: 1 1 auto;
+    width: auto;
     max-width: 100%;
 }
 
@@ -393,6 +407,7 @@ html {
     font-weight: 700;
     color: #2c3e50;
     min-width: 50px;
+    margin-left: 8px;
     text-align: right;
     font-size: 0.95em;
 }
@@ -1086,6 +1101,7 @@ html {
 .cluster-card {
     background: white;
     padding: 20px;
+    color: black;
     border-radius: 10px;
     border-left: 5px solid #3498db;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);

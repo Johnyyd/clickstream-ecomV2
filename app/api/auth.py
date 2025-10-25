@@ -61,7 +61,6 @@ def login(body: LoginBody):
                 "$setOnInsert": {
                     "session_id": session_id,
                     "user_id": user.get("_id"),
-                    "client_id": None,
                     "created_at": now,
                     "pages": [],
                     "event_count": 0,

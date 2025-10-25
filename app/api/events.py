@@ -39,7 +39,6 @@ def session_summary(session_id: str):
             "_id": sess.get("_id") if sess else None,
             "session_id": sess.get("session_id") if sess else None,
             "user_id": str(sess.get("user_id")) if sess and sess.get("user_id") is not None else None,
-            "client_id": sess.get("client_id") if sess else None,
             "first_event_at": sess.get("first_event_at").isoformat() if sess and isinstance(sess.get("first_event_at"), datetime) else None,
             "last_event_at": sess.get("last_event_at").isoformat() if sess and isinstance(sess.get("last_event_at"), datetime) else None,
         },
@@ -63,7 +62,6 @@ def recent_sessions(limit: int = Query(10, ge=1, le=100)):
         out.append({
             "session_id": sid,
             "user_id": str(s.get("user_id")) if s.get("user_id") is not None else None,
-            "client_id": s.get("client_id"),
             "first_event_at": s.get("first_event_at").isoformat() if isinstance(s.get("first_event_at"), datetime) else None,
             "last_event_at": s.get("last_event_at").isoformat() if isinstance(s.get("last_event_at"), datetime) else None,
             "events_count": cnt,

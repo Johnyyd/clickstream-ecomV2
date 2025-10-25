@@ -633,6 +633,7 @@ const styles = `
   border-radius: 8px;
   /* allow content to flow naturally and wrap where needed */
   text-align: left;
+  color: black;
   border-left: 3px solid var(--primary);
   transition: transform 0.2s, box-shadow 0.2s;
   box-sizing: border-box;

@@ -156,7 +156,7 @@ function ensureMetricsPanel() {
         </div>
         <div>
           <h3 style="margin:6px 0" id="rt-pages-title">Top pages (1h)</h3>
-          <div id="rt-bars"></div>
+          <div id="rt-bars" style="color: black !important;"></div>
         </div>
       </div>
       <details>
@@ -540,10 +540,6 @@ simulateBtn.onclick = async () => {
   output.innerText = "Simulating realistic events...";
   
   try {
-    const simSessionId = `session_sim_${Date.now()}`;
-    // Match seed_realistic_data.py client_id format
-    const clientId = currentUserId ? `client_${currentUserId.slice(-6)}` : `client_anon_${Math.random().toString(36).slice(2, 8)}`;
-    
     // Personas synchronized with seed_realistic_data.py
     const personas = [
       {name: "bouncer", weight: 0.15, events: 2, browseRate: 0.8, productRate: 0.15, cartRate: 0.03, checkoutRate: 0.02},
@@ -584,7 +580,6 @@ simulateBtn.onclick = async () => {
       method: 'POST',
       headers: {'Content-Type': 'application/json', 'Authorization': token},
       body: JSON.stringify({
-        client_id: clientId,
         page: entry.page,
         event_type: entry.type,
         timestamp: Math.floor(Date.now() / 1000),
@@ -609,7 +604,6 @@ simulateBtn.onclick = async () => {
         if (Math.random() < 0.55) {
           const category = categories[Math.floor(Math.random() * categories.length)];
           event = {
-            client_id: clientId,
             page: `/category?category=${category}`,
             event_type: "pageview",
             timestamp: currentTimestamp,
@@ -620,7 +614,6 @@ simulateBtn.onclick = async () => {
         } else {
           const term = searchTerms[Math.floor(Math.random() * searchTerms.length)];
           event = {
-            client_id: clientId,
             page: "/search",
             event_type: "search",
             timestamp: currentTimestamp,
@@ -634,7 +627,6 @@ simulateBtn.onclick = async () => {
         const product = cachedProducts[Math.floor(Math.random() * cachedProducts.length)];
         viewedProducts.push(product);
         event = {
-          client_id: clientId,
           page: `/p/${product.slug}?id=${product._id}`,
           event_type: "pageview",
           timestamp: currentTimestamp,
@@ -654,7 +646,6 @@ simulateBtn.onclick = async () => {
           const product = viewedProducts[Math.floor(Math.random() * viewedProducts.length)];
           cartItems.push(product);
           event = {
-            client_id: clientId,
             page: "/cart",
             event_type: "add_to_cart",
             timestamp: currentTimestamp,
@@ -670,7 +661,6 @@ simulateBtn.onclick = async () => {
           };
         } else {
           event = {
-            client_id: clientId,
             page: "/home",
             event_type: "pageview",
             timestamp: currentTimestamp,
@@ -684,7 +674,6 @@ simulateBtn.onclick = async () => {
         if (cartItems.length > 0 && Math.random() < 0.65) {
           const totalAmount = cartItems.reduce((sum, p) => sum + p.price, 0);
           event = {
-            client_id: clientId,
             page: "/checkout",
             event_type: "purchase",
             timestamp: currentTimestamp,
@@ -703,7 +692,6 @@ simulateBtn.onclick = async () => {
           // Navigate to home or category
           if (Math.random() < 0.5) {
             event = {
-              client_id: clientId,
               page: "/home",
               event_type: "pageview",
               timestamp: currentTimestamp,
@@ -714,7 +702,6 @@ simulateBtn.onclick = async () => {
           } else {
             const cat = categories[Math.floor(Math.random() * categories.length)];
             event = {
-              client_id: clientId,
               page: `/category?category=${cat}`,
               event_type: "pageview",
               timestamp: currentTimestamp,

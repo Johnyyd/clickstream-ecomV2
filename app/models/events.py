@@ -3,7 +3,6 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 
 class Event(BaseModel):
-    client_id: str
     page: Optional[str] = None
     event_type: str = Field(default="pageview")
     properties: Dict[str, Any] = Field(default_factory=dict)

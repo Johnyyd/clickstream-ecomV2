@@ -7,14 +7,14 @@
 
   function getIds(){
     try{
-      const CID_KEY='ecomv2_client_id';
+      const UID_KEY='ecomv2_user_id';
       const SID_KEY='ecomv2_session_id';
-      let cid=localStorage.getItem(CID_KEY)||'';
-      if(!cid){cid=crypto.randomUUID(); localStorage.setItem(CID_KEY,cid)}
+      let uid=localStorage.getItem(UID_KEY)||'';
+      if(!uid){uid=crypto.randomUUID(); localStorage.setItem(UID_KEY,uid)}
       let sid=sessionStorage.getItem(SID_KEY)||'';
-      if(!sid){sid=`session_${cid}_${Date.now()}`; sessionStorage.setItem(SID_KEY,sid)}
-      return {client_id:cid, session_id:sid};
-    }catch{ return {client_id:'', session_id:''}; }
+      if(!sid)return;
+      return {user_id:uid, session_id:sid};
+    }catch{ return {user_id:'', session_id:''}; }
   }
 
   async function flush(){
@@ -31,7 +31,7 @@
 
   function track(page, event_type, properties){
     const ids = getIds();
-    const evt = { page, event_type, properties: properties||{}, client_id: ids.client_id, session_id: ids.session_id, timestamp: Math.floor(Date.now()/1000) };
+    const evt = { page, event_type, properties: properties||{}, user_id: ids.user_id, session_id: ids.session_id, timestamp: Math.floor(Date.now()/1000) };
     QUEUE.push(evt);
     if(QUEUE.length>=MAX_BATCH) flush();
   }

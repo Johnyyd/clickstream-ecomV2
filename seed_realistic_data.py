@@ -33,7 +33,7 @@ from seed_products import slugify
 from ingest import ingest_event
 from auth import create_user
 
-PAGES = ["/home", "/category", "/search", "/product", "/cart", "/checkout"]
+PAGES = ["/home", "/category", "/search", "/p", "/cart", "/checkout"]
 
 
 def ensure_products(seed_products_first: bool) -> int:
@@ -80,10 +80,9 @@ def ensure_users(target_username: Optional[str], count: int) -> List[ObjectId]:
     return pool[:count]
 
 
-def emit_event(user_id, session_id, ts, page, event_type, props=None, client_id: Optional[str]=None):
+def emit_event(user_id, session_id, ts, page, event_type, props=None):
     ev = {
         "user_id": str(user_id),
-        "client_id": client_id or "",
         "session_id": session_id,
         "timestamp": int(ts),
         "page": page,
@@ -131,7 +130,7 @@ def _update_user_cart(user_id: ObjectId, product_id: ObjectId, delta_qty: int = 
         pass
 
 
-def ensure_browsing_session(session_id: str, user_id: ObjectId, start_ts: int, client_id: Optional[str] = None) -> bool:
+def ensure_browsing_session(session_id: str, user_id: ObjectId, start_ts: int) -> bool:
     """Upsert a browsing session document matching ingest.py behavior.
     Query by session_id field (not _id) to ensure consistency with runtime ingestion.
     Returns True if the upsert was acknowledged, False otherwise.
@@ -144,7 +143,6 @@ def ensure_browsing_session(session_id: str, user_id: ObjectId, start_ts: int, c
                 "$setOnInsert": {
                     "session_id": session_id,
                     "user_id": user_id,
-                    "client_id": client_id,
                     # Don't set pages here - will be populated by ingest_event
                 },
                 "$max": {"last_event_at": ts},
@@ -163,22 +161,20 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
     """Generate a realistic session with plausible navigation and conversion behavior."""
     sid = str(ObjectId())
     current_ts = start_ts
-    # Deterministic client id per user (stable across sessions); adjust if you want per-session IDs
-    client_id = f"client_{str(user_id)[-6:]}"
 
     # Use persona to adjust behavior
     if not persona:
         persona = {"name": "normal", "browse_rate": 0.35, "product_view_rate": 0.35, "cart_rate": 0.18, "checkout_rate": 0.12}
     
     # First event: home with varied entry points
-    ensure_browsing_session(sid, user_id, current_ts, client_id)
+    ensure_browsing_session(sid, user_id, current_ts)
     entry_points = [
         ("/home", "pageview", {"referrer": random.choice(["direct","email","social","ads","google","facebook"])}),
         ("/search", "search", {"search_term": random.choice(["laptop","phone","coffee","shoes","shirt"]), "referrer": "google"}),
         (f"/category?category={random.choice([p.get('category') for p in products])}", "pageview", {"referrer": "social"}),
     ]
     entry = random.choices(entry_points, weights=[0.6, 0.25, 0.15], k=1)[0]
-    emit_event(user_id, sid, current_ts, entry[0], entry[1], entry[2], client_id)
+    emit_event(user_id, sid, current_ts, entry[0], entry[1], entry[2])
 
     viewed_product_ids: list[str] = []
     cart = []
@@ -216,11 +212,10 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                     f"/category?category={category}",
                     "pageview",
                     {"category": category},
-                    client_id,
                 )
             else:
                 term = random.choice(["laptop","phone","coffee","shoes","shirt","pizza","sushi"]) 
-                emit_event(user_id, sid, current_ts, "/search", "search", {"search_term": term}, client_id)
+                emit_event(user_id, sid, current_ts, "/search", "search", {"search_term": term})
         elif r < (persona["browse_rate"] + persona["product_view_rate"]):  # view product
             p = realistic_product(products)
             viewed_product_ids.append(str(p["_id"]))
@@ -236,7 +231,6 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                     "product_category": p["category"],
                     "product_price": p["price"],
                 },
-                client_id,
             )
         elif r < (persona["browse_rate"] + persona["product_view_rate"] + persona["cart_rate"]):  # add to cart
             if viewed_product_ids:
@@ -257,10 +251,9 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                             "product_price": p["price"],
                             "quantity": 1,
                         },
-                        client_id,
                     )
             else:
-                emit_event(user_id, sid, current_ts, "/home", "pageview", None, client_id)
+                emit_event(user_id, sid, current_ts, "/home", "pageview", None)
         else:  # checkout / purchase
             if cart and random.random() < 0.65:
                 total = sum(item["price"] for item in cart)
@@ -276,7 +269,6 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                         "payment_method": random.choice(["credit_card","paypal","apple_pay"]),
                         "order_id": f"order_{random.randint(1000,9999)}",
                     },
-                    client_id,
                 )
                 # Clear persistent cart for the user upon purchase
                 try:
@@ -287,7 +279,7 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
             else:
                 # Navigate to home or a specific category page with query param
                 if random.random() < 0.5:
-                    emit_event(user_id, sid, current_ts, "/home", "pageview", None, client_id)
+                    emit_event(user_id, sid, current_ts, "/home", "pageview", None)
                 else:
                     cat = random.choice([p.get("category") for p in products])
                     emit_event(
@@ -297,7 +289,6 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                         f"/category?category={cat}",
                         "pageview",
                         {"category": cat},
-                        client_id,
                     )
 
 
@@ -362,14 +353,14 @@ def seed_event_for_users(user_ids: List[ObjectId], days: int, sessions_per_user:
                 total_est += persona["avg_events"]
     return total_est
 
-def seed_session_for_user(user_id: ObjectId, start_ts: int, client_id: Optional[str] = None) -> str:
+def seed_session_for_user(user_id: ObjectId, start_ts: int) -> str:
     """Create a browsing session (no events) consistent with runtime behavior.
     - Primary key: sessions._id == session_id
     - Foreign key: events.session_id references this id (when events are later emitted)
     Returns the created or existing session_id.
     """
     sid = str(ObjectId())
-    ensure_browsing_session(sid, user_id, start_ts, client_id)
+    ensure_browsing_session(sid, user_id, start_ts)
     return sid
 
 

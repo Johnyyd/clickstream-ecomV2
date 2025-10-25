@@ -28,7 +28,6 @@ def ingest_event(event_json):
     """
     event_json example:
     {
-      "client_id": "uuid",
       "timestamp": 1690000000,   # unix epoch optional
       "page": "/home",
       "event_type": "pageview",
@@ -60,7 +59,6 @@ def ingest_event(event_json):
         user_id = None
 
     doc = {
-        "client_id": event_json.get("client_id", str(uuid.uuid4())),
         "timestamp": ts,
         "page": event_json.get("page"),
         "event_type": event_json.get("event_type","pageview"),
@@ -78,7 +76,6 @@ def ingest_event(event_json):
                     "user_id": user_id,
                     # Don't set pages here - let $addToSet handle it
                 },
-                "$set": {"client_id": doc.get("client_id")},
                 "$max": {"last_event_at": ts},
                 "$min": {"first_event_at": ts},
                 "$inc": {"event_count": 1},
@@ -101,7 +98,6 @@ def ingest_event(event_json):
         if producer:
             import json as _json
             payload = {
-                "client_id": doc.get("client_id"),
                 "session_id": doc.get("session_id"),
                 "user_id": str(doc.get("user_id")) if doc.get("user_id") is not None else None,
                 "page": doc.get("page"),

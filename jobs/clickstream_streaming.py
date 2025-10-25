@@ -12,7 +12,6 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongo:27017")
 MONGO_DB = os.getenv("MONGO_DB", "clickstream")
 
 schema = StructType([
-    StructField("client_id", StringType()),
     StructField("session_id", StringType()),
     StructField("user_id", StringType()),
     StructField("page", StringType()),

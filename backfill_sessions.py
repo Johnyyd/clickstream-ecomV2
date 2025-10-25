@@ -19,14 +19,13 @@ from bson import ObjectId
 from db import events_col, sessions_col
 
 
-def upsert_session(session_id: str, user_id: Any, client_id: str | None, ts) -> None:
+def upsert_session(session_id: str, user_id: Any, ts) -> None:
     sessions_col().update_one(
         {"session_id": session_id},
         {
             "$setOnInsert": {
                 "session_id": session_id,
                 "user_id": user_id,
-                "client_id": client_id,
                 "first_event_at": ts,
                 "pages": [],
             },
@@ -57,7 +56,6 @@ def main():
         "_id": 1,
         "session_id": 1,
         "user_id": 1,
-        "client_id": 1,
         "timestamp": 1,
     }
 
@@ -71,7 +69,7 @@ def main():
         if not sid:
             continue
         ts = ev.get("timestamp")
-        upsert_session(sid, ev.get("user_id"), ev.get("client_id"), ts)
+        upsert_session(sid, ev.get("user_id"), ts)
         count += 1
         if count % 10000 == 0:
             print(f"Processed {count} events...")

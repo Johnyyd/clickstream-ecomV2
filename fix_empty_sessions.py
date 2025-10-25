@@ -43,17 +43,15 @@ def fix_session(session):
     timestamps = [e.get("timestamp") for e in events if e.get("timestamp")]
     first_event_at = min(timestamps) if timestamps else None
     last_event_at = max(timestamps) if timestamps else None
-    
-    # Get client_id and user_id from first event
+
+    # Get user_id from first event
     first_event = events[0]
-    client_id = first_event.get("client_id")
     user_id = first_event.get("user_id")
     
     # Update session
     update_doc = {
         "pages": pages,
         "event_count": event_count,
-        "client_id": client_id,
         "user_id": user_id
     }
     

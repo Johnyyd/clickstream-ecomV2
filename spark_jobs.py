@@ -30,7 +30,6 @@ def create_spark(app_name="clickstream-analysis", reuse=True):
 # Define schema for events
 events_schema = StructType([
     StructField("_id", StringType(), True),
-    StructField("client_id", StringType(), True),
     StructField("user_id", StringType(), True),
     StructField("session_id", StringType(), True),
     StructField("timestamp", TimestampType(), True),
@@ -104,7 +103,6 @@ def load_events_as_list(limit=None, user_id=None):
                 # Convert MongoDB document to plain Python dict
                 event = {
                     "_id": str(d.get("_id", "")),
-                    "client_id": str(d.get("client_id", "")),
                     "user_id": str(d.get("user_id", "")),
                     "session_id": str(d.get("session_id", "")),
                     "timestamp": timestamp,

@@ -78,6 +78,7 @@
 
 /* Insights List */
 .insights-list {
+  color: black !important;
   list-style: none;
   padding: 0;
   margin: 0;
@@ -86,6 +87,7 @@
 .insight-item {
   display: flex;
   align-items: flex-start;
+  color: black !important;
   padding: 12px;
   margin-bottom: 8px;
   background: #f3f4f6;
@@ -110,6 +112,7 @@
 .insight-text {
   flex: 1;
   line-height: 1.6;
+  color: black !important;
 }
 
 /* Traffic Grid */
@@ -147,6 +150,7 @@
   border-radius: 4px;
   border-left: 3px solid #9ca3af;
   font-size: 0.95em;
+  color: black;
   line-height: 1.5;
 }
 
@@ -175,6 +179,7 @@
 .recommendation-item {
   display: flex;
   align-items: flex-start;
+  color: black;
   padding: 12px;
   margin-bottom: 8px;
   background: #ecfdf5;
@@ -212,6 +217,7 @@
 .decision-item {
   display: flex;
   align-items: flex-start;
+  color: black;
   padding: 14px;
   margin-bottom: 10px;
   background: #fef3c7;
@@ -249,6 +255,7 @@
 .action-item {
   display: flex;
   align-items: center;
+  color: black;
   padding: 12px;
   margin-bottom: 8px;
   background: #f3f4f6;
@@ -376,6 +383,7 @@
 .user-rec-item {
   padding: 12px;
   margin-bottom: 8px;
+  color: black;
   background: #dbeafe;
   border-radius: 6px;
   border-left: 4px solid #3b82f6;
@@ -487,19 +495,20 @@
   background: linear-gradient(135deg, #667eea22 0%, #764ba222 100%);
   border: 1px solid var(--border);
   border-radius: 8px;
+  color: black !important;
 }
 
 .cluster-header {
   font-size: 16px;
   font-weight: bold;
   margin-bottom: 12px;
-  color: var(--text);
+  color: black !important;
 }
 
 .cluster-stats div {
   padding: 4px 0;
   font-size: 14px;
-  color: var(--text);
+  color: black !important;
 }
 
 /* Feature Importance */

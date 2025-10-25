@@ -40,7 +40,7 @@ const Shop = (() => {
 
   // Cart in localStorage
   const CART_KEY = 'ecomv2_cart';
-  const CID_KEY = 'ecomv2_client_id';
+  const UID_KEY = 'ecomv2_user_id';
   const SID_KEY = 'ecomv2_session_id';
 
   // Simple in-memory UI state per page
@@ -172,11 +172,11 @@ const Shop = (() => {
     );
   }
   function getIds() {
-    let cid = localStorage.getItem(CID_KEY) || '';
-    if (!cid) { cid = uuid(); localStorage.setItem(CID_KEY, cid); }
+    let uid = localStorage.getItem(UID_KEY) || '';
+    if (!uid) { uid = uuid(); localStorage.setItem(UID_KEY, uid); }
     let sid = sessionStorage.getItem(SID_KEY) || '';
-    if (!sid) { sid = `session_${cid}_${Date.now()}`; sessionStorage.setItem(SID_KEY, sid); }
-    return { client_id: cid, session_id: sid };
+    if (!sid) { sid = `session_${uid}_${Date.now()}`; sessionStorage.setItem(SID_KEY, sid); }
+    return { user_id: uid, session_id: sid };
   }
   async function track(page, event_type, properties = {}) {
     try {
@@ -185,11 +185,11 @@ const Shop = (() => {
         window.analytics.track(page, event_type, properties);
       }
       // Keep legacy single-event POST for backward compatibility
-      const { client_id, session_id } = getIds();
+      const { user_id, session_id } = getIds();
       await fetch('/api/ingest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client_id, session_id, page, event_type, properties, timestamp: Math.floor(Date.now()/1000) })
+        body: JSON.stringify({ user_id, session_id, page, event_type, properties, timestamp: Math.floor(Date.now()/1000) })
       });
     } catch (e) { /* swallow */ }
   }

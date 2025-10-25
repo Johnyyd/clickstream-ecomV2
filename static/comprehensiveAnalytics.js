@@ -457,7 +457,7 @@
                     const maxSessions = Math.max(...Object.values(byHour).map(h => h.reduce((s, r) => s + r.sessions, 0)));
                     const width = (total / maxSessions * 100).toFixed(1);
                     return `
-                        <div class="bar-chart-row">
+                        <div class="bar-chart-row" scrollbar-x="true">
                             <span class="bar-label">${hour}:00</span>
                             <div class="bar-fill" style="width: ${width}%"></div>
                             <span class="bar-value">${total}</span>

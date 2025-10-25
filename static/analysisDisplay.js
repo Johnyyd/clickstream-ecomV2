@@ -602,6 +602,9 @@ const styles = `
   border-radius: 8px;
   padding: 20px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  /* ensure sections can expand horizontally and not force narrow inner columns */
+  width: 100%;
+  overflow: visible;
 }
 
 .section-title {
@@ -628,10 +631,14 @@ const styles = `
   background: rgba(255, 255, 255, 0.05);
   padding: 16px;
   border-radius: 8px;
-  text-align: center;
+  /* allow content to flow naturally and wrap where needed */
+  text-align: left;
   border-left: 3px solid var(--primary);
   transition: transform 0.2s, box-shadow 0.2s;
   box-sizing: border-box;
+  min-width: 220px; /* prevent extremely skinny cards */
+  max-width: 100%;
+  word-break: break-word;
 }
 
 .metric-card:hover {
@@ -653,15 +660,19 @@ const styles = `
 
 .metric-label {
   font-size: 0.9em;
-  color: var(--text-muted);
+  color: var(--text);
 }
 
 /* Metrics Grid */
 .metrics-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  /* fit cards across the available width, but keep each card readable */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 20px;
   margin-bottom: 20px;
+  align-items: start;
+  grid-auto-rows: auto;
+  width: 100%;
 }
 
 /* Funnel Section */
@@ -764,9 +775,19 @@ const styles = `
 }
 
 .hour-label, .count-label {
-  font-size: 0.8em;
-  color: var(--text-muted);
+  font-size: 0.9em;
+  color: var(--text);
   margin-top: 4px;
+  font-weight: 600;
+}
+
+/* Ensure canvases expand to the available card width so charts are not squashed */
+.metric-card canvas,
+.chart-container canvas {
+  max-width: 100% !important;
+  width: 100% !important;
+  height: auto !important;
+  display: block;
 }
 
 /* Insights & Recommendations */

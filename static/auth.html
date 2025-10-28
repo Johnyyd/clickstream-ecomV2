@@ -72,16 +72,33 @@
       try {
         const resp = await fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
         const j = await resp.json();
+        console.log('Login response:', j); // DEBUG: Log response
         if (j.token) {
-          localStorage.setItem('token', j.token);
           setStatus('✅ Logged in');
-          const role = (j.role || 'user');
+          
+          // Đọc role từ j.user.role (backend trả về trong object user)
+          const role = (j.user && j.user.role) || 'user';
+          console.log('Login response:', j); // DEBUG: Log full response
+          console.log('User role:', role); // DEBUG: Log role
+          
+          // LƯU TOKEN VÀ USER - ƯU TIÊN SỐ 1
+          localStorage.setItem('token', j.token);
+          if (j.user) {
+            localStorage.setItem('user', JSON.stringify(j.user));
+            console.log('✅ User saved to localStorage:', j.user); // DEBUG
+          }
+          
+          // Verify ngay sau khi lưu
+          const savedUser = localStorage.getItem('user');
+          console.log('✅ Verification - User in localStorage:', savedUser);
+          
           try {
             if (j.session_id) {
               sessionStorage.setItem('ecomv2_session_id', j.session_id);
             }
           } catch (e) {}
-          // Sync server cart to localStorage before redirect
+          
+          // Sync server cart to localStorage before redirect (chỉ cho non-admin)
           try {
             if (role !== 'admin') {
               const resp2 = await fetch('/api/cart', { headers: { 'Authorization': j.token } });
@@ -98,8 +115,19 @@
                 }))));
               }
             }
-          } catch (e) {}
-          setTimeout(() => { window.location.href = role === 'admin' ? '/dashboard' : '/cart'; }, 400);
+          } catch (e) {
+            console.log('Cart sync error (không ảnh hưởng):', e);
+          }
+          
+          // Redirect dựa trên role: admin -> dashboard (index.html), user -> home
+          const redirectUrl = role === 'admin' ? '/dashboard' : '/home';
+          console.log('🔄 Redirecting to:', redirectUrl, '(role:', role, ')');
+          
+          // Tăng delay để đảm bảo localStorage đã lưu
+          setTimeout(() => { 
+            console.log('🚀 Now redirecting...');
+            window.location.href = redirectUrl; 
+          }, 600);
         } else {
           setStatus('❌ ' + (j.error || 'Login failed'));
         }

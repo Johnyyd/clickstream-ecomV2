@@ -4,7 +4,7 @@ from ingest import ingest_event
 from db import events_col, sessions_col
 from datetime import datetime
 
-router = APIRouter(prefix="/api", tags=["events"])
+router = APIRouter(tags=["events"])  # Prefix set in main.py
 
 @router.post("/ingest", response_model=EventIngestResponse)
 def ingest(evt: Event):

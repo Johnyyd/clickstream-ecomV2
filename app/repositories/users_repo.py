@@ -35,6 +35,12 @@ class UsersRepository:
             return None
         doc["_id"] = str(doc["_id"])  # normalize
         return doc
+    
+    def create(self, user: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new user"""
+        result = self.col.insert_one(user)
+        user["_id"] = str(result.inserted_id)
+        return user
 
     def upsert_user(self, user: Dict[str, Any]) -> str:
         # Expects user to contain a unique field (username or email)

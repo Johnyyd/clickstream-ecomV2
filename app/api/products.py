@@ -2,7 +2,7 @@ from fastapi import APIRouter, Query, HTTPException
 from typing import Optional, List, Dict, Any
 from app.repositories.products_repo import ProductsRepository
 
-router = APIRouter(prefix="/api", tags=["products"])
+router = APIRouter(tags=["products"])  # Prefix set in main.py
 
 @router.get("/products")
 def list_products(

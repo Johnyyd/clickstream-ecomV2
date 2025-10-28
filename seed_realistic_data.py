@@ -31,7 +31,7 @@ from bson import ObjectId
 from db import users_col, products_col, sessions_col, carts_col
 from seed_products import slugify
 from ingest import ingest_event
-from auth import create_user
+from app.services.auth import create_user
 
 PAGES = ["/home", "/category", "/search", "/p", "/cart", "/checkout"]
 
@@ -193,12 +193,9 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
 
     for i in range(1, n_events):
         # More realistic spacing based on user behavior
-        if persona["name"] == "bouncer":
-            current_ts += random.randint(5, 30)  # Quick navigation
-        elif persona["name"] == "power_buyer":
-            current_ts += random.randint(30, 120)  # Thoughtful browsing
-        else:
-            current_ts += random.randint(15, 240)  # Normal
+        # Use persona-specific timing between events
+        current_ts += random.randint(persona.get("event_time_min", 15), 
+                                   persona.get("event_time_max", 120))
         
         r = random.random()
 
@@ -254,30 +251,62 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                     )
             else:
                 emit_event(user_id, sid, current_ts, "/home", "pageview", None)
-        else:  # checkout / purchase
-            if cart and random.random() < 0.65:
-                total = sum(item["price"] for item in cart)
-                emit_event(
-                    user_id,
-                    sid,
-                    current_ts,
-                    "/checkout",
-                    "purchase",
-                    {
-                        "cart_items": len(cart),
-                        "total_amount": round(total, 2),
-                        "payment_method": random.choice(["credit_card","paypal","apple_pay"]),
-                        "order_id": f"order_{random.randint(1000,9999)}",
-                    },
-                )
-                # Clear persistent cart for the user upon purchase
-                try:
-                    carts_col().update_one({"user_id": user_id}, {"$set": {"items": []}}, upsert=True)
-                except Exception:
-                    pass
-                cart.clear()
+        else:  # checkout / purchase path
+            if cart:
+                # Decide to attempt checkout with a probability influenced by persona
+                attempt_checkout = random.random() < max(0.35, persona.get("checkout_rate", 0.1) + 0.15)
+                if attempt_checkout:
+                    # Emit checkout event
+                    total = sum(item["price"] for item in cart)
+                    emit_event(
+                        user_id,
+                        sid,
+                        current_ts,
+                        "/checkout",
+                        "checkout",
+                        {
+                            "cart_items": len(cart),
+                            "total_amount": round(total, 2),
+                        },
+                    )
+                    # Small delay then purchase with high probability
+                    if random.random() < 0.85:
+                        current_ts += random.randint(2, 10)
+                        emit_event(
+                            user_id,
+                            sid,
+                            current_ts,
+                            "/order-success",
+                            "purchase",
+                            {
+                                "cart_items": len(cart),
+                                "total_amount": round(total, 2),
+                                "payment_method": random.choice(["credit_card","paypal","apple_pay"]),
+                                "order_id": f"order_{random.randint(1000,9999)}",
+                            },
+                        )
+                        # Clear persistent cart upon purchase
+                        try:
+                            carts_col().update_one({"user_id": user_id}, {"$set": {"items": []}}, upsert=True)
+                        except Exception:
+                            pass
+                        cart.clear()
+                else:
+                    # Keep browsing without checkout
+                    if random.random() < 0.5:
+                        emit_event(user_id, sid, current_ts, "/home", "pageview", None)
+                    else:
+                        cat = random.choice([p.get("category") for p in products])
+                        emit_event(
+                            user_id,
+                            sid,
+                            current_ts,
+                            f"/category?category={cat}",
+                            "pageview",
+                            {"category": cat},
+                        )
             else:
-                # Navigate to home or a specific category page with query param
+                # No items yet, continue browsing
                 if random.random() < 0.5:
                     emit_event(user_id, sid, current_ts, "/home", "pageview", None)
                 else:
@@ -290,6 +319,32 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                         "pageview",
                         {"category": cat},
                     )
+
+    # End-of-session finalization: convert some lingering carts
+    if cart and random.random() < 0.25:
+        total = sum(item["price"] for item in cart)
+        current_ts += random.randint(5, 30)
+        emit_event(user_id, sid, current_ts, "/checkout", "checkout", {"cart_items": len(cart), "total_amount": round(total, 2)})
+        if random.random() < 0.9:
+            current_ts += random.randint(2, 10)
+            emit_event(
+                user_id,
+                sid,
+                current_ts,
+                "/order-success",
+                "purchase",
+                {
+                    "cart_items": len(cart),
+                    "total_amount": round(total, 2),
+                    "payment_method": random.choice(["credit_card","paypal","apple_pay"]),
+                    "order_id": f"order_{random.randint(1000,9999)}",
+                },
+            )
+            try:
+                carts_col().update_one({"user_id": user_id}, {"$set": {"items": []}}, upsert=True)
+            except Exception:
+                pass
+            cart.clear()
 
 
 def seed_event_for_users(user_ids: List[ObjectId], days: int, sessions_per_user: int, avg_events: int, seed_products_first: bool):
@@ -404,25 +459,41 @@ def seed_recent_events(user_ids: List[ObjectId], minutes: int, total_sessions: i
     products = list(products_col().find({}, {"_id": 1, "name": 1, "slug": 1, "category": 1, "price": 1}))
     
     PERSONAS = [
-        # Bouncer: 0.5% for target bounce rate (1 event only)
-        {"name": "bouncer", "weight": 0.005, "avg_events": 1,
-         "browse_rate": 1.0, "product_view_rate": 0.0, "cart_rate": 0.0, "checkout_rate": 0.0},
+        # Bouncers: Quick exits (5%) - matches real-world bounce rates
+        {"name": "bouncer", "weight": 0.05, "avg_events": 1, "extra_sessions": -2,
+         "browse_rate": 1.0, "product_view_rate": 0.0, "cart_rate": 0.0, "checkout_rate": 0.0,
+         "session_gap_min": 12, "session_gap_max": 72,  # Hours between sessions
+         "event_time_min": 5, "event_time_max": 30},    # Seconds between events
         
-        # Product Browsers: High product view rate (40%)
-        {"name": "product_browser", "weight": 0.40, "avg_events": 8,
-         "browse_rate": 0.15, "product_view_rate": 0.70, "cart_rate": 0.10, "checkout_rate": 0.05},
+        # Casual Browsers: Brief product views (30%)
+        {"name": "casual_browser", "weight": 0.30, "avg_events": 4, "extra_sessions": -1,
+         "browse_rate": 0.40, "product_view_rate": 0.50, "cart_rate": 0.08, "checkout_rate": 0.02,
+         "session_gap_min": 8, "session_gap_max": 48,
+         "event_time_min": 10, "event_time_max": 60},
         
-        # Window Shoppers: Browse products but rarely buy (25%)
-        {"name": "window_shopper", "weight": 0.25, "avg_events": 10,
-         "browse_rate": 0.20, "product_view_rate": 0.60, "cart_rate": 0.15, "checkout_rate": 0.05},
+        # Comparison Shoppers: Multiple product views, rare purchases (25%)
+        {"name": "comparison_shopper", "weight": 0.25, "avg_events": 8, "extra_sessions": 1,
+         "browse_rate": 0.20, "product_view_rate": 0.65, "cart_rate": 0.12, "checkout_rate": 0.03,
+         "session_gap_min": 4, "session_gap_max": 24,
+         "event_time_min": 20, "event_time_max": 180},
         
-        # Active Shoppers: View products and add to cart (20%)
-        {"name": "shopper", "weight": 0.20, "avg_events": 12,
-         "browse_rate": 0.15, "product_view_rate": 0.50, "cart_rate": 0.25, "checkout_rate": 0.10},
+        # Regular Customers: Balanced browsing and buying (20%)
+        {"name": "regular_customer", "weight": 0.20, "avg_events": 12, "extra_sessions": 2,
+         "browse_rate": 0.25, "product_view_rate": 0.45, "cart_rate": 0.20, "checkout_rate": 0.10,
+         "session_gap_min": 2, "session_gap_max": 36,
+         "event_time_min": 15, "event_time_max": 120},
         
-        # Power Buyers: High conversion (10%)
-        {"name": "power_buyer", "weight": 0.10, "avg_events": 15,
-         "browse_rate": 0.10, "product_view_rate": 0.45, "cart_rate": 0.30, "checkout_rate": 0.15},
+        # Loyal Shoppers: High engagement and conversion (15%)
+        {"name": "loyal_shopper", "weight": 0.15, "avg_events": 15, "extra_sessions": 3,
+         "browse_rate": 0.15, "product_view_rate": 0.40, "cart_rate": 0.30, "checkout_rate": 0.15,
+         "session_gap_min": 1, "session_gap_max": 24,
+         "event_time_min": 30, "event_time_max": 240},
+        
+        # Power Users: Very high engagement (5%)
+        {"name": "power_user", "weight": 0.05, "avg_events": 20, "extra_sessions": 4,
+         "browse_rate": 0.10, "product_view_rate": 0.35, "cart_rate": 0.35, "checkout_rate": 0.20,
+         "session_gap_min": 0.5, "session_gap_max": 12,
+         "event_time_min": 45, "event_time_max": 300},
     ]
     
     total_est = 0
@@ -456,7 +527,7 @@ def seed_recent_events(user_ids: List[ObjectId], minutes: int, total_sessions: i
 def main():
     parser = argparse.ArgumentParser(description="Seed realistic customer-like data")
     parser.add_argument("--username", type=str, default=None, help="Seed only for this username (create if missing)")
-    parser.add_argument("--user-count", type=int, default=1000, help="Number of users when --username not provided")
+    parser.add_argument("--user-count", type=int, default=10000, help="Number of users when --username not provided")
     parser.add_argument("--days", type=int, default=30, help="Days back to generate")
     parser.add_argument("--sessions-per-user", type=int, default=random.randint(3, 10), help="Sessions per user per day")
     parser.add_argument("--avg-events", type=int, default=random.randint(5, 50), help="Average events per session")

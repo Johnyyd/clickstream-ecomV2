@@ -11,17 +11,41 @@
     <!-- Chart.js for ML visualizations -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
     <script>
-        (async function(){
+        (function(){
           try {
             const token = localStorage.getItem('token');
-            if (!token) { window.location.replace('/auth'); return; }
-            const resp = await fetch('/api/me', { headers: { 'Authorization': token }});
-            if (!resp.ok) { window.location.replace('/auth'); return; }
-            const me = await resp.json();
-            if ((me.role || 'user') !== 'admin') {
-              window.location.replace('/home');
+            console.log('Dashboard auth check - Token:', token ? 'exists' : 'missing');
+            
+            if (!token) { 
+              console.log('No token found, redirecting to auth');
+              window.location.replace('/auth'); 
+              return; 
             }
+            
+            // Kiểm tra role từ localStorage
+            const userStr = localStorage.getItem('user');
+            console.log('Dashboard auth check - User string:', userStr);
+            
+            if (!userStr) {
+              console.log('No user data found, redirecting to auth');
+              window.location.replace('/auth');
+              return;
+            }
+            
+            const user = JSON.parse(userStr);
+            console.log('Dashboard auth check - User object:', user);
+            console.log('Dashboard auth check - User role:', user.role);
+            
+            if ((user.role || 'user') !== 'admin') {
+              console.log('User is not admin, role:', user.role);
+              alert('Bạn không có quyền truy cập trang này. Chỉ dành cho Admin.');
+              window.location.replace('/home');
+              return;
+            }
+            
+            console.log('✅ Admin access granted');
           } catch (e) {
+            console.error('Auth check error:', e);
             window.location.replace('/auth');
           }
         })();
@@ -56,6 +80,11 @@
                     <button id="retentionAnalyticsBtn" class="analytics-btn">📈 Retention</button>
                     <button id="journeyAnalyticsBtn" class="analytics-btn">🗺️ Customer Journey</button>
                     <button id="recommendationsBtn" class="analytics-btn">⭐ Recommendations</button>
+                </div>
+                <div class="analytics-filter" style="margin-top:10px;">
+                    <label for="analyticsUsername" style="display:block; font-weight:600; margin-bottom:6px;">Username (Optional)</label>
+                    <input id="analyticsUsername" placeholder="Enter username to analyze specific user..." style="width:320px; padding:8px; border-radius:6px; border:1px solid #444; background:#111; color:#eee;" />
+                    <div style="font-size:12px; color:#888; margin-top:4px;">Leave empty to analyze all users</div>
                 </div>
             </div>
             <div class="ml-controls">

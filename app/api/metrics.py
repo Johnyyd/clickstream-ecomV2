@@ -3,7 +3,7 @@ from typing import List, Dict, Any
 from datetime import datetime, timedelta
 from db import get_db, events_col
 
-router = APIRouter(prefix="/api/metrics", tags=["metrics"])
+router = APIRouter(prefix="/metrics", tags=["metrics"])
 
 @router.get("/aggregates")
 def get_aggregates(minutes: int = Query(default=60, ge=1, le=10080)) -> Dict[str, Any]:

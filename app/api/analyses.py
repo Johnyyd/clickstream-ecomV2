@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Header
 from typing import Optional
 from app.repositories.analyses_repo import AnalysesRepository
-from auth import get_user_by_token
+from app.services.auth import get_user_by_token
 from fastapi import HTTPException
 from bson import ObjectId
 
-router = APIRouter(prefix="/api", tags=["analyses"])
+router = APIRouter(tags=["analyses"])  # Prefix set in main.py
 
 # Simple token auth helper (reuse sessions collection via server endpoints is not available here,
 # so we keep consistent with existing flow by passing Authorization token to server.

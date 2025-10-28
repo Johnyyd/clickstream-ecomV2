@@ -4,11 +4,11 @@ ML API endpoints
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-from app.api.auth import get_current_user
+from app.api.v1.deps import get_current_user
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
-router = APIRouter(prefix="/api")
+router = APIRouter()  # Prefix set in main.py
 
 # Thread pool for running ML tasks
 executor = ThreadPoolExecutor(max_workers=2)

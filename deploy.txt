@@ -1,0 +1,9 @@
+cp .env.prod .env
+# Cập nhật các giá trị trong .env
+
+
+docker-compose up --build
+
+
+chmod +x deploy.sh
+./deploy.sh

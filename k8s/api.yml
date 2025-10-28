@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clickstream-api
+  namespace: clickstream
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: clickstream-api
+  template:
+    metadata:
+      labels:
+        app: clickstream-api
+    spec:
+      containers:
+        - name: api
+          image: clickstream-ecomv2:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: MONGODB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: clickstream-secrets
+                  key: mongodb-url
+            - name: SPARK_MASTER
+              valueFrom:
+                configMapKeyRef:
+                  name: clickstream-config
+                  key: spark-master
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          volumeMounts:
+            - name: logs
+              mountPath: /app/logs
+            - name: data
+              mountPath: /app/data
+      volumes:
+        - name: logs
+          persistentVolumeClaim:
+            claimName: clickstream-logs-pvc
+        - name: data
+          persistentVolumeClaim:
+            claimName: clickstream-data-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickstream-api
+  namespace: clickstream
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8000
+  selector:
+    app: clickstream-api
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: clickstream-ingress
+  namespace: clickstream
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+    - hosts:
+        - api.clickstream.example.com
+      secretName: clickstream-tls
+  rules:
+    - host: api.clickstream.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: clickstream-api
+                port:
+                  number: 80

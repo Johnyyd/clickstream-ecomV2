@@ -8,7 +8,7 @@ from typing import Optional, List
 from pydantic import BaseModel
 import traceback
 
-router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 
 class AnalyticsRequest(BaseModel):
@@ -26,12 +26,12 @@ async def get_seo_analysis(username: Optional[str] = None):
     - Conversion by source
     """
     try:
-        from spark_seo_analytics import analyze_traffic_sources
+        from app.spark.seo_analytics import analyze_traffic_sources
         result = analyze_traffic_sources(username=username)
         return result
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"error": str(e)}
 
 
 @router.get("/cart-abandonment")
@@ -43,12 +43,12 @@ async def get_cart_abandonment(username: Optional[str] = None):
     - Cart value analysis
     """
     try:
-        from spark_cart_analytics import analyze_cart_abandonment
+        from app.spark.spark_cart_analytics import analyze_cart_abandonment
         result = analyze_cart_abandonment(username=username)
         return result
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"error": str(e)}
 
 
 @router.get("/retention")
@@ -60,12 +60,12 @@ async def get_retention_analysis(username: Optional[str] = None):
     - User segments
     """
     try:
-        from spark_retention_analytics import analyze_cohort_retention
+        from app.spark.spark_retention_analytics import analyze_cohort_retention
         result = analyze_cohort_retention(username=username)
         return result
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"error": str(e)}
 
 
 @router.get("/customer-journey")
@@ -77,12 +77,12 @@ async def get_customer_journey(username: Optional[str] = None):
     - Common sequences
     """
     try:
-        from spark_journey_analytics import analyze_customer_journey
+        from app.spark.spark_journey_analytics import analyze_customer_journey
         result = analyze_customer_journey(username=username)
         return result
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"error": str(e)}
 
 
 @router.get("/recommendations/{username}")
@@ -96,12 +96,12 @@ async def get_product_recommendations(
     - Predicted ratings
     """
     try:
-        from spark_recommendation_als import ml_product_recommendations_als
+        from app.spark.recommendation_als import ml_product_recommendations_als
         result = ml_product_recommendations_als(username=username, top_n=top_n)
         return result
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"error": str(e)}
 
 
 @router.get("/recommendations")
@@ -114,12 +114,12 @@ async def get_all_recommendations(
     - Top-N predictions per user
     """
     try:
-        from spark_recommendation_als import ml_product_recommendations_als
+        from app.spark.recommendation_als import ml_product_recommendations_als
         result = ml_product_recommendations_als(username=None, top_n=top_n)
         return result
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"error": str(e)}
 
 
 @router.get("/user-segmentation")
@@ -130,12 +130,12 @@ async def get_user_segmentation(username: Optional[str] = None):
     - Cluster statistics
     """
     try:
-        from spark_ml import ml_user_segmentation_kmeans
+        from app.spark.ml import ml_user_segmentation_kmeans
         result = ml_user_segmentation_kmeans(username=username)
         return result
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"error": str(e)}
 
 
 @router.get("/conversion-prediction")
@@ -146,12 +146,12 @@ async def get_conversion_prediction(username: Optional[str] = None):
     - Feature importance
     """
     try:
-        from spark_ml import ml_conversion_prediction_tree
+        from app.spark.ml import ml_conversion_prediction_tree
         result = ml_conversion_prediction_tree(username=username)
         return result
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"error": str(e)}
 
 
 @router.get("/purchase-probability")
@@ -162,12 +162,12 @@ async def get_purchase_probability(username: Optional[str] = None):
     - Feature coefficients
     """
     try:
-        from spark_ml import ml_purchase_prediction_logistic
+        from app.spark.ml import ml_purchase_prediction_logistic
         result = ml_purchase_prediction_logistic(username=username)
         return result
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"error": str(e)}
 
 
 @router.get("/pattern-mining")
@@ -178,12 +178,12 @@ async def get_pattern_mining(username: Optional[str] = None):
     - Association rules
     """
     try:
-        from spark_ml import ml_pattern_mining_fpgrowth
+        from app.spark.ml import ml_pattern_mining_fpgrowth
         result = ml_pattern_mining_fpgrowth(username=username)
         return result
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"error": str(e)}
 
 
 @router.post("/comprehensive")
@@ -207,41 +207,41 @@ async def run_comprehensive_analysis(request: AnalyticsRequest):
         for module in modules:
             try:
                 if module == "seo":
-                    from spark_seo_analytics import analyze_traffic_sources
+                    from app.spark.seo_analytics import analyze_traffic_sources
                     results["results"]["seo"] = analyze_traffic_sources(username=request.username)
                 
                 elif module == "cart":
-                    from spark_cart_analytics import analyze_cart_abandonment
+                    from app.spark.spark_cart_analytics import analyze_cart_abandonment
                     results["results"]["cart"] = analyze_cart_abandonment(username=request.username)
                 
                 elif module == "retention":
-                    from spark_retention_analytics import analyze_cohort_retention
+                    from app.spark.spark_retention_analytics import analyze_cohort_retention
                     results["results"]["retention"] = analyze_cohort_retention(username=request.username)
                 
                 elif module == "journey":
-                    from spark_journey_analytics import analyze_customer_journey
+                    from app.spark.spark_journey_analytics import analyze_customer_journey
                     results["results"]["journey"] = analyze_customer_journey(username=request.username)
                 
                 elif module == "recommendations" and request.username:
-                    from spark_recommendation_als import ml_product_recommendations_als
+                    from app.spark.recommendation_als import ml_product_recommendations_als
                     results["results"]["recommendations"] = ml_product_recommendations_als(
                         username=request.username, top_n=5
                     )
                 
                 elif module == "segmentation":
-                    from spark_ml import ml_user_segmentation_kmeans
+                    from app.spark.ml import ml_user_segmentation_kmeans
                     results["results"]["segmentation"] = ml_user_segmentation_kmeans(username=request.username)
                 
                 elif module == "conversion":
-                    from spark_ml import ml_conversion_prediction_tree
+                    from app.spark.ml import ml_conversion_prediction_tree
                     results["results"]["conversion"] = ml_conversion_prediction_tree(username=request.username)
                 
                 elif module == "purchase":
-                    from spark_ml import ml_purchase_prediction_logistic
+                    from app.spark.ml import ml_purchase_prediction_logistic
                     results["results"]["purchase"] = ml_purchase_prediction_logistic(username=request.username)
                 
                 elif module == "patterns":
-                    from spark_ml import ml_pattern_mining_fpgrowth
+                    from app.spark.ml import ml_pattern_mining_fpgrowth
                     results["results"]["patterns"] = ml_pattern_mining_fpgrowth(username=request.username)
                 
             except Exception as e:
@@ -249,10 +249,9 @@ async def run_comprehensive_analysis(request: AnalyticsRequest):
                 print(f"Error in module {module}: {e}")
         
         return results
-        
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"error": str(e)}
 
 
 @router.get("/health")

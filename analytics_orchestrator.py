@@ -1,85 +1,195 @@
 """
-analytics_orchestrator.py - Unified Analytics Orchestrator
-Quản lý và điều phối tất cả các module phân tích
+Analytics Orchestrator
+Unified interface for managing and coordinating all analytics modules.
+Supports both batch and streaming analytics with optimized execution.
 """
 
+import json
+import logging
+import time
 import traceback
 from datetime import datetime
-from typing import Dict, List, Optional
-import json
+from typing import Dict, List, Optional, Any, Callable
+from functools import wraps
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# Import analytics modules
+from app.spark.ml import (
+    ml_kmeans_clustering,
+    ml_decision_tree,
+    ml_pattern_mining_fpgrowth
+)
+from app.spark.journey_analytics import analyze_customer_journeys
+from app.spark.cart_analytics import analyze_cart_abandonment
+from app.spark.retention_analytics import analyze_retention
+from app.spark.seo_analytics import analyze_seo_performance
+from app.spark.recommendation_als import get_recommendations
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def timer_decorator(func: Callable) -> Callable:
+    """Decorator to measure execution time of analytics functions"""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        try:
+            result = func(*args, **kwargs)
+            execution_time = time.time() - start_time
+            return {
+                "data": result,
+                "execution_time": execution_time,
+                "status": "success"
+            }
+        except Exception as e:
+            execution_time = time.time() - start_time
+            logger.error(f"Error in {func.__name__}: {str(e)}")
+            return {
+                "error": str(e),
+                "execution_time": execution_time,
+                "status": "error"
+            }
+    return wrapper
+
+class AnalyticsModule:
+    """Base class for analytics modules"""
+    def __init__(self, name: str, func: Callable, parallel: bool = True):
+        self.name = name
+        self.func = timer_decorator(func)
+        self.parallel = parallel
+        self.last_result = None
+        
+    def run(self, *args, **kwargs) -> Dict[str, Any]:
+        """Execute the analytics module"""
+        self.last_result = self.func(*args, **kwargs)
+        return self.last_result
 
 class AnalyticsOrchestrator:
     """
-    Orchestrator for all analytics modules
-    Provides a unified interface to run all analyses
+    Orchestrates and manages all analytics operations.
+    
+    This class coordinates the execution of various analytics modules,
+    handling both sequential and parallel processing where appropriate.
+    It manages error handling, logging, and result aggregation.
+    
+    Attributes:
+        modules (Dict[str, AnalyticsModule]): Registered analytics modules
+        results (Dict[str, Any]): Results from module executions
+        errors (Dict[str, str]): Any errors encountered during execution
+        start_time (datetime): Execution start timestamp
+        end_time (datetime): Execution end timestamp
     """
     
     def __init__(self):
-        self.results = {}
-        self.errors = {}
-        self.start_time = None
-        self.end_time = None
-    
-    def run_all(self, username: Optional[str] = None, limit: Optional[int] = None) -> Dict:
+        self.modules: Dict[str, AnalyticsModule] = {
+            # ML Modules
+            "clustering": AnalyticsModule("Customer Clustering", ml_kmeans_clustering),
+            "decision_tree": AnalyticsModule("Purchase Prediction", ml_decision_tree),
+            "pattern_mining": AnalyticsModule("Pattern Mining", ml_pattern_mining_fpgrowth),
+            
+            # Business Analytics
+            "customer_journeys": AnalyticsModule("Customer Journeys", analyze_customer_journeys),
+            "cart_abandonment": AnalyticsModule("Cart Abandonment", analyze_cart_abandonment),
+            "retention": AnalyticsModule("Customer Retention", analyze_retention),
+            "seo": AnalyticsModule("SEO Performance", analyze_seo_performance, parallel=False),
+            "recommendations": AnalyticsModule("Product Recommendations", get_recommendations)
+        }
+        
+        self.results: Dict[str, Any] = {}
+        self.errors: Dict[str, str] = {}
+        self.start_time: Optional[datetime] = None
+        self.end_time: Optional[datetime] = None
+        
+    def run_all(self, username: Optional[str] = None, limit: Optional[int] = None, 
+                max_workers: int = 4) -> Dict[str, Any]:
         """
-        Run all analytics modules
-        Returns comprehensive results
+        Run all analytics modules with optional filtering and parallel execution
+        
+        Args:
+            username: Optional username to analyze specific user
+            limit: Optional limit on number of events to process
+            max_workers: Maximum number of parallel workers (default: 4)
+            
+        Returns:
+            Dict containing results and execution stats
         """
         self.start_time = datetime.now()
-        print(f"\n{'='*60}")
         print(f"🚀 Starting Comprehensive Analytics")
         print(f"   User: {username or 'ALL USERS'}")
         print(f"   Limit: {limit or 'No limit'}")
+        print(f"   Max Workers: {max_workers}")
         print(f"{'='*60}\n")
+
+        # Group modules by parallel execution capability
+        parallel_modules = []
+        sequential_modules = []
         
         modules = [
             ("SEO & Traffic Analysis", self._run_seo_analysis),
             ("Cart Abandonment Analysis", self._run_cart_analysis),
             ("Cohort & Retention Analysis", self._run_retention_analysis),
             ("Customer Journey Analysis", self._run_journey_analysis),
-            ("Product Recommendations (ALS)", self._run_recommendations),
-            ("User Segmentation (K-Means)", self._run_segmentation),
-            ("Conversion Prediction (Decision Tree)", self._run_conversion_prediction),
-            ("Purchase Probability (Logistic Regression)", self._run_purchase_prediction),
-            ("Pattern Mining (FP-Growth)", self._run_pattern_mining)
+            ("Product Recommendations", self._run_recommendations),
+            ("User Segmentation", self._run_segmentation),
+            ("Conversion Prediction", self._run_conversion_prediction),
+            ("Pattern Mining", self._run_pattern_mining)
         ]
         
         for module_name, module_func in modules:
-            print(f"\n📊 Running: {module_name}")
-            print(f"   {'-'*50}")
-            try:
-                result = module_func(username, limit)
-                self.results[module_name] = result
-                
-                # Print summary
-                if "error" in result:
-                    print(f"   ❌ Error: {result['error']}")
-                    self.errors[module_name] = result['error']
-                else:
-                    print(f"   ✅ Success")
-                    self._print_module_summary(module_name, result)
-                    
-            except Exception as e:
-                error_msg = str(e)
-                print(f"   ❌ Exception: {error_msg}")
-                self.errors[module_name] = error_msg
-                self.results[module_name] = {"error": error_msg}
-                traceback.print_exc()
+            if module_name in ["SEO & Traffic Analysis", "Pattern Mining"]:
+                sequential_modules.append((module_name, module_func))
+            else:
+                parallel_modules.append((module_name, module_func))
+
+        # Run sequential modules first
+        # Run sequential modules first
+        for module_name, module_func in sequential_modules:
+            self._run_module(module_name, module_func, username, limit)
+            
+        # Run parallel modules
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_module = {
+                executor.submit(self._run_module, name, func, username, limit): name
+                for name, func in parallel_modules
+            }
+            
+            for future in as_completed(future_to_module):
+                module_name = future_to_module[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    self.errors[module_name] = str(e)
+                    logger.error(f"Error in {module_name}: {str(e)}")
+                    traceback.print_exc()
         
+        # Complete execution and generate report
+        # Generate final report
         self.end_time = datetime.now()
         duration = (self.end_time - self.start_time).total_seconds()
         
+        # Calculate statistics
+        module_stats = {
+            "total": len(parallel_modules) + len(sequential_modules),
+            "successful": len(self.results) - len(self.errors),
+            "failed": len(self.errors),
+            "parallel": len(parallel_modules),
+            "sequential": len(sequential_modules)
+        }
+        
+        # Print execution summary
         print(f"\n{'='*60}")
         print(f"✅ Analytics Complete")
         print(f"   Duration: {duration:.2f} seconds")
-        print(f"   Successful modules: {len(self.results) - len(self.errors)}/{len(self.results)}")
+        print(f"   Successful modules: {module_stats['successful']}/{module_stats['total']}")
+        
         if self.errors:
-            print(f"   Failed modules: {len(self.errors)}")
+            print(f"   Failed modules: {module_stats['failed']}")
             for module, error in self.errors.items():
                 print(f"      - {module}: {error}")
         print(f"{'='*60}\n")
         
+        # Return comprehensive report
         return {
             "status": "completed",
             "username": username,
@@ -87,50 +197,100 @@ class AnalyticsOrchestrator:
             "start_time": self.start_time.isoformat(),
             "end_time": self.end_time.isoformat(),
             "duration_seconds": duration,
-            "total_modules": len(modules),
-            "successful_modules": len(self.results) - len(self.errors),
-            "failed_modules": len(self.errors),
+            "module_statistics": {
+                "total": module_stats["total"],
+                "successful": module_stats["successful"],
+                "failed": module_stats["failed"]
+            },
+            "parallel_execution": {
+                "max_workers": max_workers,
+                "parallel_modules": module_stats["parallel"],
+                "sequential_modules": module_stats["sequential"]
+            },
             "results": self.results,
             "errors": self.errors
         }
+        
+
+    def _run_module(self, module_name: str, module_func: Callable, 
+                     username: Optional[str], limit: Optional[int]) -> None:
+        """
+        Execute a single analytics module with error handling
+        
+        Args:
+            module_name: Name of the module to run
+            module_func: Function to execute
+            username: Optional username filter
+            limit: Optional event limit
+        """
+        print(f"\n📊 Running: {module_name}")
+        print(f"   {'-'*50}")
+        
+        try:
+            start_time = time.time()
+            result = module_func(username, limit)
+            duration = time.time() - start_time
+            
+            self.results[module_name] = {
+                **result,
+                "execution_time": duration
+            }
+            
+            if "error" in result:
+                print(f"   ❌ Error: {result['error']}")
+                self.errors[module_name] = result['error']
+            else:
+                print(f"   ✅ Success ({duration:.2f}s)")
+                self._print_module_summary(module_name, result)
+                
+        except Exception as e:
+            error_msg = str(e)
+            print(f"   ❌ Exception: {error_msg}")
+            self.errors[module_name] = error_msg
+            self.results[module_name] = {
+                "error": error_msg,
+                "execution_time": time.time() - start_time
+            }
+            logger.error(f"Error in {module_name}: {error_msg}")
+            traceback.print_exc()
     
-    def _run_seo_analysis(self, username, limit):
-        from spark_seo_analytics import analyze_traffic_sources
-        return analyze_traffic_sources(username=username)
+    def _run_seo_analysis(self, username: Optional[str], limit: Optional[int]) -> Dict[str, Any]:
+        """Run SEO and traffic analysis"""
+        from app.spark.seo_analytics import analyze_seo_performance
+        return analyze_seo_performance(username=username, limit=limit)
     
-    def _run_cart_analysis(self, username, limit):
-        from spark_cart_analytics import analyze_cart_abandonment
-        return analyze_cart_abandonment(username=username)
+    def _run_cart_analysis(self, username: Optional[str], limit: Optional[int]) -> Dict[str, Any]:
+        """Run cart abandonment analysis"""
+        from app.spark.cart_analytics import analyze_cart_abandonment
+        return analyze_cart_abandonment(username=username, limit=limit)
     
-    def _run_retention_analysis(self, username, limit):
-        from spark_retention_analytics import analyze_cohort_retention
-        return analyze_cohort_retention(username=username)
+    def _run_retention_analysis(self, username: Optional[str], limit: Optional[int]) -> Dict[str, Any]:
+        """Run cohort and retention analysis"""
+        from app.spark.retention_analytics import analyze_retention
+        return analyze_retention(username=username, limit=limit)
     
-    def _run_journey_analysis(self, username, limit):
-        from spark_journey_analytics import analyze_customer_journey
-        return analyze_customer_journey(username=username)
+    def _run_journey_analysis(self, username: Optional[str], limit: Optional[int]) -> Dict[str, Any]:
+        """Run customer journey analysis"""
+        from app.spark.journey_analytics import analyze_customer_journeys
+        return analyze_customer_journeys(username=username, limit=limit)
     
-    def _run_recommendations(self, username, limit):
+    def _run_recommendations(self, username: Optional[str], limit: Optional[int]) -> Dict[str, Any]:
+        """Run product recommendations"""
         if not username:
             return {"error": "Username required for recommendations"}
-        from spark_recommendation_als import ml_product_recommendations_als
-        return ml_product_recommendations_als(username=username, top_n=5)
+        return self.modules["recommendations"].run(username=username, limit=limit)
     
-    def _run_segmentation(self, username, limit):
-        from spark_ml import ml_user_segmentation_kmeans
-        return ml_user_segmentation_kmeans(username=username)
+    def _run_segmentation(self, username: Optional[str], limit: Optional[int]) -> Dict[str, Any]:
+        """Run customer segmentation"""
+        return self.modules["clustering"].run(username=username, limit=limit)
     
-    def _run_conversion_prediction(self, username, limit):
-        from spark_ml import ml_conversion_prediction_tree
-        return ml_conversion_prediction_tree(username=username)
+    def _run_conversion_prediction(self, username: Optional[str], limit: Optional[int]) -> Dict[str, Any]:
+        """Run conversion prediction"""
+        return self.modules["decision_tree"].run(username=username, limit=limit)
     
-    def _run_purchase_prediction(self, username, limit):
-        from spark_ml import ml_purchase_prediction_logistic
-        return ml_purchase_prediction_logistic(username=username)
-    
-    def _run_pattern_mining(self, username, limit):
-        from spark_ml import ml_pattern_mining_fpgrowth
-        return ml_pattern_mining_fpgrowth(username=username)
+    def _run_pattern_mining(self, username: Optional[str], limit: Optional[int]) -> Dict[str, Any]:
+        """Run pattern mining analysis"""
+        return self.modules["pattern_mining"].run(username=username, limit=limit)
     
     def _print_module_summary(self, module_name: str, result: Dict):
         """Print a concise summary of module results"""

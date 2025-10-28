@@ -5,8 +5,41 @@ Xử lý: load, sync, validate, auto-provision
 import os
 from datetime import datetime
 import pytz
+import requests
 from db import api_keys_col
 from bson import ObjectId
+
+
+def create_runtime_key(name: str, limit: int = None) -> tuple[str, dict]:
+    """Create a new runtime API key through OpenRouter's provisioning API
+    
+    Args:
+        name: Name for the new key
+        limit: Optional credit limit
+        
+    Returns:
+        Tuple of (key, metadata)
+    """
+    provisioning_key = os.getenv("OPENROUTER_PROVISIONING_KEY")
+    if not provisioning_key:
+        raise ValueError("OPENROUTER_PROVISIONING_KEY environment variable not set")
+        
+    url = "https://openrouter.ai/api/v1/auth/keys"
+    payload = {"name": name}
+    if limit is not None:
+        payload["limit"] = limit
+        
+    response = requests.post(
+        url,
+        json=payload,
+        headers={"Authorization": f"Bearer {provisioning_key}"}
+    )
+    
+    if response.status_code != 200:
+        raise Exception(f"Failed to create runtime key: {response.text}")
+        
+    data = response.json()
+    return data["key"], data
 
 
 class APIKeyManager:
@@ -114,7 +147,6 @@ class APIKeyManager:
     def auto_provision_key(user_id):
         """Tự động tạo runtime key mới qua Provisioning API"""
         try:
-            from manage_API__key import create_runtime_key
             
             provisioning_key = os.getenv("OPENROUTER_PROVISIONING_KEY")
             if not provisioning_key:

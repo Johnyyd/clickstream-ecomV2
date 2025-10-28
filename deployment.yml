@@ -1,0 +1,86 @@
+# Production configuration file
+name: clickstream-ecomv2
+services:
+  - name: api
+    source:
+      dockerfile: Dockerfile
+    env:
+      - name: MONGODB_URL
+        value: ${MONGODB_URL}
+      - name: MONGODB_DB
+        value: clickstream
+      - name: SPARK_MASTER
+        value: ${SPARK_MASTER}
+      - name: KAFKA_BOOTSTRAP_SERVERS
+        value: ${KAFKA_BOOTSTRAP_SERVERS}
+    resources:
+      cpu: 1
+      memory: 2Gi
+    scaling:
+      minReplicas: 2
+      maxReplicas: 5
+      targetCPUUtilization: 70
+    healthCheck:
+      path: /api/health
+      port: 8000
+    volumes:
+      - name: logs
+        mountPath: /app/logs
+      - name: data
+        mountPath: /app/data
+
+  - name: spark-master
+    source:
+      image: bitnami/spark:3.5
+    env:
+      - name: SPARK_MODE
+        value: master
+    resources:
+      cpu: 2
+      memory: 4Gi
+    ports:
+      - port: 7077
+      - port: 8080
+
+  - name: spark-worker
+    source:
+      image: bitnami/spark:3.5
+    env:
+      - name: SPARK_MODE
+        value: worker
+      - name: SPARK_MASTER_URL
+        value: spark://spark-master:7077
+    resources:
+      cpu: 2
+      memory: 4Gi
+    scaling:
+      minReplicas: 2
+      maxReplicas: 5
+      targetCPUUtilization: 75
+
+storage:
+  - name: mongodb
+    type: managed-database
+    engine: mongodb
+    version: "6.0"
+    size: 50Gi
+    backup:
+      enabled: true
+      schedule: "0 0 * * *"
+      retention: 7d
+
+  - name: kafka
+    type: managed-streaming
+    engine: kafka
+    version: "3.5"
+    size: 50Gi
+    partitions: 3
+    replication: 3
+
+networking:
+  domain: api.clickstream.example.com
+  tls: true
+  cors:
+    origins:
+      - https://app.clickstream.example.com
+    credentials: true

@@ -5,7 +5,7 @@ Tự động làm mới OpenRouter API key khi hết hạn
 import os
 from datetime import datetime
 import pytz
-from manage_API__key import create_runtime_key
+from api_key_manager import APIKeyManager
 from db import api_keys_col
 from bson import ObjectId
 
@@ -65,8 +65,10 @@ def auto_renew_api_key(user_id, old_key=None):
         
         print(f"[Auto-Renewal] Creating new runtime key for user {user_id_str[:8]}...")
         
-        # Tạo runtime key mới
-        new_key, meta = create_runtime_key(name=key_name, limit=None)
+        # Tạo runtime key mới qua APIKeyManager
+        api_manager = APIKeyManager()
+        new_key = api_manager.create_key(key_name)
+        meta = {"name": key_name}
         
         # Lưu vào database
         now = datetime.now(pytz.UTC)

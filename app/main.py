@@ -1,60 +1,179 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status, Request
+from fastapi import Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-import os
-from app.api import events as events_api
-from app.api import analyses as analyses_api
-from app.api import auth as auth_api
-from app.api import products as products_api
-from app.api import analysis as analysis_api
-from app.api import openrouter as openrouter_api
-from app.api import recommendations as recommendations_api
-from app.api import metrics as metrics_api
-from app.api import cart as cart_api
-from app.api import ml as ml_api
-from app.api import analytics_comprehensive as analytics_comprehensive_api
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
-from fastapi import Request
-from fastapi.responses import Response
+from pydantic import BaseModel
+from typing import Optional
+from pydantic import BaseModel
+
+from app.api.v1.router import api_router
+from app.core.config import settings
+from app.core.middleware import setup_error_handlers
+from app.core.logging import setup_logging
 from app.repositories.indexes import ensure_indexes
+from app.services.auth import login_user, create_user
 
-app = FastAPI(title="Clickstream Ecom V2 API", version="0.1.0")
+# Import routers
+from app.api import (
+    events as events_api,
+    analyses as analyses_api,
+    auth as auth_api,
+    products as products_api,
+    analysis as analysis_api,
+    openrouter as openrouter_api,
+    recommendations as recommendations_api,
+    metrics as metrics_api,
+    cart as cart_api,
+    ml as ml_api,
+    analytics_comprehensive as analytics_comprehensive_api
+)
 
-# Basic CORS (adjust origins as needed)
+# Setup logging
+logger = setup_logging(
+    level=settings.LOG_LEVEL,
+    log_file=Path("logs/app.log") if settings.LOG_TO_FILE else None
+)
+
+# Initialize FastAPI app
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    description=settings.DESCRIPTION
+)
+
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Setup error handlers
+setup_error_handlers(app)
+
+# Health check endpoint
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "engine": os.environ.get("ANALYSIS_ENGINE", "python")}
+    return {
+        "status": "ok",
+        "version": settings.VERSION,
+        "engine": settings.ANALYSIS_ENGINE
+    }
+
+# Test endpoint to check user in database
+@app.get("/api/test-user/{username}")
+def test_user(username: str):
+    """Debug endpoint to check user data"""
+    from app.repositories.users_repo import UsersRepository
+    repo = UsersRepository()
+    user = repo.find_by_username(username)
+    if not user:
+        return {"error": "User not found"}
+    # Return user info (except password)
+    return {
+        "username": user.get("username"),
+        "email": user.get("email"),
+        "role": user.get("role"),
+        "has_password_hash": "password_hash" in user,
+        "has_hashed_password": "hashed_password" in user,
+        "has_password": "password" in user,
+        "_id": str(user.get("_id"))
+    }
+
+# Get current user info from token
+@app.get("/api/me")
+def get_me(Authorization: Optional[str] = Header(default=None)):
+    """Get current user info from token. Avoids raising to prevent 500s in UI flows."""
+    try:
+        from app.services.auth import get_user_by_token
+        if not Authorization:
+            return {"error": "unauthenticated"}
+
+        user = get_user_by_token(Authorization)
+        if not user:
+            return {"error": "unauthenticated"}
+
+        uid = user.get("_id")
+        try:
+            uid_str = str(uid)
+        except Exception:
+            uid_str = None
+
+        return {
+            "user_id": uid_str,
+            "id": uid_str,
+            "_id": uid_str,
+            "username": user.get("username"),
+            "email": user.get("email"),
+            "role": user.get("role", "user")
+        }
+    except Exception as e:
+        # Last-resort guard to avoid 500 to the dashboard
+        return {"error": "INTERNAL_ERROR", "message": str(e)}
+
+# Auth models
+class LoginBody(BaseModel):
+    username: str
+    password: str
+
+class SignUpBody(BaseModel):
+    username: str
+    email: str
+    password: str
+
+# Direct auth endpoints for backward compatibility
+@app.post("/api/login")
+def direct_login(body: LoginBody):
+    """Direct login endpoint - backward compatibility"""
+    result = login_user(body.username, body.password)
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials"
+        )
+    return result
+
+@app.post("/api/signup")
+def direct_signup(body: SignUpBody):
+    """Direct signup endpoint - backward compatibility"""
+    result = create_user(body.username, body.email, body.password)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
 
 @app.on_event("startup")
-def _on_startup():
+async def startup():
+    """
+    Startup tasks
+    """
     try:
+        # Create MongoDB indexes
         ensure_indexes()
-    except Exception:
-        # Avoid crashing app if index creation fails in initial boot
-        pass
+        logger.info("Successfully created MongoDB indexes")
+    except Exception as e:
+        logger.error(f"Failed to create indexes: {str(e)}")
 
-# Placeholder root for sanity check
+# Mount API routes
+app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# Serve static files
+static_path = Path(__file__).parent.parent / "static"
+
 @app.get("/")
-def root():
-    # Serve storefront home by default
-    static_dir = Path(__file__).resolve().parent.parent / "static"
-    index_path = static_dir / "auth.html"
+async def root():
+    """
+    Serve root endpoint
+    """
+    index_path = static_path / "auth.html"
     if index_path.exists():
         return FileResponse(str(index_path), media_type="text/html")
     return JSONResponse({"message": "Clickstream-ecomV2 FastAPI is running"})
 
-# Static files mount
-static_path = Path(__file__).resolve().parent.parent / "static"
+# Mount static files
 if static_path.exists():
     app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 
@@ -96,15 +215,22 @@ def _product_dynamic(pid: str):  # noqa: ARG001
 def _product_slug(slug: str):  # noqa: ARG001
     return _serve_static_file("product.html")
 
-# Routers
-app.include_router(events_api.router)
-app.include_router(analyses_api.router)
-app.include_router(auth_api.router)
-app.include_router(products_api.router)
-app.include_router(analysis_api.router)
-app.include_router(openrouter_api.router)
-app.include_router(recommendations_api.router)
-app.include_router(metrics_api.router)
-app.include_router(cart_api.router)
-app.include_router(ml_api.router)
-app.include_router(analytics_comprehensive_api.router)
+# Legacy routers (to be migrated to v1)
+prefixed_routers = [
+    ("/api", events_api.router),
+    ("/api", analyses_api.router),
+    ("/api", auth_api.router),
+    ("/api", products_api.router),
+    ("/api", analysis_api.router),
+    ("/api", openrouter_api.router),
+    ("/api", recommendations_api.router),
+    ("/api", metrics_api.router),
+    ("/api", cart_api.router),
+    ("/api", ml_api.router),
+    ("/api", analytics_comprehensive_api.router)
+]
+
+for prefix, router in prefixed_routers:
+    app.include_router(router, prefix=prefix)
+
+

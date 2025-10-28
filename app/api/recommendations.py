@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Header
 from typing import Optional, List, Dict, Any
 from bson import ObjectId
-from auth import get_user_by_token
+from app.services.auth import get_user_by_token
 from db import users_col, analyses_col, products_col
 
-router = APIRouter(prefix="/api", tags=["recommendations"])
+router = APIRouter(tags=["recommendations"])  # Prefix set in main.py
 
 @router.get("/recommendations")
 def get_recommendations(Authorization: Optional[str] = Header(default=None)):

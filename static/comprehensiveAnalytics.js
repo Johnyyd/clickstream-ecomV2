@@ -299,7 +299,9 @@
         try {
             lastRefreshModule = 'seo'; // Track last used module
             showStatus('🔍 Running SEO & Traffic Analysis...');
-            const result = await fetchAPI('/api/analytics/seo');
+            const uname = (document.getElementById('analyticsUsername')?.value || '').trim();
+            const url = uname ? `/api/analytics/seo?username=${encodeURIComponent(uname)}` : '/api/analytics/seo';
+            const result = await fetchAPI(url);
             
             if (result.error) {
                 showStatus(`❌ Error: ${result.error}`, true);
@@ -473,7 +475,9 @@
         try {
             lastRefreshModule = 'cart'; // Track last used module
             showStatus('🛒 Running Cart Abandonment Analysis...');
-            const result = await fetchAPI('/api/analytics/cart-abandonment');
+            const uname = (document.getElementById('analyticsUsername')?.value || '').trim();
+            const url = uname ? `/api/analytics/cart-abandonment?username=${encodeURIComponent(uname)}` : '/api/analytics/cart-abandonment';
+            const result = await fetchAPI(url);
             
             if (result.error) {
                 showStatus(`❌ Error: ${result.error}`, true);
@@ -573,7 +577,9 @@
         try {
             lastRefreshModule = 'retention'; // Track last used module
             showStatus('📈 Running Retention Analysis...');
-            const result = await fetchAPI('/api/analytics/retention');
+            const uname = (document.getElementById('analyticsUsername')?.value || '').trim();
+            const url = uname ? `/api/analytics/retention?username=${encodeURIComponent(uname)}` : '/api/analytics/retention';
+            const result = await fetchAPI(url);
             
             if (result.error) {
                 showStatus(`❌ Error: ${result.error}`, true);
@@ -672,7 +678,9 @@
         try {
             lastRefreshModule = 'journey'; // Track last used module
             showStatus('🗺️ Running Customer Journey Analysis...');
-            const result = await fetchAPI('/api/analytics/customer-journey');
+            const uname = (document.getElementById('analyticsUsername')?.value || '').trim();
+            const url = uname ? `/api/analytics/customer-journey?username=${encodeURIComponent(uname)}` : '/api/analytics/customer-journey';
+            const result = await fetchAPI(url);
             
             if (result.error) {
                 showStatus(`❌ Error: ${result.error}`, true);
@@ -796,11 +804,13 @@
                 </div>
             `;
             
-            // Get current username from /api/me
-            const me = await fetchAPI('/api/me');
-            const username = me.username;
-            
-            const result = await fetchAPI(`/api/analytics/recommendations/${username}`);
+            // Prefer input username, fallback to current user from /api/me
+            let username = (document.getElementById('analyticsUsername')?.value || '').trim();
+            if (!username) {
+                const me = await fetchAPI('/api/me');
+                username = me.username;
+            }
+            const result = await fetchAPI(`/api/analytics/recommendations/${encodeURIComponent(username)}`);
             
             if (result.error) {
                 showStatus(`❌ Error: ${result.error}`, true);
@@ -951,11 +961,12 @@
     async function runAllAnalytics() {
         try {
             showStatus('🚀 Running Comprehensive Analytics...');
-            
+            const uname = (document.getElementById('analyticsUsername')?.value || '').trim();
             const result = await fetchAPI('/api/analytics/comprehensive', {
                 method: 'POST',
                 body: JSON.stringify({
-                    modules: ['seo', 'cart', 'retention', 'journey']
+                    modules: ['seo', 'cart', 'retention', 'journey'],
+                    username: uname || null
                 })
             });
             

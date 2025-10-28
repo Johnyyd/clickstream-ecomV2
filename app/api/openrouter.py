@@ -2,11 +2,11 @@ from fastapi import APIRouter, Header
 from typing import Optional
 from datetime import datetime
 import pytz
-from auth import get_user_by_token
+from app.services.auth import get_user_by_token
 from db import api_keys_col
-from manage_API__key import create_runtime_key
+from api_key_manager import create_runtime_key
 
-router = APIRouter(prefix="/api", tags=["openrouter"])
+router = APIRouter(tags=["openrouter"])  # Prefix set in main.py
 
 @router.get("/openrouter/key")
 def get_key(Authorization: Optional[str] = Header(default=None)):

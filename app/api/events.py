@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query
 from app.models.events import Event, EventIngestResponse, EventBatch, EventBatchResponse
 from ingest import ingest_event
-from db import events_col, sessions_col
+from app.core.db_sync import events_col, sessions_col
 from datetime import datetime
 
 router = APIRouter(tags=["events"])  # Prefix set in main.py

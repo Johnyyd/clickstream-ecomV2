@@ -1,5 +1,5 @@
 from bson import ObjectId
-from db import products_col
+from app.core.db_sync import products_col
 from datetime import datetime
 import pytz
 

@@ -11,13 +11,20 @@ KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "clickstream.events")
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongo:27017")
 MONGO_DB = os.getenv("MONGO_DB", "clickstream")
 
-schema = StructType([
+# Inner event schema (flat fields)
+event_schema = StructType([
     StructField("session_id", StringType()),
     StructField("user_id", StringType()),
     StructField("page", StringType()),
     StructField("event_type", StringType()),
     StructField("properties", MapType(StringType(), StringType())),
     StructField("timestamp", DoubleType()),
+])
+
+# Outer payload schema: {"event": <event_schema>, "metadata": {...}}
+outer_schema = StructType([
+    StructField("event", event_schema),
+    StructField("metadata", MapType(StringType(), StringType())),
 ])
 
 def _write_mongo(df, epoch_id):
@@ -65,7 +72,12 @@ if __name__ == "__main__":
         .load()
     )
 
-    parsed = raw.select(from_json(col("value").cast("string"), schema).alias("data")).select("data.*")
+    # Parse outer JSON, then unwrap nested event fields
+    parsed = (
+        raw
+        .select(from_json(col("value").cast("string"), outer_schema).alias("data"))
+        .select("data.event.*")
+    )
 
     # Windowed aggregates per minute by page and event_type
     agg = (

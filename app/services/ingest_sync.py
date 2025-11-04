@@ -1,0 +1,187 @@
+"""
+Synchronous Event Ingestion Service (legacy-compatible)
+Mirrors root-level ingest.py functionality to enable gradual migration.
+"""
+import logging
+import json as _json
+import os
+from typing import Dict, Any, Optional, List
+from datetime import datetime
+from functools import lru_cache
+from bson import ObjectId
+from fastapi import HTTPException
+from pymongo import ReturnDocument
+from kafka import KafkaProducer
+from app.core.db_sync import events_col, sessions_col, products_col, users_col
+
+logger = logging.getLogger(__name__)
+
+_KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "clickstream.events")
+_KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+_KAFKA_CLIENT_ID = "clickstream_ingestion"
+_KAFKA_ENABLED = os.getenv("KAFKA_ENABLED", "1") == "1"
+_KAFKA_OPTIONAL = os.getenv("KAFKA_OPTIONAL", "1") == "1"
+
+@lru_cache(maxsize=1)
+def _get_kafka_producer() -> Optional[KafkaProducer]:
+    if not _KAFKA_ENABLED:
+        return None
+    try:
+        return KafkaProducer(
+            bootstrap_servers=_KAFKA_BOOTSTRAP_SERVERS,
+            client_id=_KAFKA_CLIENT_ID,
+            value_serializer=lambda v: _json.dumps(v).encode("utf-8"),
+            acks='all',
+            retries=3
+        )
+    except Exception as e:
+        logger.error(f"Failed to create Kafka producer: {str(e)}")
+        if _KAFKA_OPTIONAL:
+            return None
+        raise
+
+class EventValidator:
+    REQUIRED_FIELDS = {
+        "user_id": str,
+        "session_id": str,
+        "event_type": str,
+        "page": str,
+        "timestamp": (int, float),
+        "properties": dict
+    }
+    VALID_EVENT_TYPES = {
+        "pageview","search","product_view","add_to_cart","remove_from_cart",
+        "checkout","purchase","login","signup","logout"
+    }
+
+    @classmethod
+    def validate(cls, event: Dict) -> tuple[bool, Optional[str]]:
+        try:
+            for field, field_type in cls.REQUIRED_FIELDS.items():
+                if field not in event:
+                    return False, f"Missing required field: {field}"
+                if not isinstance(event[field], field_type):
+                    return False, f"Invalid type for {field}: expected {field_type}"
+            if event["event_type"] not in cls.VALID_EVENT_TYPES:
+                return False, f"Invalid event_type: {event['event_type']}"
+            if event["timestamp"] <= 0:
+                return False, "Invalid timestamp"
+            if not event["page"].startswith("/"):
+                return False, "Page must start with /"
+            return True, None
+        except Exception as e:
+            return False, f"Validation error: {str(e)}"
+
+class SessionManager:
+    def update_session(self, event: Dict) -> str:
+        try:
+            session_id = event["session_id"]
+            timestamp = datetime.utcfromtimestamp(event["timestamp"])
+            result = sessions_col().find_one_and_update(
+                {"session_id": session_id},
+                {
+                    "$setOnInsert": {
+                        "session_id": session_id,
+                        "user_id": event["user_id"],
+                        "created_at": timestamp
+                    },
+                    "$min": {"first_event_at": timestamp},
+                    "$max": {"last_event_at": timestamp},
+                    "$inc": {"event_count": 1},
+                    "$addToSet": {"pages": event["page"]},
+                    "$set": {"updated_at": datetime.utcnow()}
+                },
+                upsert=True,
+                return_document=ReturnDocument.AFTER
+            )
+            return session_id
+        except Exception as e:
+            logger.error(f"Error updating session: {str(e)}")
+            raise
+
+class EventProcessor:
+    def __init__(self):
+        self.session_manager = SessionManager()
+        self.validator = EventValidator
+
+    def process_event(self, event: Dict) -> Dict:
+        is_valid, error = self.validator.validate(event)
+        if not is_valid:
+            raise ValueError(error)
+        processed = event.copy()
+        processed.update({
+            "processed_at": datetime.utcnow(),
+            "_id": ObjectId(),  # ensure ID exists before batch insert
+        })
+        if "product_id" in event.get("properties", {}):
+            try:
+                product = products_col().find_one({"_id": ObjectId(event["properties"]["product_id"])})
+                if product:
+                    processed["properties"]["product_details"] = {
+                        "name": product.get("name"),
+                        "category": product.get("category"),
+                        "price": product.get("price"),
+                    }
+            except Exception:
+                pass
+        try:
+            user = users_col().find_one({"_id": ObjectId(event["user_id"])})
+            if user:
+                processed["properties"].setdefault("user_details", {})
+                processed["properties"]["user_details"].update({
+                    "username": user.get("username"),
+                    "user_type": user.get("user_type", "standard"),
+                })
+        except Exception:
+            pass
+        self.session_manager.update_session(processed)
+        return processed
+
+class EventStorage:
+    def __init__(self, batch_size: int = 100):
+        self.batch_size = batch_size
+        self.current_batch: List[Dict] = []
+    def store_event(self, event: Dict) -> None:
+        self.current_batch.append(event)
+        if len(self.current_batch) >= self.batch_size:
+            self.flush()
+    def flush(self) -> None:
+        if not self.current_batch:
+            return
+        events_col().insert_many(self.current_batch)
+        self.current_batch.clear()
+
+_processor = EventProcessor()
+_storage = EventStorage()
+
+def ingest_event(event_json: Dict) -> Dict[str, Any]:
+    try:
+        processed_event = _processor.process_event(event_json)
+        _storage.store_event(processed_event)
+        # Maintain legacy nested payload structure: {event, metadata}
+        producer = _get_kafka_producer()
+        payload = {
+            "event": processed_event,
+            "metadata": {
+                "ingested_at": datetime.utcnow().isoformat(),
+                "version": "2.0"
+            }
+        }
+        if producer is not None:
+            try:
+                producer.send(_KAFKA_TOPIC, payload)
+            except Exception as e:
+                if not _KAFKA_OPTIONAL:
+                    raise
+                logger.warning(f"Kafka send failed but optional: {str(e)}")
+        return {
+            "status": "success",
+            "event_id": str(processed_event["_id"]),
+            "processed_at": processed_event["processed_at"].isoformat(),
+            "session_id": processed_event.get("session_id"),
+            "enriched_fields": list(processed_event.get("properties", {}).keys()),
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=f"Invalid event data: {str(ve)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to ingest event: {str(e)}")

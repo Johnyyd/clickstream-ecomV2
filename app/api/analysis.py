@@ -7,7 +7,7 @@ import logging
 from bson import ObjectId
 
 from app.services.auth import get_user_by_token
-from db import events_col, sessions_col, analyses_col
+from app.core.db_sync import events_col, sessions_col, analyses_col
 # from app.api.analytics_comprehensive import run_analysis  # TODO: Fix this import
 from app.spark.session import get_spark_session
 from app.services.analytics import get_user_journey_analysis

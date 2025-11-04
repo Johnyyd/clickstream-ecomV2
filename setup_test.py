@@ -1,5 +1,5 @@
-from db import users_col, api_keys_col
-from auth import hash_password
+from app.core.db_sync import users_col, api_keys_col
+from app.services.auth import hash_password
 from datetime import datetime
 from bson import ObjectId
 import pytz

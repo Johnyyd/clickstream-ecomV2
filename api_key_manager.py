@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 import pytz
 import requests
-from db import api_keys_col
+from app.core.db_sync import api_keys_col
 from bson import ObjectId
 
 

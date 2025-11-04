@@ -1,7 +1,6 @@
 from typing import Optional, Dict, Any, List
 from bson import ObjectId
-from db import users_col
-
+from app.core.db_sync import users_col
 
 class UsersRepository:
     def __init__(self):

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
-from db import get_db, events_col
+from app.core.db_sync import get_db, events_col
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 

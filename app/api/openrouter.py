@@ -3,7 +3,7 @@ from typing import Optional
 from datetime import datetime
 import pytz
 from app.services.auth import get_user_by_token
-from db import api_keys_col
+from app.core.db_sync import api_keys_col
 from api_key_manager import create_runtime_key
 
 router = APIRouter(tags=["openrouter"])  # Prefix set in main.py

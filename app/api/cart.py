@@ -2,7 +2,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from app.services.auth import get_user_by_token
-from db import carts_col, products_col
+from app.core.db_sync import carts_col, products_col
 from bson import ObjectId
 
 router = APIRouter(tags=["cart"])  # Prefix được set ở main.py

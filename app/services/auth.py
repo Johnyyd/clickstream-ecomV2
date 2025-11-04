@@ -14,7 +14,7 @@ from bson import ObjectId
 
 from app.core.config import settings
 from app.repositories.users_repo import UsersRepository
-from db import sessions_col
+from app.core.db_sync import sessions_col
 
 # Settings
 SESSION_TTL_SECONDS = int(os.environ.get("SESSION_TTL", 3600*24))  # 24h

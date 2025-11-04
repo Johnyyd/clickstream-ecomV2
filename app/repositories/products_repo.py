@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional, Tuple
 from bson import ObjectId
-from db import products_col
+from app.core.db_sync import products_col
 from .models import Product, PaginatedProducts
 
 class ProductsRepository:

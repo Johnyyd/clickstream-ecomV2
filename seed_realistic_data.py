@@ -28,7 +28,7 @@ from typing import List, Optional
 
 from bson import ObjectId
 
-from db import users_col, products_col, sessions_col, carts_col
+from app.core.db_sync import users_col, products_col, sessions_col, carts_col
 from seed_products import slugify
 from ingest import ingest_event
 from app.services.auth import create_user
@@ -58,8 +58,12 @@ def ensure_users(target_username: Optional[str], count: int) -> List[ObjectId]:
         if not u:
             email = f"{target_username}@example.com"
             pw = f"{target_username}123"
-            uid = create_user(target_username, email, pw)
-            u = users_col().find_one({"_id": ObjectId(uid)})
+            created = create_user(target_username, email, pw)
+            # create_user returns user dict or {"error": ...}
+            if isinstance(created, dict) and created.get("_id"):
+                u = created
+            else:
+                u = users_col().find_one({"username": target_username})
         ids.append(u["_id"])  # type: ignore[index]
         return ids
 
@@ -71,8 +75,13 @@ def ensure_users(target_username: Optional[str], count: int) -> List[ObjectId]:
         uname = f"customer{idx:03d}"
         idx += 1
         try:
-            uid = create_user(uname, f"{uname}@example.com", f"{uname}123")
-            pool.append(ObjectId(uid))
+            created = create_user(uname, f"{uname}@example.com", f"{uname}123")
+            if isinstance(created, dict) and created.get("_id"):
+                pool.append(created["_id"])  # already ObjectId from repo
+            else:
+                u = users_col().find_one({"username": uname})
+                if u:
+                    pool.append(u["_id"])
         except Exception:
             u = users_col().find_one({"username": uname})
             if u:
@@ -258,6 +267,8 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                 if attempt_checkout:
                     # Emit checkout event
                     total = sum(item["price"] for item in cart)
+                    # Include product_ids in checkout for downstream analytics
+                    checkout_product_ids = [str(item["_id"]) for item in cart]
                     emit_event(
                         user_id,
                         sid,
@@ -267,11 +278,15 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                         {
                             "cart_items": len(cart),
                             "total_amount": round(total, 2),
+                            "product_ids": checkout_product_ids,
                         },
                     )
                     # Small delay then purchase with high probability
                     if random.random() < 0.85:
                         current_ts += random.randint(2, 10)
+                        # Choose a primary product_id for the purchase event to ensure ALS can use it
+                        primary_product = max(cart, key=lambda x: x.get("price", 0)) if cart else None
+                        primary_product_id = str(primary_product["_id"]) if primary_product else None
                         emit_event(
                             user_id,
                             sid,
@@ -283,6 +298,8 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                                 "total_amount": round(total, 2),
                                 "payment_method": random.choice(["credit_card","paypal","apple_pay"]),
                                 "order_id": f"order_{random.randint(1000,9999)}",
+                                # Primary product for collaborative filtering
+                                **({"product_id": primary_product_id} if primary_product_id else {}),
                             },
                         )
                         # Clear persistent cart upon purchase
@@ -324,9 +341,23 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
     if cart and random.random() < 0.25:
         total = sum(item["price"] for item in cart)
         current_ts += random.randint(5, 30)
-        emit_event(user_id, sid, current_ts, "/checkout", "checkout", {"cart_items": len(cart), "total_amount": round(total, 2)})
+        # Include product_ids in checkout for downstream analytics
+        emit_event(
+            user_id,
+            sid,
+            current_ts,
+            "/checkout",
+            "checkout",
+            {
+                "cart_items": len(cart),
+                "total_amount": round(total, 2),
+                "product_ids": [str(item["_id"]) for item in cart],
+            },
+        )
         if random.random() < 0.9:
             current_ts += random.randint(2, 10)
+            primary_product = max(cart, key=lambda x: x.get("price", 0)) if cart else None
+            primary_product_id = str(primary_product["_id"]) if primary_product else None
             emit_event(
                 user_id,
                 sid,
@@ -338,6 +369,7 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                     "total_amount": round(total, 2),
                     "payment_method": random.choice(["credit_card","paypal","apple_pay"]),
                     "order_id": f"order_{random.randint(1000,9999)}",
+                    **({"product_id": primary_product_id} if primary_product_id else {}),
                 },
             )
             try:
@@ -527,8 +559,8 @@ def seed_recent_events(user_ids: List[ObjectId], minutes: int, total_sessions: i
 def main():
     parser = argparse.ArgumentParser(description="Seed realistic customer-like data")
     parser.add_argument("--username", type=str, default=None, help="Seed only for this username (create if missing)")
-    parser.add_argument("--user-count", type=int, default=10000, help="Number of users when --username not provided")
-    parser.add_argument("--days", type=int, default=30, help="Days back to generate")
+    parser.add_argument("--user-count", type=int, default=500, help="Number of users when --username not provided")
+    parser.add_argument("--days", type=int, default=20, help="Days back to generate")
     parser.add_argument("--sessions-per-user", type=int, default=random.randint(3, 10), help="Sessions per user per day")
     parser.add_argument("--avg-events", type=int, default=random.randint(5, 50), help="Average events per session")
     parser.add_argument("--seed-products", action="store_true", help="Seed products first if empty")

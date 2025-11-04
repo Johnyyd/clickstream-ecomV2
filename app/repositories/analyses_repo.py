@@ -1,6 +1,6 @@
 from typing import Optional, Dict, Any, List
 from bson import ObjectId
-from db import analyses_col
+from app.core.db_sync import analyses_col
 
 
 class AnalysesRepository:

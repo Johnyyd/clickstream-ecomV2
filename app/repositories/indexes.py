@@ -1,5 +1,5 @@
 from pymongo import ASCENDING, DESCENDING
-from db import get_db
+from app.core.db_sync import get_db
 
 def ensure_indexes():
     db = get_db()

@@ -3,7 +3,7 @@ List Active Users for ALS Testing
 Shows users who have product interactions
 """
 
-from db import events_col, users_col
+from app.core.db_sync import events_col, users_col
 from collections import Counter
 
 def list_active_users(min_interactions=5, limit=20):

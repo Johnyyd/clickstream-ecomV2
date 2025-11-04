@@ -16,7 +16,7 @@ from typing import Any, Dict
 
 from bson import ObjectId
 
-from db import events_col, sessions_col
+from app.core.db_sync import events_col, sessions_col
 
 
 def upsert_session(session_id: str, user_id: Any, ts) -> None:

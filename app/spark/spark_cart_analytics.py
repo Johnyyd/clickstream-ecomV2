@@ -17,7 +17,7 @@ os.environ["PYSPARK_DRIVER_PYTHON"] = python_exe
 
 from app.spark.session import get_spark_session
 from pyspark.sql.functions import col, explode, split
-from db import carts_col, products_col, users_col
+from app.core.db_sync import carts_col, products_col, users_col
 from bson import ObjectId
 
 

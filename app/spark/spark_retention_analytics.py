@@ -4,27 +4,24 @@ Phân tích retention theo cohort, churn rate
 """
 
 import os
-import sys
+import logging
 import traceback
 from datetime import datetime
 
-if "JAVA_HOME" not in os.environ:
-    os.environ["JAVA_HOME"] = r"C:\LUUDULIEU\APP\JDK\jdk-17.0.12"
-
-os.environ["SPARK_LOCAL_IP"] = "127.0.0.1"
-python_exe = sys.executable
-os.environ["PYSPARK_PYTHON"] = python_exe
-os.environ["PYSPARK_DRIVER_PYTHON"] = python_exe
-
-from app.spark.session import get_spark_session
 from pyspark.sql.functions import col, count, countDistinct, datediff, first, last, to_date
-from db import users_col, events_col
 from bson import ObjectId
+
+from app.core.spark import spark_manager
+from app.core.db_sync import users_col, events_col
+
+logger = logging.getLogger(__name__)
+if os.getenv("ANALYTICS_VERBOSE", "1") == "1":
+    logging.basicConfig(level=logging.INFO)
 
 
 def get_spark():
     """Get shared Spark session"""
-    return get_spark_session()
+    return spark_manager.get_session()
 
 
 def load_events_to_spark(spark, username=None):
@@ -76,6 +73,7 @@ def analyze_cohort_retention(username=None):
     - User segments by activity
     """
     try:
+        logger.info("[Retention] Start analyze_cohort_retention (username=%s)", username)
         spark = get_spark()
         if spark is None:
             return {"error": "Spark not available. Install Java 8/11 and set JAVA_HOME."}
@@ -88,6 +86,7 @@ def analyze_cohort_retention(username=None):
                 query["_id"] = user["_id"]
         
         users = list(users_col().find(query, {"_id": 1, "created_at": 1}))
+        logger.info("[Retention] Loaded %d users", len(users))
         
         if not users:
             return {"error": "No user data available"}
@@ -96,6 +95,7 @@ def analyze_cohort_retention(username=None):
         df_events = load_events_to_spark(spark, username=username)
         if df_events is None:
             return {"error": "No event data available"}
+        logger.info("[Retention] Events DF count=%d", df_events.count())
         
         df_events.createOrReplaceTempView("events")
         
@@ -122,20 +122,21 @@ def analyze_cohort_retention(username=None):
         df_users.createOrReplaceTempView("users")
         
         # Calculate retention
+        logger.info("[Retention] Computing cohort retention ...")
         retention_data = spark.sql("""
             SELECT 
                 u.cohort_date,
                 COUNT(DISTINCT u.user_id) as cohort_size,
                 COUNT(DISTINCT CASE 
-                    WHEN DATEDIFF(DATE(e.timestamp), DATE(u.signup_timestamp)) BETWEEN 1 AND 7 
+                    WHEN DATEDIFF(DATE(to_timestamp(from_unixtime(e.timestamp))), DATE(u.signup_timestamp)) BETWEEN 1 AND 7 
                     THEN e.user_id 
                 END) as retained_week1,
                 COUNT(DISTINCT CASE 
-                    WHEN DATEDIFF(DATE(e.timestamp), DATE(u.signup_timestamp)) BETWEEN 8 AND 14 
+                    WHEN DATEDIFF(DATE(to_timestamp(from_unixtime(e.timestamp))), DATE(u.signup_timestamp)) BETWEEN 8 AND 14 
                     THEN e.user_id 
                 END) as retained_week2,
                 COUNT(DISTINCT CASE 
-                    WHEN DATEDIFF(DATE(e.timestamp), DATE(u.signup_timestamp)) BETWEEN 15 AND 30 
+                    WHEN DATEDIFF(DATE(to_timestamp(from_unixtime(e.timestamp))), DATE(u.signup_timestamp)) BETWEEN 15 AND 30 
                     THEN e.user_id 
                 END) as retained_month1
             FROM users u
@@ -165,6 +166,7 @@ def analyze_cohort_retention(username=None):
         }
         
         # User activity segments
+        logger.info("[Retention] Computing user activity segments ...")
         user_segments = spark.sql("""
             SELECT 
                 CASE 
@@ -183,6 +185,7 @@ def analyze_cohort_retention(username=None):
             GROUP BY segment
         """).collect()
         
+        logger.info("[Retention] Done. Cohorts=%d", len(cohorts))
         return {
             "algorithm": "Cohort & Retention Analysis",
             "cohorts": cohorts,
@@ -197,6 +200,27 @@ def analyze_cohort_retention(username=None):
         }
         
     except Exception as e:
-        print(f"Error in cohort retention analysis: {e}")
+        logger.exception("[Retention] Error: %s", e)
         traceback.print_exc()
+        return {"error": str(e)}
+
+
+def save_retention_summary(username: str | None = None) -> dict:
+    """Compute and persist retention summary to Mongo for fast retrieval."""
+    logger.info("[Retention] Saving retention summary (username=%s)", username)
+    res = analyze_cohort_retention(username=username)
+    if "error" in res:
+        return res
+    try:
+        db = events_col().database
+        col_out = db["analytics_retention"]
+        doc = {
+            "username": username,
+            "generated_at": datetime.utcnow(),
+            "summary": res,
+        }
+        col_out.insert_one(doc)
+        logger.info("[Retention] Summary saved to analytics_retention id=%s", str(doc.get("_id")))
+        return {"status": "ok", "collection": "analytics_retention", "id": str(doc.get("_id"))}
+    except Exception as e:
         return {"error": str(e)}

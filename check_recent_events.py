@@ -2,7 +2,7 @@
 Quick script to check recent events in MongoDB
 """
 from datetime import datetime, timedelta
-from db import events_col
+from app.core.db_sync import events_col
 import pytz
 
 def check_events():

@@ -1,7 +1,7 @@
 """
 Quick metrics checker to verify bounce rate and top pages
 """
-from db import events_col, sessions_col
+from app.core.db_sync import events_col, sessions_col
 
 def check_bounce_rate():
     """Calculate current bounce rate"""

@@ -12,7 +12,7 @@ This script:
 4. Cleans up duplicates
 """
 
-from db import sessions_col, events_col
+from app.core.db_sync import sessions_col, events_col
 from bson import ObjectId
 
 def find_duplicate_sessions():

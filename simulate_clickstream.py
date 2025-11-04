@@ -1,6 +1,7 @@
 # simulate_clickstream.py
 from ingest import ingest_event
-from db import get_db, users_col, sessions_col, products_col
+from app.core.db_sync import users_col, products_col
+from app.core.db_sync import sessions_col, events_col, carts_col
 from bson import ObjectId
 import random, time
 from datetime import datetime, timedelta

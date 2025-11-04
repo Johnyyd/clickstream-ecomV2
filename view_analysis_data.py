@@ -1,5 +1,5 @@
 # view_analysis_data.py - View detailed analysis data from MongoDB
-from db import analyses_col
+from app.core.db_sync import analyses_col
 from bson import ObjectId
 import json
 from datetime import datetime

@@ -5,29 +5,29 @@ Collaborative Filtering để đề xuất sản phẩm cá nhân hóa
 
 import os
 import sys
+import json
 import traceback
+from pathlib import Path
 
-if "JAVA_HOME" not in os.environ:
-    os.environ["JAVA_HOME"] = r"C:\LUUDULIEU\APP\JDK\jdk-17.0.12"
-
-os.environ["SPARK_LOCAL_IP"] = "127.0.0.1"
-python_exe = sys.executable
-os.environ["PYSPARK_PYTHON"] = python_exe
-os.environ["PYSPARK_DRIVER_PYTHON"] = python_exe
-
-from spark_session import get_spark_session
-from pyspark.ml.recommendation import ALS
+from pyspark.ml.recommendation import ALS, ALSModel
 from pyspark.ml.evaluation import RegressionEvaluator
-from db import events_col, products_col, users_col
 from bson import ObjectId
+
+from app.core.spark import spark_manager
+from app.core.db_sync import events_col, products_col, users_col
+
+import logging
+logger = logging.getLogger(__name__)
+if os.getenv("ANALYTICS_VERBOSE", "1") == "1":
+    logging.basicConfig(level=logging.INFO)
 
 
 def get_spark():
     """Get shared Spark session"""
-    return get_spark_session()
+    return spark_manager.get_session()
 
 
-def ml_product_recommendations_als(username=None, top_n=5):
+def ml_product_recommendations_als(username=None, top_n=5, weights: dict | None = None):
     """
     Collaborative Filtering using ALS (Alternating Least Squares)
     Generate personalized product recommendations
@@ -38,6 +38,7 @@ def ml_product_recommendations_als(username=None, top_n=5):
     - Top-N recommendations per user
     """
     try:
+        logger.info("[ALS] Starting recommendation computation (username=%s, top_n=%s)", username, top_n)
         spark = get_spark()
         if spark is None:
             return {"error": "Spark not available. Install Java 8/11 and set JAVA_HOME.", "recommendations": []}
@@ -72,15 +73,20 @@ def ml_product_recommendations_als(username=None, top_n=5):
                 target_user_id = user["_id"]
                 pipeline.append({"$match": {"user_id": user["_id"]}})
         
+        # Include both direct product events (product_id) and checkout baskets (product_ids)
         pipeline.extend([
             {
                 "$match": {
-                    "properties.product_id": {"$exists": True, "$ne": ""}
+                    "$or": [
+                        {"properties.product_id": {"$exists": True, "$ne": ""}},
+                        {"properties.product_ids": {"$exists": True, "$type": "array", "$ne": []}}
+                    ]
                 }
             }
         ])
         
         events = list(events_col().aggregate(pipeline))
+        logger.info("[ALS] Loaded events: %d", len(events))
         
         # Check if we have enough data
         if len(events) == 0:
@@ -123,34 +129,49 @@ def ml_product_recommendations_als(username=None, top_n=5):
         interactions = []
         user_idx_map = {}
         product_idx_map = {}
+        # Default implicit feedback weights (can be overridden)
+        w = {
+            "pageview": 1.0,
+            "add_to_cart": 3.0,
+            "checkout": 4.0,
+            "purchase": 8.0,
+        }
+        if weights:
+            w.update(weights)
         
         for e in events:
             user_id = str(e.get("user_id"))
-            product_id = e.get("properties", {}).get("product_id")
-            
-            if not product_id:
-                continue
-            
-            # Map user and product to indices
-            if user_id not in user_idx_map:
-                user_idx_map[user_id] = len(user_idx_map)
-            if product_id not in product_idx_map:
-                product_idx_map[product_id] = len(product_idx_map)
-            
-            # Calculate rating based on event type (implicit feedback)
+            props = e.get("properties", {})
             event_type = e.get("event_type", "pageview")
-            if event_type == "purchase":
-                rating = 5.0
-            elif event_type == "add_to_cart":
-                rating = 3.0
-            else:
-                rating = 1.0
-            
-            interactions.append((
-                user_idx_map[user_id],
-                product_idx_map[product_id],
-                rating
-            ))
+
+            def _ensure_maps(pid: str):
+                if user_id not in user_idx_map:
+                    user_idx_map[user_id] = len(user_idx_map)
+                if pid not in product_idx_map:
+                    product_idx_map[pid] = len(product_idx_map)
+
+            # Direct product interaction
+            product_id = props.get("product_id")
+            if product_id:
+                _ensure_maps(product_id)
+                interactions.append((
+                    user_idx_map[user_id],
+                    product_idx_map[product_id],
+                    float(w.get(event_type, 1.0))
+                ))
+                continue
+
+            # Checkout basket: expand each product_id with checkout weight
+            product_ids = props.get("product_ids") or []
+            if isinstance(product_ids, list) and product_ids:
+                for pid in product_ids:
+                    pid = str(pid)
+                    _ensure_maps(pid)
+                    interactions.append((
+                        user_idx_map[user_id],
+                        product_idx_map[pid],
+                        float(w.get("checkout", 4.0))
+                    ))
         
         # Create reverse mappings
         idx_to_user = {v: k for k, v in user_idx_map.items()}
@@ -172,6 +193,7 @@ def ml_product_recommendations_als(username=None, top_n=5):
             }
         
         # Create DataFrame
+        logger.info("[ALS] Building interaction DataFrame with %d rows", len(interactions))
         df = spark.createDataFrame(interactions, ["user_idx", "product_idx", "rating"])
         
         # Aggregate ratings (sum ratings for same user-product pairs)
@@ -202,6 +224,7 @@ def ml_product_recommendations_als(username=None, top_n=5):
             implicitPrefs=False  # Use explicit ratings
         )
         
+        logger.info("[ALS] Training model ...")
         model = als.fit(train_data)
         
         # Evaluate model
@@ -212,8 +235,10 @@ def ml_product_recommendations_als(username=None, top_n=5):
             predictionCol="prediction"
         )
         rmse = evaluator.evaluate(predictions)
+        logger.info("[ALS] RMSE=%.4f", rmse)
         
         # Generate top-N recommendations for each user
+        logger.info("[ALS] Generating top-%d recommendations for all users", top_n)
         user_recs = model.recommendForAllUsers(top_n)
         
         # Collect recommendations
@@ -293,10 +318,11 @@ def ml_product_recommendations_als(username=None, top_n=5):
             result["admin_view"] = True
             result["message"] = f"Admin user '{original_username}' - showing recommendations for ALL {len(recommendations)} users in the system"
         
+        logger.info("[ALS] Finished generating recommendations")
         return result
         
     except Exception as e:
-        print(f"Error in ALS recommendations: {e}")
+        logger.exception("[ALS] Error in recommendations: %s", e)
         traceback.print_exc()
         return {"error": str(e)}
 
@@ -324,5 +350,154 @@ def update_user_recommendations(username, recommendations):
         return {"status": "success", "updated": len(recommendations)}
         
     except Exception as e:
-        print(f"Error updating recommendations: {e}")
+        logger.exception("[ALS] Error updating recommendations: %s", e)
+        return {"error": str(e)}
+
+
+# -------- Model persistence utilities ---------
+def _ensure_dir(path: str | Path) -> Path:
+    p = Path(path)
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+def train_and_save_als(model_dir: str = "models/als", username: str | None = None, top_n: int = 5, weights: dict | None = None):
+    """
+    Train ALS with current data and persist the model and index mappings for fast reuse.
+    Returns summary including rmse and paths.
+    """
+    logger.info("[ALS] Train-and-save initiated (dir=%s)", model_dir)
+    res = ml_product_recommendations_als(username=username, top_n=top_n, weights=weights)
+    # Re-train again to get access to df, maps, and model for saving
+    try:
+        spark = get_spark()
+        pipeline = []
+        if username:
+            user = users_col().find_one({"username": username})
+            if user:
+                pipeline.append({"$match": {"user_id": user["_id"]}})
+        pipeline.extend([
+            {"$match": {"$or": [
+                {"properties.product_id": {"$exists": True, "$ne": ""}},
+                {"properties.product_ids": {"$exists": True, "$type": "array", "$ne": []}}
+            ]}}
+        ])
+        events = list(events_col().aggregate(pipeline))
+        if not events:
+            return {"error": "No interactions to train"}
+
+        w = {"pageview": 1.0, "add_to_cart": 3.0, "checkout": 4.0, "purchase": 8.0}
+        if weights:
+            w.update(weights)
+
+        interactions = []
+        user_idx_map, product_idx_map = {}, {}
+
+        def _ensure_maps(uid: str, pid: str):
+            if uid not in user_idx_map:
+                user_idx_map[uid] = len(user_idx_map)
+            if pid not in product_idx_map:
+                product_idx_map[pid] = len(product_idx_map)
+
+        for e in events:
+            uid = str(e.get("user_id"))
+            props = e.get("properties", {})
+            et = e.get("event_type", "pageview")
+            pid = props.get("product_id")
+            if pid:
+                _ensure_maps(uid, pid)
+                interactions.append((user_idx_map[uid], product_idx_map[pid], float(w.get(et, 1.0))))
+                continue
+            pids = props.get("product_ids") or []
+            if isinstance(pids, list) and pids:
+                for p in pids:
+                    p = str(p)
+                    _ensure_maps(uid, p)
+                    interactions.append((user_idx_map[uid], product_idx_map[p], float(w.get("checkout", 4.0))))
+
+        df = spark.createDataFrame(interactions, ["user_idx", "product_idx", "rating"]).groupBy("user_idx", "product_idx").sum("rating").withColumnRenamed("sum(rating)", "rating")
+        train_data, test_data = df.randomSplit([0.8, 0.2], seed=42)
+        als = ALS(maxIter=10, regParam=0.1, userCol="user_idx", itemCol="product_idx", ratingCol="rating", coldStartStrategy="drop", implicitPrefs=False)
+        model = als.fit(train_data)
+        evaluator = RegressionEvaluator(metricName="rmse", labelCol="rating", predictionCol="prediction")
+        rmse = float(evaluator.evaluate(model.transform(test_data)))
+        logger.info("[ALS] Persisted model RMSE=%.4f", rmse)
+
+        # Save model and mappings
+        model_path = _ensure_dir(model_dir)
+        model.write().overwrite().save(str(model_path))
+        logger.info("[ALS] Model saved to %s", model_path)
+        with open(model_path / "user_idx_map.json", "w", encoding="utf-8") as f:
+            json.dump(user_idx_map, f)
+        with open(model_path / "product_idx_map.json", "w", encoding="utf-8") as f:
+            json.dump(product_idx_map, f)
+        with open(model_path / "metadata.json", "w", encoding="utf-8") as f:
+            json.dump({"rmse": rmse, "weights": w, "users": len(user_idx_map), "products": len(product_idx_map)}, f)
+
+        res = res or {}
+        res.update({"saved_model_dir": str(model_path), "rmse": round(rmse, 4)})
+        return res
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
+def recommend_from_saved(username: str | None = None, top_n: int = 5, model_dir: str = "models/als"):
+    """Load saved ALS model and mappings to generate recommendations quickly."""
+    try:
+        spark = get_spark()
+        model_path = Path(model_dir)
+        if not model_path.exists():
+            return {"error": f"Model dir not found: {model_dir}"}
+        model = ALSModel.load(str(model_path))
+        with open(model_path / "user_idx_map.json", "r", encoding="utf-8") as f:
+            user_idx_map = json.load(f)
+        with open(model_path / "product_idx_map.json", "r", encoding="utf-8") as f:
+            product_idx_map = json.load(f)
+        idx_to_user = {int(v): k for k, v in user_idx_map.items()}
+        idx_to_product = {int(v): k for k, v in product_idx_map.items()}
+
+        # Build user dataframe
+        if username:
+            user = users_col().find_one({"username": username})
+            if not user:
+                return {"error": f"User '{username}' not found"}
+            uid = str(user["_id"])
+            if uid not in user_idx_map:
+                return {"error": f"User '{username}' has no interactions in saved model"}
+            subset = spark.createDataFrame([(int(user_idx_map[uid]),)], ["user_idx"])
+            user_recs_df = model.recommendForUserSubset(subset, top_n)
+        else:
+            all_users_df = spark.createDataFrame([(i,) for i in idx_to_user.keys()], ["user_idx"])
+            user_recs_df = model.recommendForUserSubset(all_users_df, top_n)
+
+        recs = []
+        for row in user_recs_df.collect():
+            user_idx = int(row["user_idx"])
+            u_id = idx_to_user.get(user_idx)
+            if not u_id:
+                continue
+            items = []
+            for rec in row["recommendations"]:
+                p_idx = int(rec["product_idx"]) if "product_idx" in rec else int(rec[model.itemCol])
+                p_id = idx_to_product.get(p_idx)
+                score = float(rec["rating"]) if "rating" in rec else float(rec[model.getPredictionCol()])
+                try:
+                    product = products_col().find_one({"_id": ObjectId(p_id)})
+                    if product:
+                        items.append({
+                            "product_id": p_id,
+                            "product_name": product.get("name"),
+                            "category": product.get("category"),
+                            "price": product.get("price"),
+                            "predicted_rating": round(score, 2)
+                        })
+                except Exception:
+                    pass
+            if items:
+                recs.append({"user_id": u_id, "recommendations": items})
+
+        logger.info("[ALS] Generated recommendations from saved model for %d users", len(recs))
+        return {"algorithm": "ALS Collaborative Filtering (saved)", "total_users_with_recs": len(recs), "sample_recommendations": recs[:5]}
+    except Exception as e:
+        logger.exception("[ALS] Error generating from saved model: %s", e)
         return {"error": str(e)}

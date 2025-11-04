@@ -7,7 +7,7 @@ Fix sessions với pages empty và event_count = 0 bằng cách:
 3. Update session document
 """
 
-from db import sessions_col, events_col
+from app.core.db_sync import sessions_col, events_col
 from datetime import datetime
 import pytz
 

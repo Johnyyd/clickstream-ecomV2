@@ -1,5 +1,5 @@
 # export_analysis_data.py - Export analysis data to JSON for further analysis
-from db import analyses_col
+from app.core.db_sync import analyses_col
 from bson import ObjectId
 import json
 from datetime import datetime

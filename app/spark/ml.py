@@ -26,7 +26,7 @@ from pyspark.ml.classification import DecisionTreeClassifier, LogisticRegression
 from pyspark.ml.fpm import FPGrowth
 from pyspark.ml.evaluation import ClusteringEvaluator, BinaryClassificationEvaluator
 from pyspark.ml.recommendation import ALS
-from db import events_col, sessions_col
+from app.core.db_sync import events_col, sessions_col
 from datetime import datetime
 import traceback
 from bson import ObjectId

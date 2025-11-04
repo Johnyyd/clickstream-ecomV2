@@ -3,7 +3,7 @@ Check ALS Data Readiness
 Diagnostic script to verify product interaction data for ALS recommendations
 """
 
-from db import events_col, products_col, users_col
+from app.core.db_sync import events_col, products_col, users_col
 from collections import Counter
 
 def check_als_readiness():

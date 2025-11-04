@@ -5,6 +5,7 @@ Phân tích nguồn traffic, landing pages, conversion by source
 
 import os
 import sys
+import logging
 import traceback
 
 if "JAVA_HOME" not in os.environ:
@@ -17,8 +18,13 @@ os.environ["PYSPARK_DRIVER_PYTHON"] = python_exe
 
 from app.spark.session import get_spark_session
 from pyspark.sql.functions import col, count, avg, sum as spark_sum, when, lit, countDistinct
-from db import events_col
+from app.core.db_sync import events_col
 from bson import ObjectId
+
+
+logger = logging.getLogger(__name__)
+if os.getenv("ANALYTICS_VERBOSE", "1") == "1":
+    logging.basicConfig(level=logging.INFO)
 
 
 def get_spark():
@@ -90,6 +96,7 @@ def analyze_traffic_sources(username=None):
     - Conversion rate by source
     """
     try:
+        logger.info("[SEO] Start analyze_traffic_sources (username=%s)", username)
         spark = get_spark()
         if spark is None:
             return {"error": "Spark not available. Install Java 8/11 and set JAVA_HOME."}
@@ -98,10 +105,12 @@ def analyze_traffic_sources(username=None):
         
         if df is None or df.count() == 0:
             return {"error": "No data available"}
+        logger.info("[SEO] Events DF count=%d", df.count())
         
         df.createOrReplaceTempView("events")
         
         # 1. Traffic by source
+        logger.info("[SEO] Computing traffic by source ...")
         traffic_by_source = spark.sql("""
             SELECT 
                 CASE 
@@ -121,6 +130,7 @@ def analyze_traffic_sources(username=None):
         """).collect()
         
         # 2. Landing pages analysis
+        logger.info("[SEO] Computing landing pages ...")
         landing_pages = spark.sql("""
             SELECT 
                 first_page,
@@ -144,6 +154,7 @@ def analyze_traffic_sources(username=None):
         """).collect()
         
         # 3. Conversion rate by source
+        logger.info("[SEO] Computing conversion by source ...")
         conversion_by_source = spark.sql("""
             SELECT 
                 traffic_source,
@@ -167,6 +178,7 @@ def analyze_traffic_sources(username=None):
         """).collect()
         
         # 4. Peak traffic hours
+        logger.info("[SEO] Computing hourly traffic ...")
         hourly_traffic = spark.sql("""
             SELECT 
                 hour,
@@ -175,7 +187,7 @@ def analyze_traffic_sources(username=None):
             FROM (
                 SELECT 
                     session_id,
-                    HOUR(timestamp) as hour,
+                    HOUR(to_timestamp(from_unixtime(timestamp))) as hour,
                     CASE 
                         WHEN referrer LIKE '%google%' THEN 'organic'
                         WHEN referrer LIKE '%facebook%' OR referrer LIKE '%twitter%' THEN 'social'
@@ -188,6 +200,7 @@ def analyze_traffic_sources(username=None):
             ORDER BY hour, sessions DESC
         """).collect()
         
+        logger.info("[SEO] Done. sources=%d, landing=%d", len(traffic_by_source), len(landing_pages))
         return {
             "algorithm": "SEO & Traffic Source Analysis",
             "traffic_by_source": [
@@ -229,6 +242,6 @@ def analyze_traffic_sources(username=None):
         }
         
     except Exception as e:
-        print(f"Error in traffic source analysis: {e}")
+        logger.exception("[SEO] Error: %s", e)
         traceback.print_exc()
         return {"error": str(e)}

@@ -12,7 +12,7 @@ from pyspark.sql.types import (
 import os
 import sys
 import json
-from db import events_col
+from app.core.db_sync import events_col
 from bson import ObjectId
 from datetime import datetime
 import pytz

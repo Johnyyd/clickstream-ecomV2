@@ -108,7 +108,7 @@ def test_recommendations():
     """Test ALS Recommendations"""
     from app.spark.recommendation_als import ml_product_recommendations_als
     # Get a user first
-    from db import users_col
+    from app.core.db_sync import users_col
     user = users_col().find_one({})
     if not user:
         return {"error": "No users found"}

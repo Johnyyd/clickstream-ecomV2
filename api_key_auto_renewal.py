@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 import pytz
 from api_key_manager import APIKeyManager
-from db import api_keys_col
+from app.core.db_synce import api_keys_col
 from bson import ObjectId
 
 

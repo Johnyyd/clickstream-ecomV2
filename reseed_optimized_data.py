@@ -10,7 +10,7 @@ import sys
 def clear_old_data():
     """Clear old events and sessions"""
     print("🗑️  Clearing old data...")
-    from db import events_col, sessions_col, carts_col
+    from app.core.db_sync import events_col, sessions_col, carts_col
     
     events_col().delete_many({})
     sessions_col().delete_many({})
@@ -22,7 +22,7 @@ def seed_products():
     """Ensure products exist"""
     print("📦 Checking products...")
     from seed_products import seed_more_products
-    from db import products_col
+    from app.core.db_sync import products_col
     
     count = products_col().count_documents({})
     if count < 50:
@@ -73,7 +73,7 @@ def seed_recent_data():
 def verify_data():
     """Verify seeded data"""
     print("\n🔍 Verifying data...")
-    from db import events_col, sessions_col, products_col
+    from app.core.db_sync import events_col, sessions_col, products_col
     
     events = events_col().count_documents({})
     sessions = sessions_col().count_documents({})

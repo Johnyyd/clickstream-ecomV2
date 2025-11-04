@@ -100,7 +100,7 @@ def simple_sessionize_and_counts(limit=None, user_id=None, use_spark=None):
 import os
 from openrouter_client import call_openrouter
 from api_key_auto_renewal import call_openrouter_with_auto_renewal
-from db import analyses_col, api_keys_col, events_col, products_col, users_col
+from app.core.db_sync import analyses_col, api_keys_col, events_col, products_col, users_col
 from bson import ObjectId
 import json
 from datetime import datetime, timedelta

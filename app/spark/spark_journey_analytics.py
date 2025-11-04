@@ -4,27 +4,24 @@ Phân tích đường đi của khách hàng, drop-off points, conversion paths
 """
 
 import os
-import sys
+import logging
 import traceback
-
-if "JAVA_HOME" not in os.environ:
-    os.environ["JAVA_HOME"] = r"C:\LUUDULIEU\APP\JDK\jdk-17.0.12"
-
-os.environ["SPARK_LOCAL_IP"] = "127.0.0.1"
-python_exe = sys.executable
-os.environ["PYSPARK_PYTHON"] = python_exe
-os.environ["PYSPARK_DRIVER_PYTHON"] = python_exe
+from datetime import datetime
 
 from pyspark.sql.functions import col, count, first, last, avg, sum as spark_sum, lit, collect_list, struct
 from pyspark.sql.window import Window
-from datetime import datetime
 from bson import ObjectId
-from db import events_col, users_col
-from app.spark.session import get_spark_session
+
+from app.core.spark import spark_manager
+from app.core.db_sync import events_col, users_col
+
+logger = logging.getLogger(__name__)
+if os.getenv("ANALYTICS_VERBOSE", "1") == "1":
+    logging.basicConfig(level=logging.INFO)
 
 def get_spark():
     """Get shared Spark session"""
-    return get_spark_session()
+    return spark_manager.get_session()
 
 
 def load_events_to_spark(spark, username=None):
@@ -77,6 +74,7 @@ def analyze_customer_journey(username=None):
     - Common page sequences
     """
     try:
+        logger.info("[Journey] Start analyze_customer_journey (username=%s)", username)
         spark = get_spark()
         if spark is None:
             return {"error": "Spark not available. Install Java 8/11 and set JAVA_HOME."}
@@ -85,10 +83,12 @@ def analyze_customer_journey(username=None):
         
         if df is None or df.count() == 0:
             return {"error": "No data available"}
+        logger.info("[Journey] Events DF count=%d", df.count())
         
         df.createOrReplaceTempView("events")
         
         # 1. Identify conversion paths (sessions that led to purchase)
+        logger.info("[Journey] Computing conversion paths ...")
         conversion_paths = spark.sql("""
             SELECT 
                 session_id,
@@ -118,6 +118,7 @@ def analyze_customer_journey(username=None):
         """).collect()
         
         # 2. Common drop-off points
+        logger.info("[Journey] Computing drop-off points ...")
         dropoff_analysis = spark.sql("""
             SELECT 
                 last_page,
@@ -151,6 +152,7 @@ def analyze_customer_journey(username=None):
         """).collect()
         
         # 3. Average path length to conversion
+        logger.info("[Journey] Computing path statistics ...")
         path_stats = spark.sql("""
             SELECT 
                 AVG(path_length) as avg_path_length,
@@ -172,6 +174,7 @@ def analyze_customer_journey(username=None):
         """).collect()[0]
         
         # 4. Most common page sequences (n-grams)
+        logger.info("[Journey] Computing common page sequences ...")
         page_sequences = spark.sql("""
             SELECT 
                 CONCAT(page1, ' -> ', page2) as sequence,
@@ -201,6 +204,7 @@ def analyze_customer_journey(username=None):
             LIMIT 20
         """).collect()
         
+        logger.info("[Journey] Done. conv_paths=%d, dropoffs=%d", len(conversion_paths), len(dropoff_analysis))
         return {
             "algorithm": "Customer Journey Path Analysis",
             "conversion_paths": [
@@ -235,6 +239,27 @@ def analyze_customer_journey(username=None):
         }
         
     except Exception as e:
-        print(f"Error in customer journey analysis: {e}")
+        logger.exception("[Journey] Error: %s", e)
         traceback.print_exc()
+        return {"error": str(e)}
+
+
+def save_journey_summary(username: str | None = None) -> dict:
+    """Compute and persist journey summary to Mongo for fast retrieval."""
+    logger.info("[Journey] Saving journey summary (username=%s)", username)
+    res = analyze_customer_journey(username=username)
+    if "error" in res:
+        return res
+    try:
+        db = events_col().database
+        col_out = db["analytics_journey"]
+        doc = {
+            "username": username,
+            "generated_at": datetime.utcnow(),
+            "summary": res,
+        }
+        col_out.insert_one(doc)
+        logger.info("[Journey] Summary saved to analytics_journey id=%s", str(doc.get("_id")))
+        return {"status": "ok", "collection": "analytics_journey", "id": str(doc.get("_id"))}
+    except Exception as e:
         return {"error": str(e)}

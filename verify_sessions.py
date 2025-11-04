@@ -4,7 +4,7 @@ verify_sessions.py
 Verify session-event consistency and report issues.
 """
 
-from db import sessions_col, events_col
+from app.core.db_sync import sessions_col, events_col
 from bson import ObjectId
 
 def verify_all_sessions():

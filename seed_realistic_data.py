@@ -170,6 +170,9 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
     """Generate a realistic session with plausible navigation and conversion behavior."""
     sid = str(ObjectId())
     current_ts = start_ts
+    now_utc_ts = int(datetime.now(pytz.UTC).timestamp())
+    if current_ts > now_utc_ts:
+        current_ts = now_utc_ts
 
     # Use persona to adjust behavior
     if not persona:
@@ -205,6 +208,9 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
         # Use persona-specific timing between events
         current_ts += random.randint(persona.get("event_time_min", 15), 
                                    persona.get("event_time_max", 120))
+        # Do not let events drift into the future
+        if current_ts > now_utc_ts:
+            current_ts = now_utc_ts
         
         r = random.random()
 
@@ -284,46 +290,34 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                     # Small delay then purchase with high probability
                     if random.random() < 0.85:
                         current_ts += random.randint(2, 10)
-                        # Choose a primary product_id for the purchase event to ensure ALS can use it
-                        primary_product = max(cart, key=lambda x: x.get("price", 0)) if cart else None
-                        primary_product_id = str(primary_product["_id"]) if primary_product else None
-                        emit_event(
-                            user_id,
-                            sid,
-                            current_ts,
-                            "/order-success",
-                            "purchase",
-                            {
-                                "cart_items": len(cart),
-                                "total_amount": round(total, 2),
-                                "payment_method": random.choice(["credit_card","paypal","apple_pay"]),
-                                "order_id": f"order_{random.randint(1000,9999)}",
-                                # Primary product for collaborative filtering
-                                **({"product_id": primary_product_id} if primary_product_id else {}),
-                            },
-                        )
-                        # Clear persistent cart upon purchase
-                        try:
-                            carts_col().update_one({"user_id": user_id}, {"$set": {"items": []}}, upsert=True)
-                        except Exception:
-                            pass
-                        cart.clear()
-                else:
-                    # Keep browsing without checkout
-                    if random.random() < 0.5:
-                        emit_event(user_id, sid, current_ts, "/home", "pageview", None)
-                    else:
-                        cat = random.choice([p.get("category") for p in products])
-                        emit_event(
-                            user_id,
-                            sid,
-                            current_ts,
-                            f"/category?category={cat}",
-                            "pageview",
-                            {"category": cat},
-                        )
+            if current_ts > now_utc_ts:
+                current_ts = now_utc_ts
+                # Choose a primary product_id for the purchase event to ensure ALS can use it
+                primary_product = max(cart, key=lambda x: x.get("price", 0)) if cart else None
+                primary_product_id = str(primary_product["_id"]) if primary_product else None
+                emit_event(
+                    user_id,
+                    sid,
+                    current_ts,
+                    "/order-success",
+                    "purchase",
+                    {
+                        "cart_items": len(cart),
+                        "total_amount": round(total, 2),
+                        "payment_method": random.choice(["credit_card","paypal","apple_pay"]),
+                        "order_id": f"order_{random.randint(1000,9999)}",
+                        # Primary product for collaborative filtering
+                        **({"product_id": primary_product_id} if primary_product_id else {}),
+                    },
+                )
+                # Clear persistent cart upon purchase
+                try:
+                    carts_col().update_one({"user_id": user_id}, {"$set": {"items": []}}, upsert=True)
+                except Exception:
+                    pass
+                cart.clear()
             else:
-                # No items yet, continue browsing
+                # Keep browsing without checkout
                 if random.random() < 0.5:
                     emit_event(user_id, sid, current_ts, "/home", "pageview", None)
                 else:
@@ -336,11 +330,27 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                         "pageview",
                         {"category": cat},
                     )
+    else:
+        # No items yet, continue browsing
+        if random.random() < 0.5:
+            emit_event(user_id, sid, current_ts, "/home", "pageview", None)
+        else:
+            cat = random.choice([p.get("category") for p in products])
+            emit_event(
+                user_id,
+                sid,
+                current_ts,
+                f"/category?category={cat}",
+                "pageview",
+                {"category": cat},
+            )
 
     # End-of-session finalization: convert some lingering carts
     if cart and random.random() < 0.25:
         total = sum(item["price"] for item in cart)
         current_ts += random.randint(5, 30)
+        if current_ts > now_utc_ts:
+            current_ts = now_utc_ts
         # Include product_ids in checkout for downstream analytics
         emit_event(
             user_id,
@@ -559,8 +569,8 @@ def seed_recent_events(user_ids: List[ObjectId], minutes: int, total_sessions: i
 def main():
     parser = argparse.ArgumentParser(description="Seed realistic customer-like data")
     parser.add_argument("--username", type=str, default=None, help="Seed only for this username (create if missing)")
-    parser.add_argument("--user-count", type=int, default=500, help="Number of users when --username not provided")
-    parser.add_argument("--days", type=int, default=20, help="Days back to generate")
+    parser.add_argument("--user-count", type=int, default=100, help="Number of users when --username not provided")
+    parser.add_argument("--days", type=int, default=10, help="Days back to generate")
     parser.add_argument("--sessions-per-user", type=int, default=random.randint(3, 10), help="Sessions per user per day")
     parser.add_argument("--avg-events", type=int, default=random.randint(5, 50), help="Average events per session")
     parser.add_argument("--seed-products", action="store_true", help="Seed products first if empty")

@@ -10,7 +10,7 @@ from datetime import datetime
 import pytz
 from bson import ObjectId
 
-from db import api_keys_col, users_col
+from app.core.db_sync import api_keys_col, users_col
 
 
 def mask_key(api_key: str) -> str:

@@ -7,7 +7,7 @@ from pymongo.collection import Collection
 from bson import ObjectId
 
 from app.core.config import Settings
-from db import get_db
+from app.core.db_sync import get_db
 
 # Generic type for models
 ModelType = TypeVar("ModelType")

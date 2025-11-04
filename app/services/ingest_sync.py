@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Synchronous Event Ingestion Service (legacy-compatible)
 Mirrors root-level ingest.py functionality to enable gradual migration.
@@ -5,14 +6,18 @@ Mirrors root-level ingest.py functionality to enable gradual migration.
 import logging
 import json as _json
 import os
-from typing import Dict, Any, Optional, List
-from datetime import datetime
+import pytz
+from typing import Dict, Any, Optional, List, TYPE_CHECKING
+from datetime import datetime, timezone
 from functools import lru_cache
 from bson import ObjectId
 from fastapi import HTTPException
 from pymongo import ReturnDocument
-from kafka import KafkaProducer
 from app.core.db_sync import events_col, sessions_col, products_col, users_col
+
+if TYPE_CHECKING:
+    # Only imported for type hints; avoids runtime dependency
+    from kafka import KafkaProducer  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +30,16 @@ _KAFKA_OPTIONAL = os.getenv("KAFKA_OPTIONAL", "1") == "1"
 @lru_cache(maxsize=1)
 def _get_kafka_producer() -> Optional[KafkaProducer]:
     if not _KAFKA_ENABLED:
+        # Quiet kafka library logs when disabled
+        try:
+            logging.getLogger("kafka").setLevel(logging.WARNING)
+        except Exception:
+            pass
+        logger.info("Kafka disabled via KAFKA_ENABLED=0; skipping producer creation")
         return None
     try:
+        # Import lazily to avoid import cost/errors when disabled
+        from kafka import KafkaProducer  # type: ignore
         return KafkaProducer(
             bootstrap_servers=_KAFKA_BOOTSTRAP_SERVERS,
             client_id=_KAFKA_CLIENT_ID,
@@ -35,9 +48,14 @@ def _get_kafka_producer() -> Optional[KafkaProducer]:
             retries=3
         )
     except Exception as e:
-        logger.error(f"Failed to create Kafka producer: {str(e)}")
         if _KAFKA_OPTIONAL:
+            try:
+                logging.getLogger("kafka").setLevel(logging.WARNING)
+            except Exception:
+                pass
+            logger.warning(f"Kafka optional: producer creation failed and will be skipped: {str(e)}")
             return None
+        logger.error(f"Failed to create Kafka producer (KAFKA_OPTIONAL=0): {str(e)}")
         raise
 
 class EventValidator:
@@ -76,7 +94,7 @@ class SessionManager:
     def update_session(self, event: Dict) -> str:
         try:
             session_id = event["session_id"]
-            timestamp = datetime.utcfromtimestamp(event["timestamp"])
+            timestamp = datetime.fromtimestamp(event["timestamp"])
             result = sessions_col().find_one_and_update(
                 {"session_id": session_id},
                 {
@@ -110,9 +128,18 @@ class EventProcessor:
             raise ValueError(error)
         processed = event.copy()
         processed.update({
-            "processed_at": datetime.utcnow(),
+            "processed_at": datetime.now(timezone.utc),
             "_id": ObjectId(),  # ensure ID exists before batch insert
         })
+        # Add ISODate for dashboards while keeping numeric epoch for Spark
+        try:
+            ts = int(event.get("timestamp", 0))
+            if ts > 0:
+                occurred_dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+                processed["occurred_at"] = occurred_dt
+                processed["occurred_at_iso"] = occurred_dt.isoformat(timespec="milliseconds")
+        except Exception:
+            pass
         if "product_id" in event.get("properties", {}):
             try:
                 product = products_col().find_one({"_id": ObjectId(event["properties"]["product_id"])})
@@ -173,7 +200,7 @@ def ingest_event(event_json: Dict) -> Dict[str, Any]:
             except Exception as e:
                 if not _KAFKA_OPTIONAL:
                     raise
-                logger.warning(f"Kafka send failed but optional: {str(e)}")
+                logger.warning(f"Kafka optional: send failed and was skipped: {str(e)}")
         return {
             "status": "success",
             "event_id": str(processed_event["_id"]),

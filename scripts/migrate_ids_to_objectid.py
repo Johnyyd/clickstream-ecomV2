@@ -1,6 +1,6 @@
 from bson import ObjectId
 from pymongo import UpdateOne
-from db import events_col, sessions_col, analyses_col, users_col
+from app.core.db_sync import events_col, sessions_col, analyses_col, users_col
 
 def to_oid(v):
     try:

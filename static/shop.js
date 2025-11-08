@@ -66,7 +66,7 @@ const Shop = (() => {
       const items = getCart().map(x => ({ product_id: x.product_id, quantity: x.quantity || 1 }));
       await fetch('/api/cart', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': token },
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
         body: JSON.stringify({ items })
       });
     } catch (e) { /* swallow */ }
@@ -92,11 +92,11 @@ const Shop = (() => {
       if (token) {
         fetch('/api/cart/add', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': token },
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
           body: JSON.stringify({ product_id: item.product_id, quantity: item.quantity || 1 })
         }).then(async () => {
           try {
-            const resp = await fetch('/api/cart', { headers: { 'Authorization': token } });
+            const resp = await fetch('/api/cart', { headers: { 'Authorization': 'Bearer ' + token } });
             if (resp.ok) {
               const data = await resp.json();
               const items2 = Array.isArray(data.items) ? data.items : [];
@@ -123,11 +123,11 @@ const Shop = (() => {
       if (token) {
         fetch('/api/cart/remove', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': token },
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
           body: JSON.stringify({ product_id })
         }).then(async () => {
           try {
-            const resp = await fetch('/api/cart', { headers: { 'Authorization': token } });
+            const resp = await fetch('/api/cart', { headers: { 'Authorization': 'Bearer ' + token } });
             if (resp.ok) {
               const data = await resp.json();
               const items2 = Array.isArray(data.items) ? data.items : [];
@@ -453,7 +453,7 @@ const Shop = (() => {
     try {
       const token = getToken();
       if (token) {
-        const resp = await fetch('/api/cart', { headers: { 'Authorization': token } });
+        const resp = await fetch('/api/cart', { headers: { 'Authorization': 'Bearer ' + token } });
         if (resp.ok) {
           const data = await resp.json();
           const items = Array.isArray(data.items) ? data.items : [];
@@ -512,7 +512,7 @@ const Shop = (() => {
         track('/cart', 'clear_cart', { previous_items: items.length });
         try {
           const token = getToken();
-          if (token) await fetch('/api/cart', { method: 'DELETE', headers: { 'Authorization': token } });
+          if (token) await fetch('/api/cart', { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } });
         } catch (e) {}
         renderCartPage();
       };

@@ -77,6 +77,34 @@ function clearStoredAnalysisAndML() {
   } catch (e) { console.warn('Failed to clear stored analysis/ML', e); }
 }
 
+// Fetch latest analysis from server (sorted by created_at desc)
+async function loadLatestAnalysisFromServer() {
+  try {
+    if (!token) return;
+    const listResp = await fetch('/api/analyses', { headers: { 'Authorization': 'Bearer ' + token }});
+    if (!listResp.ok) return;
+    const list = await listResp.json();
+    if (!Array.isArray(list) || list.length === 0) return;
+    // If the first item already contains results, use directly; otherwise fetch details by id
+    const latest = list[0];
+    let analysisDoc = latest;
+    if (!latest.results || Object.keys(latest.results).length === 0 || !latest.llm_insights) {
+      const detailResp = await fetch(`/api/analyses/${latest._id}`, { headers: { 'Authorization': 'Bearer ' + token }});
+      if (detailResp.ok) analysisDoc = await detailResp.json();
+    }
+    if (analysisDoc && analysisDoc.results) {
+      const resultsContainer = document.getElementById('results');
+      if (resultsContainer) {
+        // Render via analysisDisplay for consistent UI including LLM insights
+        resultsContainer.innerHTML = '';
+        displayAnalysisResults(analysisDoc, resultsContainer);
+        saveAnalysisToStorage(analysisDoc);
+        output.innerText = 'Loaded latest analysis from server';
+      }
+    }
+  } catch (e) { console.warn('Failed to load latest analysis from server', e); }
+}
+
 // Handle clearOnLoad flag from hard reload (set by comprehensiveAnalytics.js)
 function handleClearOnLoadFlag_dashboard() {
   try {
@@ -482,11 +510,13 @@ function renderBarChartSVG(byPageObj) {
   token = localStorage.getItem('token');
   if (token) {
     try {
-      const meResp = await fetch('/api/me', { headers: { 'Authorization': token }});
+      const meResp = await fetch('/api/me', { headers: { 'Authorization': 'Bearer ' + token }});
       if (meResp.ok) {
         const me = await meResp.json();
         currentUserId = me.user_id || me._id || me.id || null;
         console.log('Logged in user ID:', currentUserId);
+      } else if (meResp.status === 401) {
+        window.location.href = '/auth.html?session_expired=true';
       }
     } catch(e) {
       console.error('Failed to fetch user info:', e);
@@ -499,6 +529,8 @@ function renderBarChartSVG(byPageObj) {
   // Respect hard-reload clear flag and restore any stored analysis/ML results
   handleClearOnLoadFlag_dashboard();
   loadStoredAnalysisAndMLToUI();
+  // Always fetch the latest analysis from server for admins
+  await loadLatestAnalysisFromServer();
   startMetricsPolling();
     ensureAutoAnalyzeButton();
     if (autoAnalyzeBtn) {
@@ -576,9 +608,9 @@ simulateBtn.onclick = async () => {
     const entry = entryPoints[Math.random() < 0.6 ? 0 : (Math.random() < 0.85 ? 1 : 2)];
     
     // First event with current timestamp
-    await fetch('/api/ingest', {
+    const resp = await fetch('/api/ingest', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json', 'Authorization': token},
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token},
       body: JSON.stringify({
         page: entry.page,
         event_type: entry.type,
@@ -588,6 +620,10 @@ simulateBtn.onclick = async () => {
         properties: entry.props
       })
     });
+    if (resp.status === 401) {
+        window.location.href = '/auth.html?session_expired=true';
+        return;
+    }
     
     // Generate remaining events with current timestamp for each
     for (let i = 1; i < persona.events && i < 100; i++) {
@@ -713,11 +749,15 @@ simulateBtn.onclick = async () => {
         }
       }
       
-      await fetch('/api/ingest', {
+      const resp = await fetch('/api/ingest', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json', 'Authorization': token},
+        headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token},
         body: JSON.stringify(event)
       });
+      if (resp.status === 401) {
+        window.location.href = '/auth.html?session_expired=true';
+        return;
+      }
     }
     
     output.innerText = `${persona.events} realistic events ingested successfully (${persona.name} persona)`;
@@ -808,7 +848,7 @@ async function checkAnalysisMode() {
   
   try {
     const resp = await fetch('/api/analysis/mode', {
-      headers: { 'Authorization': token }
+      headers: { 'Authorization': 'Bearer ' + token }
     });
     
     if (resp.ok) {
@@ -823,6 +863,8 @@ async function checkAnalysisMode() {
       }
       // Clarify message to reflect server default mode, not per-run selection
       output.innerText = `Server default mode: ${serverUseSpark ? 'Spark' : 'Python'}`;
+    } else if (resp.status === 401) {
+        window.location.href = '/auth.html?session_expired=true';
     }
   } catch (e) {
     console.error('Failed to check analysis mode:', e);
@@ -858,11 +900,16 @@ async function runAnalysis({ skipLLM = false, limit = null, useSparkFlag = null,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': token
+        'Authorization': 'Bearer ' + token
       },
       body: JSON.stringify({ params })
     });
     if (!resp.ok) {
+      if (resp.status === 401) {
+        // Unauthorized, redirect to login
+        window.location.href = '/auth.html?session_expired=true';
+        return;
+      }
       const error = await resp.json().catch(() => ({}));
       throw new Error(error.error || 'Failed to run analysis');
     }
@@ -871,11 +918,30 @@ async function runAnalysis({ skipLLM = false, limit = null, useSparkFlag = null,
       output.innerText = `Error: ${j.error}`;
       return null;
     }
-    const analysisResp = await fetch(`/api/analyses/${j.analysis._id}`, {
-      headers: { 'Authorization': token }
-    });
-    if (!analysisResp.ok) throw new Error('Failed to fetch analysis details');
-    const analysis = await analysisResp.json();
+    // Fetch analysis details with short polling to wait for background job to complete
+    const fetchOnce = async () => {
+      const resp = await fetch(`/api/analyses/${j.analysis._id}`, {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (!resp.ok) {
+        if (resp.status === 401) {
+          window.location.href = '/auth.html?session_expired=true';
+          return null;
+        }
+        throw new Error('Failed to fetch analysis details');
+      }
+      return resp.json();
+    };
+
+    let analysis = await fetchOnce();
+    let retries = 0;
+    const maxRetries = 20; // ~10s if interval=500ms
+    const intervalMs = 500;
+    while (analysis && (analysis.summary?.status === 'stub' || !analysis.llm_insights) && retries < maxRetries) {
+      await new Promise(r => setTimeout(r, intervalMs));
+      analysis = await fetchOnce();
+      retries++;
+    }
     const resultsContainer = document.getElementById('results');
     displayAnalysisResults(analysis, resultsContainer);
     checkAnalysisMode();
@@ -937,7 +1003,7 @@ async function checkKey() {
   
   try {
     const resp = await fetch('/api/openrouter/key', {
-      headers: { 'Authorization': token }
+      headers: { 'Authorization': 'Bearer ' + token }
     });
     
     if (resp.ok) {
@@ -952,6 +1018,10 @@ async function checkKey() {
         return false;
       }
     } else {
+        if (resp.status === 401) {
+            window.location.href = '/auth.html?session_expired=true';
+            return;
+        }
       const error = await resp.json().catch(() => ({}));
       keyStatus.textContent = `❌ Error: ${error.error || 'Failed to check key'}`;
       keyStatus.className = 'key-status error';
@@ -984,7 +1054,7 @@ async function saveKey() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': token
+        'Authorization': 'Bearer ' + token
       },
       body: JSON.stringify({ api_key: key })
     });
@@ -996,6 +1066,10 @@ async function saveKey() {
       openrouterKeyInput.value = ''; // Clear the input field
       return true;
     } else {
+        if (resp.status === 401) {
+            window.location.href = '/auth.html?session_expired=true';
+            return;
+        }
       const error = await resp.json().catch(() => ({}));
       keyStatus.textContent = `❌ Error: ${error.error || 'Failed to save key'}`;
       keyStatus.className = 'key-status error';
@@ -1015,7 +1089,7 @@ async function loadRecommendations() {
   
   try {
     const resp = await fetch('/api/recommendations', {
-      headers: { 'Authorization': token }
+      headers: { 'Authorization': 'Bearer ' + token }
     });
     
     if (resp.ok) {
@@ -1041,6 +1115,8 @@ async function loadRecommendations() {
       } else {
         recsEl.innerHTML = '<p>No recommendations available. Generate some by analyzing your data!</p>';
       }
+    } else if (resp.status === 401) {
+        window.location.href = '/auth.html?session_expired=true';
     }
   } catch (e) {
     console.error('Error loading recommendations:', e);
@@ -1143,13 +1219,18 @@ async function runMLAlgorithm(endpoint, algorithmName) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': token
+        'Authorization': 'Bearer ' + token
       },
       body: JSON.stringify({ username })
     });
     
     // Check HTTP status first
     if (!resp.ok) {
+      if (resp.status === 401) {
+        // Unauthorized, redirect to login
+        window.location.href = '/auth.html?session_expired=true';
+        return;
+      }
       const errorData = await resp.json();
       const errorMsg = errorData.detail || errorData.error || `HTTP ${resp.status} error`;
       output.innerText = `Error: ${errorMsg}`;

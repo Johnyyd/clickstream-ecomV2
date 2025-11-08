@@ -178,15 +178,46 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
     if not persona:
         persona = {"name": "normal", "browse_rate": 0.35, "product_view_rate": 0.35, "cart_rate": 0.18, "checkout_rate": 0.12}
     
-    # First event: home with varied entry points
+    # --- Determine traffic source for this session (drives attribution + conversion bias)
+    traffic_sources = [
+        ("direct", 0.45),
+        ("organic_search", 0.25),
+        ("social", 0.15),
+        ("referral", 0.10),
+        ("paid", 0.05),
+    ]
+    ts_labels, ts_weights = zip(*traffic_sources)
+    session_source = random.choices(ts_labels, weights=ts_weights, k=1)[0]
+    if session_source == "organic_search":
+        session_referrer = random.choice(["google", "bing"])  # matches LIKE '%google%'/'%bing%'
+    elif session_source == "social":
+        session_referrer = random.choice(["facebook", "twitter", "instagram"])  # matches social mapping
+    elif session_source == "paid":
+        session_referrer = "ads"  # matches 'ads' rule
+    elif session_source == "direct":
+        session_referrer = "direct"  # maps to 'direct'
+    else:
+        # generic referral domain
+        session_referrer = random.choice(["news.example.com", "blog.partner.com", "forum.example.org"])  # non-empty -> referral
+
+    # First event: entry with consistent referrer
     ensure_browsing_session(sid, user_id, current_ts)
     entry_points = [
-        ("/home", "pageview", {"referrer": random.choice(["direct","email","social","ads","google","facebook"])}),
-        ("/search", "search", {"search_term": random.choice(["laptop","phone","coffee","shoes","shirt"]), "referrer": "google"}),
-        (f"/category?category={random.choice([p.get('category') for p in products])}", "pageview", {"referrer": "social"}),
+        ("/home", "pageview", {"referrer": session_referrer}),
+        ("/search", "search", {"search_term": random.choice(["laptop","phone","coffee","shoes","shirt"]), "referrer": session_referrer}),
+        (f"/category?category={random.choice([p.get('category') for p in products])}", "pageview", {"referrer": session_referrer}),
     ]
     entry = random.choices(entry_points, weights=[0.6, 0.25, 0.15], k=1)[0]
     emit_event(user_id, sid, current_ts, entry[0], entry[1], entry[2])
+    # Conversion propensity multipliers by source (tunable)
+    source_conv_boost = {
+        "direct": 1.00,
+        "organic_search": 0.75,
+        "social": 0.55,
+        "referral": 0.45,
+        "paid": 0.95,
+    }
+    conv_mult = source_conv_boost.get(session_source, 0.6)
 
     viewed_product_ids: list[str] = []
     cart = []
@@ -223,11 +254,11 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                     current_ts,
                     f"/category?category={category}",
                     "pageview",
-                    {"category": category},
+                    {"category": category, "referrer": session_referrer},
                 )
             else:
-                term = random.choice(["laptop","phone","coffee","shoes","shirt","pizza","sushi"]) 
-                emit_event(user_id, sid, current_ts, "/search", "search", {"search_term": term})
+                term = random.choice(["laptop","phone","coffee","shoes","shirt","pizza","sushi"])
+                emit_event(user_id, sid, current_ts, "/search", "search", {"search_term": term, "referrer": session_referrer})
         elif r < (persona["browse_rate"] + persona["product_view_rate"]):  # view product
             p = realistic_product(products)
             viewed_product_ids.append(str(p["_id"]))
@@ -242,6 +273,7 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                     "product_name": p["name"],
                     "product_category": p["category"],
                     "product_price": p["price"],
+                    "referrer": session_referrer,
                 },
             )
         elif r < (persona["browse_rate"] + persona["product_view_rate"] + persona["cart_rate"]):  # add to cart
@@ -262,14 +294,16 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                             "product_name": p["name"],
                             "product_price": p["price"],
                             "quantity": 1,
+                            "referrer": session_referrer,
                         },
                     )
             else:
-                emit_event(user_id, sid, current_ts, "/home", "pageview", None)
+                emit_event(user_id, sid, current_ts, "/home", "pageview", {"referrer": session_referrer})
         else:  # checkout / purchase path
             if cart:
                 # Decide to attempt checkout with a probability influenced by persona
-                attempt_checkout = random.random() < max(0.35, persona.get("checkout_rate", 0.1) + 0.15)
+                base_attempt = max(0.30, persona.get("checkout_rate", 0.1) + 0.10)
+                attempt_checkout = random.random() < min(0.95, base_attempt * conv_mult)
                 if attempt_checkout:
                     # Emit checkout event
                     total = sum(item["price"] for item in cart)
@@ -285,41 +319,43 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                             "cart_items": len(cart),
                             "total_amount": round(total, 2),
                             "product_ids": checkout_product_ids,
+                            "referrer": session_referrer,
                         },
                     )
                     # Small delay then purchase with high probability
-                    if random.random() < 0.85:
+                    if random.random() < min(0.98, 0.85 * (0.9 + 0.2 * conv_mult)):
                         current_ts += random.randint(2, 10)
-            if current_ts > now_utc_ts:
-                current_ts = now_utc_ts
-                # Choose a primary product_id for the purchase event to ensure ALS can use it
-                primary_product = max(cart, key=lambda x: x.get("price", 0)) if cart else None
-                primary_product_id = str(primary_product["_id"]) if primary_product else None
-                emit_event(
-                    user_id,
-                    sid,
-                    current_ts,
-                    "/order-success",
-                    "purchase",
-                    {
-                        "cart_items": len(cart),
-                        "total_amount": round(total, 2),
-                        "payment_method": random.choice(["credit_card","paypal","apple_pay"]),
-                        "order_id": f"order_{random.randint(1000,9999)}",
-                        # Primary product for collaborative filtering
-                        **({"product_id": primary_product_id} if primary_product_id else {}),
-                    },
-                )
-                # Clear persistent cart upon purchase
-                try:
-                    carts_col().update_one({"user_id": user_id}, {"$set": {"items": []}}, upsert=True)
-                except Exception:
-                    pass
-                cart.clear()
+                        if current_ts > now_utc_ts:
+                            current_ts = now_utc_ts
+                        # Choose a primary product_id for the purchase event to ensure ALS can use it
+                        primary_product = max(cart, key=lambda x: x.get("price", 0)) if cart else None
+                        primary_product_id = str(primary_product["_id"]) if primary_product else None
+                        emit_event(
+                            user_id,
+                            sid,
+                            current_ts,
+                            "/order-success",
+                            "purchase",
+                            {
+                                "cart_items": len(cart),
+                                "total_amount": round(total, 2),
+                                "payment_method": random.choice(["credit_card","paypal","apple_pay"]),
+                                "order_id": f"order_{random.randint(1000,9999)}",
+                                # Primary product for collaborative filtering
+                                **({"product_id": primary_product_id} if primary_product_id else {}),
+                                "referrer": session_referrer,
+                            },
+                        )
+                        # Clear persistent cart upon purchase
+                        try:
+                            carts_col().update_one({"user_id": user_id}, {"$set": {"items": []}}, upsert=True)
+                        except Exception:
+                            pass
+                        cart.clear()
             else:
                 # Keep browsing without checkout
                 if random.random() < 0.5:
-                    emit_event(user_id, sid, current_ts, "/home", "pageview", None)
+                    emit_event(user_id, sid, current_ts, "/home", "pageview", {"referrer": session_referrer})
                 else:
                     cat = random.choice([p.get("category") for p in products])
                     emit_event(
@@ -328,7 +364,7 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                         current_ts,
                         f"/category?category={cat}",
                         "pageview",
-                        {"category": cat},
+                        {"category": cat, "referrer": session_referrer},
                     )
     else:
         # No items yet, continue browsing
@@ -362,9 +398,10 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                 "cart_items": len(cart),
                 "total_amount": round(total, 2),
                 "product_ids": [str(item["_id"]) for item in cart],
+                "referrer": session_referrer,
             },
         )
-        if random.random() < 0.9:
+        if random.random() < min(0.98, 0.9 * (0.9 + 0.2 * conv_mult)):
             current_ts += random.randint(2, 10)
             primary_product = max(cart, key=lambda x: x.get("price", 0)) if cart else None
             primary_product_id = str(primary_product["_id"]) if primary_product else None
@@ -380,6 +417,7 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                     "payment_method": random.choice(["credit_card","paypal","apple_pay"]),
                     "order_id": f"order_{random.randint(1000,9999)}",
                     **({"product_id": primary_product_id} if primary_product_id else {}),
+                    "referrer": session_referrer,
                 },
             )
             try:
@@ -407,19 +445,19 @@ def seed_event_for_users(user_ids: List[ObjectId], days: int, sessions_per_user:
         
         # Product Browsers: High product view rate (40%)
         {"name": "product_browser", "weight": 0.40, "extra_sessions": 0, "avg_events": max(6, avg_events - 1),
-         "browse_rate": 0.15, "product_view_rate": 0.70, "cart_rate": 0.10, "checkout_rate": 0.05},
+         "browse_rate": 0.4, "product_view_rate": 0.4, "cart_rate": 0.1, "checkout_rate": 0.1},
         
         # Window Shoppers: Browse products but rarely buy (25%)
         {"name": "window_shopper", "weight": 0.25, "extra_sessions": 2, "avg_events": max(8, avg_events),
-         "browse_rate": 0.20, "product_view_rate": 0.60, "cart_rate": 0.15, "checkout_rate": 0.05},
+         "browse_rate": 0.3, "product_view_rate": 0.4, "cart_rate": 0.2, "checkout_rate": 0.1},
         
         # Active Shoppers: View products and add to cart (20%)
         {"name": "shopper", "weight": 0.20, "extra_sessions": 3, "avg_events": max(10, avg_events + 1),
-         "browse_rate": 0.15, "product_view_rate": 0.50, "cart_rate": 0.25, "checkout_rate": 0.10},
+         "browse_rate": 0.2, "product_view_rate": 0.3, "cart_rate": 0.3, "checkout_rate": 0.2},
         
         # Power Buyers: High conversion (10%)
         {"name": "power_buyer", "weight": 0.10, "extra_sessions": 4, "avg_events": max(12, avg_events + 3),
-         "browse_rate": 0.10, "product_view_rate": 0.45, "cart_rate": 0.30, "checkout_rate": 0.15},
+         "browse_rate": 0.1, "product_view_rate": 0.2, "cart_rate": 0.4, "checkout_rate": 0.3},
     ]
     
     for uid in user_ids:
@@ -495,7 +533,7 @@ def seed_recent_events(user_ids: List[ObjectId], minutes: int, total_sessions: i
     now = datetime.now(pytz.UTC)
     product_count = ensure_products(seed_products_first)
     if product_count == 0:
-        print("⚠️  No products found. Run with --seed-products or seed_products.py first.")
+        print("No products found. Run with --seed-products or seed_products.py first.")
         return 0
     
     products = list(products_col().find({}, {"_id": 1, "name": 1, "slug": 1, "category": 1, "price": 1}))
@@ -509,37 +547,37 @@ def seed_recent_events(user_ids: List[ObjectId], minutes: int, total_sessions: i
         
         # Casual Browsers: Brief product views (30%)
         {"name": "casual_browser", "weight": 0.30, "avg_events": 4, "extra_sessions": -1,
-         "browse_rate": 0.40, "product_view_rate": 0.50, "cart_rate": 0.08, "checkout_rate": 0.02,
+         "browse_rate": 0.4, "product_view_rate": 0.4, "cart_rate": 0.1, "checkout_rate": 0.1,
          "session_gap_min": 8, "session_gap_max": 48,
          "event_time_min": 10, "event_time_max": 60},
         
         # Comparison Shoppers: Multiple product views, rare purchases (25%)
         {"name": "comparison_shopper", "weight": 0.25, "avg_events": 8, "extra_sessions": 1,
-         "browse_rate": 0.20, "product_view_rate": 0.65, "cart_rate": 0.12, "checkout_rate": 0.03,
+         "browse_rate": 0.3, "product_view_rate": 0.4, "cart_rate": 0.2, "checkout_rate": 0.1,
          "session_gap_min": 4, "session_gap_max": 24,
          "event_time_min": 20, "event_time_max": 180},
         
         # Regular Customers: Balanced browsing and buying (20%)
         {"name": "regular_customer", "weight": 0.20, "avg_events": 12, "extra_sessions": 2,
-         "browse_rate": 0.25, "product_view_rate": 0.45, "cart_rate": 0.20, "checkout_rate": 0.10,
+         "browse_rate": 0.2, "product_view_rate": 0.3, "cart_rate": 0.3, "checkout_rate": 0.2,
          "session_gap_min": 2, "session_gap_max": 36,
          "event_time_min": 15, "event_time_max": 120},
         
         # Loyal Shoppers: High engagement and conversion (15%)
         {"name": "loyal_shopper", "weight": 0.15, "avg_events": 15, "extra_sessions": 3,
-         "browse_rate": 0.15, "product_view_rate": 0.40, "cart_rate": 0.30, "checkout_rate": 0.15,
+         "browse_rate": 0.1, "product_view_rate": 0.2, "cart_rate": 0.4, "checkout_rate": 0.3,
          "session_gap_min": 1, "session_gap_max": 24,
          "event_time_min": 30, "event_time_max": 240},
         
         # Power Users: Very high engagement (5%)
         {"name": "power_user", "weight": 0.05, "avg_events": 20, "extra_sessions": 4,
-         "browse_rate": 0.10, "product_view_rate": 0.35, "cart_rate": 0.35, "checkout_rate": 0.20,
+         "browse_rate": 0.1, "product_view_rate": 0.1, "cart_rate": 0.5, "checkout_rate": 0.3,
          "session_gap_min": 0.5, "session_gap_max": 12,
          "event_time_min": 45, "event_time_max": 300},
     ]
     
     total_est = 0
-    print(f"📊 Generating {total_sessions} sessions in last {minutes} minutes...")
+    print(f"Generating {total_sessions} sessions in last {minutes} minutes...")
     
     # Spread sessions evenly across the timeframe
     for i in range(total_sessions):
@@ -569,7 +607,7 @@ def seed_recent_events(user_ids: List[ObjectId], minutes: int, total_sessions: i
 def main():
     parser = argparse.ArgumentParser(description="Seed realistic customer-like data")
     parser.add_argument("--username", type=str, default=None, help="Seed only for this username (create if missing)")
-    parser.add_argument("--user-count", type=int, default=100, help="Number of users when --username not provided")
+    parser.add_argument("--user-count", type=int, default=500, help="Number of users when --username not provided")
     parser.add_argument("--days", type=int, default=10, help="Days back to generate")
     parser.add_argument("--sessions-per-user", type=int, default=random.randint(3, 10), help="Sessions per user per day")
     parser.add_argument("--avg-events", type=int, default=random.randint(5, 50), help="Average events per session")

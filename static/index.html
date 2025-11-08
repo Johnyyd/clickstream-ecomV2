@@ -56,12 +56,12 @@
     <div id="app">
         <h1>Clickstream Dashboard</h1>
         <div id="controls">
-            <button id="simulateBtn">Simulate Events (100)</button>
-            <div class="analysis-controls">
-                <button id="analyzeBtn">Run Spark Analysis</button>
-                <div class="toggle-container" role="group" aria-labelledby="analysisModeLabel">
-                    <span id="analysisModeLabel" class="sr-only">Analysis Engine</span>
-                    <label class="switch">
+            <button id="simulateBtn" hidden>Simulate Events (100)</button>
+            <div class="analysis-controls" hidden>
+                <button id="analyzeBtn" hidden>Run Spark Analysis</button>
+                <div class="toggle-container" role="group" aria-labelledby="analysisModeLabel" hidden>
+                    <span id="analysisModeLabel" class="sr-only" hidden>Analysis Engine</span>
+                    <label class="switch" hidden>
                         <input type="checkbox" id="useSparkToggle" checked 
                                aria-checked="true" 
                                role="switch" 
@@ -96,7 +96,7 @@
                     <button id="mlLogisticBtn" class="ml-btn">Logistic Regression</button>
                 </div>
             </div>
-            <div class="key-controls">
+            <div class="key-controls" hidden>
                 <h2>API Key (Auto-managed)</h2>
                 <p class="info-text">✅ API keys are automatically managed. No manual input needed!</p>
                 <details>

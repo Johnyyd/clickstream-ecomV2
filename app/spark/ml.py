@@ -4,6 +4,7 @@ spark_ml.py - Machine Learning algorithms using PySpark MLlib
 
 import os
 import sys
+from pathlib import Path
 
 # Use system JAVA_HOME if available, otherwise set a default
 if "JAVA_HOME" not in os.environ:
@@ -21,9 +22,14 @@ os.environ["PYSPARK_DRIVER_PYTHON"] = python_exe
 from app.spark.session import get_spark_session
 from pyspark.sql.functions import col, count, avg, sum as spark_sum, when
 from pyspark.ml.feature import VectorAssembler, StringIndexer
-from pyspark.ml.clustering import KMeans
-from pyspark.ml.classification import DecisionTreeClassifier, LogisticRegression
-from pyspark.ml.fpm import FPGrowth
+from pyspark.ml.clustering import KMeans, KMeansModel
+from pyspark.ml.classification import (
+    DecisionTreeClassifier,
+    LogisticRegression,
+    DecisionTreeClassificationModel,
+    LogisticRegressionModel,
+)
+from pyspark.ml.fpm import FPGrowth, FPGrowthModel
 from pyspark.ml.evaluation import ClusteringEvaluator, BinaryClassificationEvaluator
 from pyspark.ml.recommendation import ALS
 from app.core.db_sync import events_col, sessions_col
@@ -34,6 +40,12 @@ from bson import ObjectId
 def get_spark():
     """Get shared Spark session"""
     return get_spark_session()
+
+
+def _ensure_dir(path: str | Path) -> Path:
+    p = Path(path)
+    p.mkdir(parents=True, exist_ok=True)
+    return p
 
 
 def ml_user_segmentation_kmeans(username=None):
@@ -129,8 +141,14 @@ def ml_user_segmentation_kmeans(username=None):
         df_features = assembler.transform(df)
         
         # K-Means with k=3 (Low, Medium, High value users)
-        kmeans = KMeans(k=3, seed=42, featuresCol="features", predictionCol="cluster")
-        model = kmeans.fit(df_features)
+        model_dir = _ensure_dir("models/kmeans_basic")
+        try:
+            model = KMeansModel.load(str(model_dir))
+        except Exception:
+            kmeans = KMeans(k=3, seed=42, featuresCol="features", predictionCol="cluster")
+            model = kmeans.fit(df_features)
+            # Save for reuse
+            model.write().overwrite().save(str(model_dir))
         
         # Predict clusters
         predictions = model.transform(df_features)
@@ -279,14 +297,19 @@ def ml_conversion_prediction_tree(username=None):
         # Split data
         train_data, test_data = df_features.randomSplit([0.7, 0.3], seed=42)
         
-        # Train Decision Tree
-        dt = DecisionTreeClassifier(
-            featuresCol="features",
-            labelCol="label",
-            maxDepth=5,
-            maxBins=32
-        )
-        model = dt.fit(train_data)
+        # Train or load Decision Tree
+        model_dir = _ensure_dir("models/decision_tree")
+        try:
+            model = DecisionTreeClassificationModel.load(str(model_dir))
+        except Exception:
+            dt = DecisionTreeClassifier(
+                featuresCol="features",
+                labelCol="label",
+                maxDepth=5,
+                maxBins=32
+            )
+            model = dt.fit(train_data)
+            model.write().overwrite().save(str(model_dir))
         
         # Predict
         predictions = model.transform(test_data)
@@ -394,13 +417,18 @@ def ml_pattern_mining_fpgrowth(username=None):
         
         df = spark.createDataFrame(transactions, ["id", "items"])
         
-        # FP-Growth
-        fpGrowth = FPGrowth(
-            itemsCol="items",
-            minSupport=0.1,  # At least 10% of transactions
-            minConfidence=0.3  # At least 30% confidence
-        )
-        model = fpGrowth.fit(df)
+        # FP-Growth (load if available)
+        model_dir = _ensure_dir("models/fpgrowth")
+        try:
+            model = FPGrowthModel.load(str(model_dir))
+        except Exception:
+            fpGrowth = FPGrowth(
+                itemsCol="items",
+                minSupport=0.1,  # At least 10% of transactions
+                minConfidence=0.3  # At least 30% confidence
+            )
+            model = fpGrowth.fit(df)
+            model.write().overwrite().save(str(model_dir))
         
         # Get frequent itemsets
         freq_itemsets = model.freqItemsets.collect()
@@ -555,14 +583,19 @@ def ml_purchase_prediction_logistic(username=None):
         # Split data
         train_data, test_data = df_features.randomSplit([0.7, 0.3], seed=42)
         
-        # Train Logistic Regression
-        lr = LogisticRegression(
-            featuresCol="features",
-            labelCol="label",
-            maxIter=100,
-            regParam=0.01
-        )
-        model = lr.fit(train_data)
+        # Train or load Logistic Regression
+        model_dir = _ensure_dir("models/logistic_regression")
+        try:
+            model = LogisticRegressionModel.load(str(model_dir))
+        except Exception:
+            lr = LogisticRegression(
+                featuresCol="features",
+                labelCol="label",
+                maxIter=100,
+                regParam=0.01
+            )
+            model = lr.fit(train_data)
+            model.write().overwrite().save(str(model_dir))
         
         # Predict
         predictions = model.transform(test_data)

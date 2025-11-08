@@ -27,6 +27,9 @@ async def get_seo_analysis(username: Optional[str] = None):
     """
     try:
         from app.spark.seo_analytics import analyze_traffic_sources
+        # Handle 'undefined' username from frontend
+        if username and username.lower() == 'undefined':
+            username = None
         result = analyze_traffic_sources(username=username)
         return result
     except Exception as e:
@@ -44,6 +47,9 @@ async def get_cart_abandonment(username: Optional[str] = None):
     """
     try:
         from app.spark.spark_cart_analytics import analyze_cart_abandonment
+        # Handle 'undefined' username from frontend
+        if username and username.lower() == 'undefined':
+            username = None
         result = analyze_cart_abandonment(username=username)
         return result
     except Exception as e:
@@ -61,6 +67,9 @@ async def get_retention_analysis(username: Optional[str] = None):
     """
     try:
         from app.spark.spark_retention_analytics import analyze_cohort_retention
+        # Handle 'undefined' username from frontend
+        if username and username.lower() == 'undefined':
+            username = None
         result = analyze_cohort_retention(username=username)
         return result
     except Exception as e:
@@ -78,6 +87,9 @@ async def get_customer_journey(username: Optional[str] = None):
     """
     try:
         from app.spark.spark_journey_analytics import analyze_customer_journey
+        # Handle 'undefined' username from frontend
+        if username and username.lower() == 'undefined':
+            username = None
         result = analyze_customer_journey(username=username)
         return result
     except Exception as e:
@@ -97,7 +109,11 @@ async def get_product_recommendations(
     """
     try:
         from app.spark.recommendation_als import ml_product_recommendations_als
-        result = ml_product_recommendations_als(username=username, top_n=top_n)
+        # Handle 'undefined' username from frontend
+        if username and username.lower() == 'undefined':
+            result = ml_product_recommendations_als(username=None, top_n=top_n)
+        else:
+            result = ml_product_recommendations_als(username=username, top_n=top_n)
         return result
     except Exception as e:
         traceback.print_exc()
@@ -131,6 +147,9 @@ async def get_user_segmentation(username: Optional[str] = None):
     """
     try:
         from app.spark.ml import ml_user_segmentation_kmeans
+        # Handle 'undefined' username from frontend
+        if username and username.lower() == 'undefined':
+            username = None
         result = ml_user_segmentation_kmeans(username=username)
         return result
     except Exception as e:
@@ -147,6 +166,9 @@ async def get_conversion_prediction(username: Optional[str] = None):
     """
     try:
         from app.spark.ml import ml_conversion_prediction_tree
+        # Handle 'undefined' username from frontend
+        if username and username.lower() == 'undefined':
+            username = None
         result = ml_conversion_prediction_tree(username=username)
         return result
     except Exception as e:
@@ -163,6 +185,9 @@ async def get_purchase_probability(username: Optional[str] = None):
     """
     try:
         from app.spark.ml import ml_purchase_prediction_logistic
+        # Handle 'undefined' username from frontend
+        if username and username.lower() == 'undefined':
+            username = None
         result = ml_purchase_prediction_logistic(username=username)
         return result
     except Exception as e:
@@ -179,6 +204,9 @@ async def get_pattern_mining(username: Optional[str] = None):
     """
     try:
         from app.spark.ml import ml_pattern_mining_fpgrowth
+        # Handle 'undefined' username from frontend
+        if username and username.lower() == 'undefined':
+            username = None
         result = ml_pattern_mining_fpgrowth(username=username)
         return result
     except Exception as e:
@@ -193,6 +221,10 @@ async def run_comprehensive_analysis(request: AnalyticsRequest):
     Returns combined results from requested modules
     """
     try:
+        # Handle 'undefined' username from frontend
+        if request.username and request.username.lower() == 'undefined':
+            request.username = None
+
         results = {
             "username": request.username,
             "modules_requested": request.modules,

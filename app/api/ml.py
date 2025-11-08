@@ -21,7 +21,7 @@ class MLRequest(BaseModel):
 async def run_kmeans(request: MLRequest, current_user: dict = Depends(get_current_user)):
     """Run K-Means user segmentation"""
     try:
-        from spark_ml import ml_user_segmentation_kmeans
+        from app.spark.ml import ml_user_segmentation_kmeans
         
         # Run in thread pool to avoid blocking
         loop = asyncio.get_event_loop()
@@ -46,7 +46,7 @@ async def run_kmeans(request: MLRequest, current_user: dict = Depends(get_curren
 async def run_decision_tree(request: MLRequest, current_user: dict = Depends(get_current_user)):
     """Run Decision Tree conversion prediction"""
     try:
-        from spark_ml import ml_conversion_prediction_tree
+        from app.spark.ml import ml_conversion_prediction_tree
         
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
@@ -70,7 +70,7 @@ async def run_decision_tree(request: MLRequest, current_user: dict = Depends(get
 async def run_fpgrowth(request: MLRequest, current_user: dict = Depends(get_current_user)):
     """Run FP-Growth pattern mining"""
     try:
-        from spark_ml import ml_pattern_mining_fpgrowth
+        from app.spark.ml import ml_pattern_mining_fpgrowth
         
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
@@ -94,7 +94,7 @@ async def run_fpgrowth(request: MLRequest, current_user: dict = Depends(get_curr
 async def run_logistic_regression(request: MLRequest, current_user: dict = Depends(get_current_user)):
     """Run Logistic Regression purchase prediction"""
     try:
-        from spark_ml import ml_purchase_prediction_logistic
+        from app.spark.ml import ml_purchase_prediction_logistic
         
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(

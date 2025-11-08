@@ -898,7 +898,8 @@ const styles = `
 
 // Create LLM Analysis Section
 function createLLMSection(analysis) {
-  if (!analysis.openrouter_output) return null;
+  const llm = analysis.llm_insights || analysis.openrouter_output;
+  if (!llm) return null;
   
   const section = document.createElement('div');
   section.className = 'analysis-section llm-analysis-section';
@@ -913,7 +914,7 @@ function createLLMSection(analysis) {
   llmContainer.className = 'llm-container';
   
   // Use the new llmDisplay module
-  displayLLMAnalysis(analysis.openrouter_output, llmContainer);
+  displayLLMAnalysis(llm, llmContainer);
   
   section.appendChild(llmContainer);
   return section;

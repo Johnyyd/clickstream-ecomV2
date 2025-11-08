@@ -33,7 +33,10 @@ def get_spark():
 
 
 def load_events_to_spark(spark, limit=None, username=None):
-    """Load events from MongoDB to Spark DataFrame"""
+    """Load events from MongoDB to Spark DataFrame with robust source mapping
+    - Normalizes referrer using properties.referrer, then falls back to utm_source or properties.source
+    - Preserves original properties.source for additional heuristics (e.g., 'ads')
+    """
     try:
         pipeline = []
         
@@ -62,7 +65,19 @@ def load_events_to_spark(spark, limit=None, username=None):
         
         spark_data = []
         for e in events:
-            props = e.get("properties", {})
+            props = e.get("properties", {}) or {}
+            # Normalize referrer and source for SEO attribution
+            referrer = (props.get("referrer") or props.get("utm_source") or "")
+            if isinstance(referrer, str):
+                referrer = referrer.strip().lower()
+            else:
+                referrer = str(referrer)
+            source = props.get("source") or ""
+            if isinstance(source, str):
+                source = source.strip().lower()
+            else:
+                source = str(source)
+
             spark_data.append((
                 str(e.get("_id")),
                 str(e.get("user_id", "")),
@@ -70,9 +85,9 @@ def load_events_to_spark(spark, limit=None, username=None):
                 e.get("timestamp"),
                 str(e.get("page", "")),
                 str(e.get("event_type", "pageview")),
-                str(props.get("referrer", "")),
-                str(props.get("source", "")),
-                str(props.get("category", ""))
+                referrer,
+                source,
+                str((props.get("category") or ""))
             ))
         
         df = spark.createDataFrame(spark_data, [

@@ -17,7 +17,7 @@ def analyze_cart_behavior(events_df, lookback_days=30):
     # Filter relevant events and optimize
     cart_events = optimize_spark_df(
         events_df.filter(
-            F.col("event_type").isin(["add_to_cart", "remove_from_cart", "checkout"])
+            F.col("event_type").isin(["add_to_cart", "remove_from_cart", "checkout", "purchase"])
         )
     )
     
@@ -45,7 +45,7 @@ def analyze_cart_behavior(events_df, lookback_days=30):
     
     # Calculate metrics
     total_carts = cart_sessions.count()
-    completed = cart_sessions.filter(F.col("last_event") == "checkout").count()
+    completed = cart_sessions.filter(F.col("last_event") == "purchase").count()
     
     # Analyze item combinations
     product_combinations = (cart_sessions
@@ -60,7 +60,7 @@ def analyze_cart_behavior(events_df, lookback_days=30):
     # Calculate recovery opportunities
     abandoned_carts = (cart_sessions
         .filter(
-            (F.col("last_event") != "checkout") &
+            (F.col("last_event") != "purchase") &
             (F.col("max_items") > 0)
         )
         .select("session_id", "products")

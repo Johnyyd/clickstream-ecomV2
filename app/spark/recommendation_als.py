@@ -236,6 +236,26 @@ def ml_product_recommendations_als(username=None, top_n=5, weights: dict | None 
         )
         rmse = evaluator.evaluate(predictions)
         logger.info("[ALS] RMSE=%.4f", rmse)
+
+        # Persist model and mappings for reuse
+        try:
+            # Resolve models directory at project root to avoid CWD differences
+            model_dir = _ensure_dir(_resolve_model_dir("models/als"))
+            model.write().overwrite().save(str(model_dir))
+            with open(model_dir / "user_idx_map.json", "w", encoding="utf-8") as f:
+                json.dump(user_idx_map, f)
+            with open(model_dir / "product_idx_map.json", "w", encoding="utf-8") as f:
+                json.dump(product_idx_map, f)
+            with open(model_dir / "metadata.json", "w", encoding="utf-8") as f:
+                json.dump({
+                    "rmse": float(rmse),
+                    "users": len(user_idx_map),
+                    "products": len(product_idx_map),
+                    "interactions": len(interactions)
+                }, f)
+            logger.info("[ALS] Model and mappings saved to %s", model_dir)
+        except Exception as e:
+            logger.warning("[ALS] Failed to persist model: %s", e)
         
         # Generate top-N recommendations for each user
         logger.info("[ALS] Generating top-%d recommendations for all users", top_n)
@@ -360,6 +380,16 @@ def _ensure_dir(path: str | Path) -> Path:
     p.mkdir(parents=True, exist_ok=True)
     return p
 
+def _project_root() -> Path:
+    # app/spark/recommendation_als.py -> project root is two levels up from app
+    return Path(__file__).resolve().parents[2]
+
+def _resolve_model_dir(model_dir: str | Path) -> Path:
+    p = Path(model_dir)
+    if p.is_absolute():
+        return p
+    return _project_root() / p
+
 def train_and_save_als(model_dir: str = "models/als", username: str | None = None, top_n: int = 5, weights: dict | None = None):
     """
     Train ALS with current data and persist the model and index mappings for fast reuse.
@@ -423,7 +453,7 @@ def train_and_save_als(model_dir: str = "models/als", username: str | None = Non
         logger.info("[ALS] Persisted model RMSE=%.4f", rmse)
 
         # Save model and mappings
-        model_path = _ensure_dir(model_dir)
+        model_path = _ensure_dir(_resolve_model_dir(model_dir))
         model.write().overwrite().save(str(model_path))
         logger.info("[ALS] Model saved to %s", model_path)
         with open(model_path / "user_idx_map.json", "w", encoding="utf-8") as f:
@@ -441,11 +471,11 @@ def train_and_save_als(model_dir: str = "models/als", username: str | None = Non
         return {"error": str(e)}
 
 
-def recommend_from_saved(username: str | None = None, top_n: int = 5, model_dir: str = "models/als"):
+def recommend_from_saved(username: str | None = None, top_n: int = 10, model_dir: str = "models/als"):
     """Load saved ALS model and mappings to generate recommendations quickly."""
     try:
         spark = get_spark()
-        model_path = Path(model_dir)
+        model_path = _resolve_model_dir(model_dir)
         if not model_path.exists():
             return {"error": f"Model dir not found: {model_dir}"}
         model = ALSModel.load(str(model_path))

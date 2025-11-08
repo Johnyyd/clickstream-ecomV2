@@ -25,7 +25,10 @@ def get_spark():
 
 
 def load_events_to_spark(spark, username=None):
-    """Load events from MongoDB"""
+    """Load events from MongoDB with referrer/source normalization for robust analytics
+    - Adds normalized referrer (properties.referrer -> utm_source -> properties.source)
+    - Keeps original source for additional heuristics. Extra columns are ignored by existing queries.
+    """
     try:
         pipeline = []
         if username:
@@ -50,14 +53,27 @@ def load_events_to_spark(spark, username=None):
         
         spark_data = []
         for e in events:
+            props = e.get("properties", {}) or {}
+            ref = (props.get("referrer") or props.get("utm_source") or "")
+            if isinstance(ref, str):
+                ref = ref.strip().lower()
+            else:
+                ref = str(ref)
+            src = props.get("source") or ""
+            if isinstance(src, str):
+                src = src.strip().lower()
+            else:
+                src = str(src)
             spark_data.append((
                 str(e.get("user_id", "")),
                 str(e.get("session_id", "")),
                 e.get("timestamp"),
-                str(e.get("event_type", "pageview"))
+                str(e.get("event_type", "pageview")),
+                ref,
+                src,
             ))
         
-        df = spark.createDataFrame(spark_data, ["user_id", "session_id", "timestamp", "event_type"])
+        df = spark.createDataFrame(spark_data, ["user_id", "session_id", "timestamp", "event_type", "referrer", "source"])
         return df
         
     except Exception as e:
@@ -98,6 +114,21 @@ def analyze_cohort_retention(username=None):
         logger.info("[Retention] Events DF count=%d", df_events.count())
         
         df_events.createOrReplaceTempView("events")
+        # Enrich with consistent traffic_source for optional source KPIs
+        spark.sql("""
+            CREATE OR REPLACE TEMP VIEW events_enriched AS
+            SELECT 
+                *,
+                CASE 
+                    WHEN referrer LIKE '%google%' OR referrer LIKE '%bing%' THEN 'organic_search'
+                    WHEN referrer LIKE '%facebook%' OR referrer LIKE '%twitter%' OR referrer LIKE '%instagram%' THEN 'social'
+                    WHEN referrer LIKE '%ads%' OR source = 'ads' THEN 'paid'
+                    WHEN referrer = '' OR referrer = 'direct' THEN 'direct'
+                    WHEN referrer != '' THEN 'referral'
+                    ELSE 'unknown'
+                END AS traffic_source
+            FROM events
+        """)
         
         # Create user cohorts
         user_data = []
@@ -184,6 +215,19 @@ def analyze_cohort_retention(username=None):
             )
             GROUP BY segment
         """).collect()
+
+        # Optional: Engagement by traffic source
+        logger.info("[Retention] Computing engagement by source (optional) ...")
+        engagement_by_source = spark.sql("""
+            SELECT 
+                traffic_source,
+                COUNT(*) as events,
+                COUNT(DISTINCT session_id) as sessions,
+                COUNT(DISTINCT user_id) as unique_users
+            FROM events_enriched
+            GROUP BY traffic_source
+            ORDER BY sessions DESC
+        """).collect()
         
         logger.info("[Retention] Done. Cohorts=%d", len(cohorts))
         return {
@@ -196,6 +240,15 @@ def analyze_cohort_retention(username=None):
                     "user_count": int(row["user_count"])
                 }
                 for row in user_segments
+            ],
+            "engagement_by_source": [
+                {
+                    "source": row["traffic_source"],
+                    "events": int(row["events"]),
+                    "sessions": int(row["sessions"]),
+                    "unique_users": int(row["unique_users"]),
+                }
+                for row in engagement_by_source
             ]
         }
         

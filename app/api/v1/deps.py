@@ -12,6 +12,7 @@ from app.core.openrouter import openrouter_client
 from app.models.user import User
 
 from .common import AuthError, get_token_header, validate_token
+from app.services.auth import get_user_by_token as resolve_user_by_session_token
 
 security = HTTPBearer()
 
@@ -43,14 +44,12 @@ async def get_current_user(
     if not valid:
         raise AuthError(f"Invalid token: {error}")
         
-    # Get user from token
+    # Resolve user via session token (stored in sessions collection)
     try:
-        db = await get_db()
-        user = await db.users.get_by_token(token)
+        user = resolve_user_by_session_token(token)
         if not user:
             raise AuthError("User not found")
         return user
-        
     except Exception as e:
         raise AuthError(f"Error getting user: {e}")
         

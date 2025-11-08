@@ -25,7 +25,10 @@ def get_spark():
 
 
 def load_events_to_spark(spark, username=None):
-    """Load events from MongoDB"""
+    """Load events from MongoDB with referrer/source normalization
+    - Adds normalized referrer (properties.referrer -> utm_source -> properties.source)
+    - Keeps original source for heuristics. Extra columns ignored by existing queries.
+    """
     try:
         pipeline = []
         if username:
@@ -50,14 +53,27 @@ def load_events_to_spark(spark, username=None):
         
         spark_data = []
         for e in events:
+            props = e.get("properties", {}) or {}
+            ref = (props.get("referrer") or props.get("utm_source") or "")
+            if isinstance(ref, str):
+                ref = ref.strip().lower()
+            else:
+                ref = str(ref)
+            src = props.get("source") or ""
+            if isinstance(src, str):
+                src = src.strip().lower()
+            else:
+                src = str(src)
             spark_data.append((
                 str(e.get("session_id", "")),
                 e.get("timestamp"),
                 str(e.get("page", "")),
-                str(e.get("event_type", "pageview"))
+                str(e.get("event_type", "pageview")),
+                ref,
+                src,
             ))
         
-        df = spark.createDataFrame(spark_data, ["session_id", "timestamp", "page", "event_type"])
+        df = spark.createDataFrame(spark_data, ["session_id", "timestamp", "page", "event_type", "referrer", "source"])
         return df
         
     except Exception as e:
@@ -86,6 +102,21 @@ def analyze_customer_journey(username=None):
         logger.info("[Journey] Events DF count=%d", df.count())
         
         df.createOrReplaceTempView("events")
+        # Enrich with consistent traffic_source mapping for optional source-based metrics
+        spark.sql("""
+            CREATE OR REPLACE TEMP VIEW events_enriched AS
+            SELECT 
+                *,
+                CASE 
+                    WHEN referrer LIKE '%google%' OR referrer LIKE '%bing%' THEN 'organic_search'
+                    WHEN referrer LIKE '%facebook%' OR referrer LIKE '%twitter%' OR referrer LIKE '%instagram%' THEN 'social'
+                    WHEN referrer LIKE '%ads%' OR source = 'ads' THEN 'paid'
+                    WHEN referrer = '' OR referrer = 'direct' THEN 'direct'
+                    WHEN referrer != '' THEN 'referral'
+                    ELSE 'unknown'
+                END AS traffic_source
+            FROM events
+        """)
         
         # 1. Identify conversion paths (sessions that led to purchase)
         logger.info("[Journey] Computing conversion paths ...")
@@ -203,6 +234,19 @@ def analyze_customer_journey(username=None):
             ORDER BY frequency DESC
             LIMIT 20
         """).collect()
+
+        # 5. Optional: Conversion by Source (using enriched mapping)
+        logger.info("[Journey] Computing conversion by source (optional) ...")
+        conv_by_source = spark.sql("""
+            SELECT 
+                traffic_source,
+                COUNT(DISTINCT session_id) as total_sessions,
+                COUNT(DISTINCT CASE WHEN event_type = 'purchase' THEN session_id END) as conversion_sessions,
+                ROUND(COUNT(DISTINCT CASE WHEN event_type = 'purchase' THEN session_id END) * 100.0 / 
+                      NULLIF(COUNT(DISTINCT session_id), 0), 2) as conversion_rate_pct
+            FROM events_enriched
+            GROUP BY traffic_source
+        """).collect()
         
         logger.info("[Journey] Done. conv_paths=%d, dropoffs=%d", len(conversion_paths), len(dropoff_analysis))
         return {
@@ -235,6 +279,15 @@ def analyze_customer_journey(username=None):
                     "frequency": int(row["frequency"])
                 }
                 for row in page_sequences
+            ],
+            "conversion_by_source": [
+                {
+                    "source": row["traffic_source"],
+                    "total_sessions": int(row["total_sessions"]),
+                    "conversion_sessions": int(row["conversion_sessions"]),
+                    "conversion_rate_pct": float(row["conversion_rate_pct"]) if row["conversion_rate_pct"] is not None else 0.0
+                }
+                for row in conv_by_source
             ]
         }
         

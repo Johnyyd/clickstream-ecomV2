@@ -162,7 +162,22 @@ async def startup():
         logger.error(f"Failed to create indexes: {str(e)}")
 
 # Mount API routes
-app.include_router(api_router, prefix=settings.API_V1_STR)
+app.include_router(api_router)
+
+# Ensure versioned mounts exist explicitly for critical groups
+try:
+    app.include_router(metrics_api.router, prefix="/api/v1/metrics")
+    app.include_router(cart_api.router, prefix="/api/v1/cart")
+    app.include_router(analytics_comprehensive_api.router, prefix="/api/v1/analytics")
+    app.include_router(recommendations_api.router, prefix="/api/v1/recommendations")
+    app.include_router(products_api.router, prefix="/api/v1/products")
+    app.include_router(analysis_api.router, prefix="/api/v1/analyses")
+    app.include_router(ml_api.router, prefix="/api/v1/ml")
+    app.include_router(auth_api.router, prefix="/api/v1/auth")
+    app.include_router(events_api.router, prefix="/api/v1/events")
+except Exception:
+    # Best-effort: if any alias import missing, skip
+    pass
 
 # Serve static files
 static_path = Path(__file__).parent.parent / "static"
@@ -219,23 +234,3 @@ def _product_dynamic(pid: str):  # noqa: ARG001
 @app.get("/p/{slug}")
 def _product_slug(slug: str):  # noqa: ARG001
     return _serve_static_file("product.html")
-
-# Legacy routers (to be migrated to v1)
-prefixed_routers = [
-    ("/api", events_api.router),
-    ("/api", analyses_api.router),
-    ("/api", auth_api.router),
-    ("/api", products_api.router),
-    ("/api", analysis_api.router),
-    ("/api", openrouter_api.router),
-    ("/api", recommendations_api.router),
-    ("/api", metrics_api.router),
-    ("/api", cart_api.router),
-    ("/api", ml_api.router),
-    ("/api", analytics_comprehensive_api.router)
-]
-
-for prefix, router in prefixed_routers:
-    app.include_router(router, prefix=prefix)
-
-

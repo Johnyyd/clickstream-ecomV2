@@ -51,3 +51,43 @@ class SparkManager:
 
 # Global Spark manager instance            
 spark_manager = SparkManager()
+
+# Backward-compatible helpers expected by spark modules
+def create_spark_session(app_name: str | None = None):
+    """Return a SparkSession. If app_name is provided and a session doesn't exist yet,
+    it will be used when creating the session. If a session already exists, we return it as-is.
+    """
+    # If no session yet and app_name provided, prime builder via accessing property once
+    if not getattr(spark_manager, "_session", None):
+        try:
+            # Build with config and optionally app name
+            builder = SparkSession.builder
+            for key, value in spark_manager.config.get_config().items():
+                builder = builder.config(key, value)
+            if app_name:
+                builder = builder.appName(app_name)
+            spark_manager._session = builder.getOrCreate()
+            logger.info("Created Spark session%s", f" (appName={app_name})" if app_name else "")
+        except Exception as e:
+            logger.error(f"Failed to create Spark session: {e}")
+            raise
+    return spark_manager.get_session()
+
+
+def optimize_spark_df(df):
+    """Lightweight dataframe optimization helper used by analytics modules.
+    Safe no-op if not applicable.
+    """
+    try:
+        # Common light optimizations
+        df = df.cache()
+        # Avoid many small partitions for local dev
+        try:
+            num_parts = df.rdd.getNumPartitions()
+            if num_parts and num_parts > 8:
+                df = df.coalesce(8)
+        except Exception:
+            pass
+        return df
+    except Exception:
+        return df

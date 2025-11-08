@@ -3,8 +3,10 @@ Spark cart analytics optimized implementation
 """
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
+from datetime import datetime
 
 from app.core.spark import create_spark_session, optimize_spark_df
+from app.core.db_sync import events_col
 
 def analyze_cart_behavior(events_df, lookback_days=30):
     """
@@ -88,3 +90,48 @@ def analyze_cart_behavior(events_df, lookback_days=30):
             for cart in abandoned_carts.collect()
         ]
     }
+
+
+def analyze_cart_abandonment(username: str | None = None, limit: int | None = None):
+    """Backward-compatible wrapper expected by orchestrator.
+    Loads events from MongoDB, constructs a Spark DataFrame, and delegates to analyze_cart_behavior.
+    """
+    try:
+        spark = create_spark_session("cart-analytics")
+        # Build query
+        query = {}
+        if username:
+            try:
+                user = events_col().database.users.find_one({"username": username})
+                if user:
+                    query["user_id"] = user.get("_id")
+            except Exception:
+                pass
+        cur = events_col().find(query, projection={"session_id":1, "event_type":1, "timestamp":1, "properties":1}).sort("timestamp", 1)
+        if limit:
+            try:
+                cur = cur.limit(int(limit))
+            except Exception:
+                pass
+        docs = list(cur)
+        if not docs:
+            return {
+                "cart_metrics": {"abandonment_rate": 0.0, "avg_items": 0.0, "total_carts": 0, "completed_carts": 0},
+                "product_combinations": [],
+                "abandoned_carts": []
+            }
+        rows = []
+        for d in docs:
+            ts = d.get("timestamp")
+            if isinstance(ts, (int, float)):
+                ts = datetime.utcfromtimestamp(ts)
+            rows.append((
+                d.get("session_id", ""),
+                d.get("event_type", ""),
+                ts,
+                d.get("properties", {})
+            ))
+        df = spark.createDataFrame(rows, ["session_id", "event_type", "timestamp", "properties"])
+        return analyze_cart_behavior(df)
+    except Exception as e:
+        return {"error": str(e)}

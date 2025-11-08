@@ -260,3 +260,10 @@ def analyze_traffic_sources(username=None):
         logger.exception("[SEO] Error: %s", e)
         traceback.print_exc()
         return {"error": str(e)}
+
+
+def analyze_seo_performance(username=None, limit=None):
+    """Backward-compatible alias expected by orchestrator.
+    Delegates to analyze_traffic_sources. The current implementation ignores `limit`.
+    """
+    return analyze_traffic_sources(username=username)

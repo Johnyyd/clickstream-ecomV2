@@ -7,6 +7,7 @@ Follows a hierarchical structure:
 3. Composite analysis models
 4. Comprehensive analysis model
 """
+from __future__ import annotations
 from typing import Any, Dict, List, Optional, Union
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field, validator
@@ -29,6 +30,63 @@ class Token(BaseModel):
             datetime: lambda dt: dt.isoformat()
         }
 
+# Final ComprehensiveAnalysis defined after JourneyAnalysis to avoid forward-ref issues
+class OverallMetrics(BaseModel):
+    """High level metrics across all analyses"""
+    total_users: int
+    total_sessions: int
+    total_conversions: int
+    total_revenue: float
+    avg_order_value: float
+    conversion_rate: float
+    bounce_rate: float
+
+class TrendMetrics(BaseModel):
+    """Trend analysis over time"""
+    period: str
+    metrics: List[Dict[str, Any]]
+    growth_rate: Dict[str, float]
+    trending_products: List[Dict[str, Any]]
+    trending_categories: List[Dict[str, Any]]
+
+class UserSegmentMetrics(BaseModel):
+    """Metrics broken down by user segment"""
+    segment_name: str
+    user_count: int
+    conversion_rate: float
+    avg_order_value: float
+    lifetime_value: float
+    retention_rate: float
+    engagement_score: float
+
+class ComprehensiveAnalysis(BaseModel):
+    """Complete analytics overview combining all analyses"""
+    overall_metrics: OverallMetrics
+    trends: TrendMetrics
+    segments: List[UserSegmentMetrics]
+    journey_analysis: JourneyAnalysis
+    session_analysis: SessionAnalysis
+    cart_analysis: CartAnalysis
+    retention_analysis: RetentionAnalysis
+    seo_analysis: SEOAnalysis
+    recommendations: List[str]
+    alerts: List[Dict[str, Any]]
+    start_time: datetime = Field(default_factory=datetime.utcnow)
+    end_time: Optional[datetime] = None
+    duration: Optional[float] = None
+
+    class Config:
+        json_encoders = {
+            datetime: lambda dt: dt.isoformat(),
+            ObjectId: str
+        }
+
+    @validator('duration', pre=True)
+    def calculate_duration(cls, v, values):
+        if 'start_time' in values and 'end_time' in values and values['end_time']:
+            return (values['end_time'] - values['start_time']).total_seconds()
+        return v
+
 # Basic Metric Models
 class TimeMetrics(BaseModel):
     """Time-based metrics shared across analyses"""
@@ -38,15 +96,6 @@ class TimeMetrics(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 # Basic E-commerce Models
-class BusinessMetrics(BaseModel):
-    """Core business performance metrics"""
-    revenue: float
-    orders: int
-    average_order_value: float
-    conversion_rate: float
-    customer_acquisition_cost: Optional[float] = None
-    customer_lifetime_value: Optional[float] = None
-    roi: Optional[float] = None
 
 class UserBehaviorMetrics(BaseModel):
     """Aggregate user behavior metrics"""
@@ -260,19 +309,7 @@ class JourneyMetrics(BaseModel):
     popular_paths: List[Dict[str, Any]]
     drop_off_points: List[Dict[str, Any]]
 
-class JourneyAnalysis(BaseModel):
-    """Complete journey analysis response"""
-    metrics: JourneyMetrics
-    paths: List[JourneyPath]
-    segments: List[Dict[str, Any]]
-    conversion_paths: List[Dict[str, Any]]
-    recommendations: List[str]
-
-    class Config:
-        json_encoders = {
-            datetime: lambda dt: dt.isoformat(),
-            ObjectId: str
-        }
+ 
 
 # Session Analysis Models
 class SessionEvent(BaseModel):
@@ -352,7 +389,10 @@ class CartAnalysis(BaseModel):
     high_abandonment_categories: List[Dict[str, Any]]
     recommendations: List[str]
     recovery_opportunities: List[Dict[str, Any]]
-
+    # Optional fields used by SPA
+    channels: Dict[str, Any] = Field(default_factory=dict)
+    size_distribution: List[Dict[str, Any]] = Field(default_factory=list)
+    
     class Config:
         json_encoders = {
             datetime: lambda dt: dt.isoformat()
@@ -375,20 +415,21 @@ class SearchKeywordMetrics(BaseModel):
     """Analytics for search keywords"""
     keyword: str
     search_volume: int
-    position: float
-    clicks: int
-    impressions: int
-    ctr: float
+    click_through_rate: float
     conversion_rate: Optional[float] = None
+    bounce_rate: float
+    avg_position: Optional[float] = None
+    related_pages: List[str]
 
 class ContentPerformance(BaseModel):
     """Content performance metrics"""
+    url: str
     content_type: str
-    engagement_rate: float
-    shares: int
-    comments: int
-    avg_time_engaged: float
-    conversion_contribution: Optional[float] = None
+    engagement_score: float
+    sharing_metrics: Dict[str, int]
+    readability_score: Optional[float] = None
+    avg_scroll_depth: Optional[float] = None
+    content_gaps: List[str]
 
 class SEOAnalysis(BaseModel):
     """Complete SEO analysis response"""
@@ -400,7 +441,11 @@ class SEOAnalysis(BaseModel):
     opportunity_keywords: List[Dict[str, Any]]
     recommendations: List[str]
     competitive_gaps: List[Dict[str, Any]]
-
+    # Optional fields used by SPA charts
+    sources: Dict[str, Any] = Field(default_factory=dict)
+    timeseries: List[Dict[str, Any]] = Field(default_factory=list)
+    traffic_trend: Dict[str, Any] = Field(default_factory=dict)
+    
     class Config:
         json_encoders = {
             datetime: lambda dt: dt.isoformat()
@@ -449,64 +494,8 @@ class RetentionAnalysis(BaseModel):
         json_encoders = {
             datetime: lambda dt: dt.isoformat()
         }
-        
-# Comprehensive Analytics Models
-class OverallMetrics(BaseModel):
-    """High level metrics across all analyses"""
-    total_users: int
-    total_sessions: int
-    total_conversions: int
-    total_revenue: float
-    avg_order_value: float
-    conversion_rate: float
-    bounce_rate: float
-    
-class TrendMetrics(BaseModel):
-    """Trend analysis over time"""
-    period: str  # daily/weekly/monthly
-    metrics: List[Dict[str, Any]]
-    growth_rate: Dict[str, float]
-    trending_products: List[Dict[str, Any]]
-    trending_categories: List[Dict[str, Any]]
 
-class UserSegmentMetrics(BaseModel):
-    """Metrics broken down by user segment"""
-    segment_name: str
-    user_count: int
-    conversion_rate: float
-    avg_order_value: float
-    lifetime_value: float
-    retention_rate: float
-    engagement_score: float
-
-class ComprehensiveAnalysis(BaseModel):
-    """Complete analytics overview combining all analyses"""
-    overall_metrics: OverallMetrics
-    trends: TrendMetrics
-    segments: List[UserSegmentMetrics]
-    journey_analysis: JourneyAnalysis
-    session_analysis: SessionAnalysis 
-    cart_analysis: CartAnalysis
-    retention_analysis: RetentionAnalysis
-    seo_analysis: SEOAnalysis
-    recommendations: List[str]
-    alerts: List[Dict[str, Any]]
-    start_time: datetime = Field(default_factory=datetime.utcnow)
-    end_time: Optional[datetime] = None
-    duration: Optional[float] = None
-    
-    class Config:
-        json_encoders = {
-            datetime: lambda dt: dt.isoformat(),
-            ObjectId: str
-        }
-
-    @validator('duration', pre=True)
-    def calculate_duration(cls, v, values):
-        if 'start_time' in values and 'end_time' in values and values['end_time']:
-            return (values['end_time'] - values['start_time']).total_seconds()
-        return v
-
+# Performance Metrics
 class PerformanceMetrics(BaseModel):
     """Performance metrics shared across analyses"""
     total_count: int
@@ -520,46 +509,17 @@ class PerformanceMetrics(BaseModel):
             return values['success_count'] / values['total_count']
         return 0.0
 
-class CartItem(BaseModel):
-    """Individual item in cart analysis"""
-    product_id: str
-    product_name: str
-    quantity: int
-    price: float
-    category: str
-    abandoned: bool = False
-    time_in_cart: Optional[float] = None
+# Business Metrics model used by metrics endpoints
+class BusinessMetrics(BaseModel):
+    """Core business KPIs"""
+    revenue: float = 0.0
+    orders: int = 0
+    average_order_value: float = 0.0
+    conversion_rate: float = 0.0
+    total_sessions: Optional[int] = None
+    total_users: Optional[int] = None
 
-class CartMetrics(BaseModel):
-    """Cart-level metrics"""
-    total_carts: int
-    active_carts: int
-    abandoned_carts: int
-    abandonment_rate: float
-    avg_items_per_cart: float
-    avg_cart_value: float
-    total_cart_value: float
-
-class CartAbandonmentReason(BaseModel):
-    """Analysis of cart abandonment reasons"""
-    reason: str
-    count: int
-    percentage: float
-    affected_products: List[str]
-
-class CartAnalysis(BaseModel):
-    """Complete cart analysis response"""
-    metrics: CartMetrics
-    items: List[CartItem]
-    abandonment_reasons: List[CartAbandonmentReason]
-    high_abandonment_categories: List[Dict[str, Any]]
-    recommendations: List[str]
-    recovery_opportunities: List[Dict[str, Any]]
-
-    class Config:
-        json_encoders = {
-            datetime: lambda dt: dt.isoformat()
-        }
+## Remove duplicate Cart models (already defined earlier with SPA fields)
 
 class CohortMetrics(BaseModel):
     """Metrics for a specific user cohort"""
@@ -604,63 +564,7 @@ class RetentionAnalysis(BaseModel):
             datetime: lambda dt: dt.isoformat()
         }
 
-class PageMetrics(BaseModel):
-    """SEO metrics for a specific page"""
-    url: str
-    title: Optional[str] = None
-    views: int
-    unique_visitors: int
-    avg_time_on_page: float
-    bounce_rate: float
-    exit_rate: float
-    conversion_rate: Optional[float] = None
-    organic_traffic: Optional[int] = None
-
-class SearchKeywordMetrics(BaseModel):
-    """Analytics for search keywords"""
-    keyword: str
-    search_volume: int
-    click_through_rate: float
-    conversion_rate: Optional[float] = None
-    bounce_rate: float
-    avg_position: Optional[float] = None
-    related_pages: List[str]
-
-class ContentPerformance(BaseModel):
-    """Content performance metrics"""
-    url: str
-    content_type: str
-    engagement_score: float
-    sharing_metrics: Dict[str, int]
-    readability_score: Optional[float] = None
-    avg_scroll_depth: Optional[float] = None
-    content_gaps: List[str]
-
-class SEOAnalysis(BaseModel):
-    """Complete SEO analysis response"""
-    site_metrics: Dict[str, Any]  # Overall site metrics
-    top_pages: List[PageMetrics]
-    top_keywords: List[SearchKeywordMetrics]
-    content_performance: List[ContentPerformance]
-    technical_issues: List[Dict[str, Any]]
-    opportunity_keywords: List[Dict[str, Any]]
-    recommendations: List[str]
-    competitive_gaps: List[Dict[str, Any]]
-
-    class Config:
-        json_encoders = {
-            datetime: lambda dt: dt.isoformat()
-        }
-
-class BusinessMetrics(BaseModel):
-    """Core business performance metrics"""
-    revenue: float
-    orders: int
-    average_order_value: float
-    conversion_rate: float
-    customer_acquisition_cost: Optional[float] = None
-    customer_lifetime_value: Optional[float] = None
-    roi: Optional[float] = None
+## Remove duplicate SEO submodels block (already defined earlier)
 
 class UserBehaviorMetrics(BaseModel):
     """Aggregate user behavior metrics"""
@@ -680,47 +584,9 @@ class TrendAnalysis(BaseModel):
     seasonality: Optional[Dict[str, Any]] = None
     anomalies: List[Dict[str, Any]]
 
-class ComprehensiveAnalysis(BaseModel):
-    """Complete e-commerce analytics response combining all analyses"""
-    # Overall Business Health
-    business_metrics: BusinessMetrics
-    user_behavior: UserBehaviorMetrics
-    trends: List[TrendAnalysis]
-    
-    # Detailed Analytics
-    journey_analysis: JourneyAnalysis
-    cart_analysis: CartAnalysis
-    retention_analysis: RetentionAnalysis
-    seo_analysis: SEOAnalysis
-    
-    # Insights and Actions
-    key_insights: List[str]
-    alerts: List[Dict[str, Any]]
-    opportunities: List[Dict[str, Any]]
-    recommendations: List[Dict[str, Any]]
-    
-    # AI-Generated Analysis
-    predictive_metrics: Dict[str, Any]
-    customer_segments: List[Dict[str, Any]]
-    product_insights: List[Dict[str, Any]]
-    
-    # Metadata
-    analysis_timestamp: datetime
-    data_freshness: Dict[str, datetime]
-    analysis_period: Dict[str, datetime]
+## Remove alternate ComprehensiveAnalysis block to avoid forward-ref issues
 
-    class Config:
-        json_encoders = {
-            datetime: lambda dt: dt.isoformat()
-        }
-
-class SessionMetrics(BaseModel):
-    """Session-level analytics metrics"""
-    total_sessions: int
-    avg_session_duration: float
-    bounce_rate: float
-    pages_per_session: float
-    conversion_rate: Optional[float] = None
+## Remove duplicate SessionMetrics (already defined earlier)
 
 class PathSegment(BaseModel):
     """Single segment in a user journey path"""
@@ -756,6 +622,9 @@ class JourneyAnalysis(BaseModel):
     popular_entry_points: List[Dict[str, Any]]
     popular_exit_points: List[Dict[str, Any]]
     recommendations: List[str]
+    # Optional fields used by SPA
+    funnel: Optional[Dict[str, Any]] = None
+    paths: Optional[Dict[str, Any]] = None
     
     class Config:
         json_encoders = {

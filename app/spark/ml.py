@@ -357,7 +357,7 @@ def ml_conversion_prediction_tree(username=None):
         return {"error": str(e)}
 
 
-def ml_pattern_mining_fpgrowth(username=None):
+def ml_pattern_mining_fpgrowth(username=None, limit=None, **kwargs):
     """
     FP-Growth: Tìm frequent patterns trong page navigation
     
@@ -643,3 +643,18 @@ def ml_purchase_prediction_logistic(username=None):
         print(f"Error in Logistic Regression: {e}")
         traceback.print_exc()
         return {"error": str(e)}
+
+
+# Backward-compatible aliases for orchestrator imports
+def ml_kmeans_clustering(username=None, limit=None, **kwargs):
+    """Alias to maintain compatibility with orchestrator import name.
+    Accepts and ignores 'limit' and extra kwargs.
+    """
+    return ml_user_segmentation_kmeans(username)
+
+
+def ml_decision_tree(username=None, limit=None, **kwargs):
+    """Alias to maintain compatibility with orchestrator import name.
+    Accepts and ignores 'limit' and extra kwargs.
+    """
+    return ml_conversion_prediction_tree(username)

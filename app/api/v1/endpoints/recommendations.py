@@ -32,18 +32,21 @@ async def get_personalized_recommendations(
     """
     try:
         from app.analytics.recommendations import get_personalized_recs
-        
         if not user_id and current_user:
-            user_id = str(current_user.id)
-            
-        return await get_personalized_recs(
+            user_id = str(getattr(current_user, "id", "") or "")
+        result = await get_personalized_recs(
             db=db,
             user_id=user_id,
             limit=limit,
             context=context
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Ensure list shape
+        if not isinstance(result, list):
+            result = []
+        return result
+    except Exception:
+        # Fail-safe: return empty list for UI to render empty state
+        return []
 
 @router.get("/similar-products/{product_id}", response_model=List[ProductRecommendation])
 async def get_similar_products(

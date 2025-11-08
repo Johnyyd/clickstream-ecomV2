@@ -33,7 +33,7 @@ from app.core.cache import cache
 from app.core.config import settings
 from app.core.database import db_manager
 
-@router.get("/journey", response_model=JourneyAnalysis)
+@router.get("/journey")
 async def analyze_user_journey(
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
@@ -49,17 +49,17 @@ async def analyze_user_journey(
     if not end_date:
         end_date = datetime.now()
         
-    key = f"v1:analytics:journey:{start_date.isoformat()}:{end_date.isoformat()}:{user_id or 'all'}"
+    key = f"v3:analytics:journey:{start_date.isoformat()}:{end_date.isoformat()}:{user_id or 'all'}"
     cached = cache.get(key)
     if cached is not None:
         return cached
     result = await get_user_journey_analysis(
         db, start_date, end_date, user_id
     )
-    cache.set(key, result, settings.CACHE_TTL)
+    cache.set(key, result, getattr(settings, "CACHE_TTL", 3600))
     return result
 
-@router.get("/cart", response_model=CartAnalysis)
+@router.get("/cart")
 async def analyze_cart_behavior(
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
@@ -74,15 +74,15 @@ async def analyze_cart_behavior(
     if not end_date:
         end_date = datetime.now()
         
-    key = f"v1:analytics:cart:{start_date.isoformat()}:{end_date.isoformat()}"
+    key = f"v3:analytics:cart:{start_date.isoformat()}:{end_date.isoformat()}"
     cached = cache.get(key)
     if cached is not None:
         return cached
     result = await get_cart_analysis(db, start_date, end_date)
-    cache.set(key, result, settings.CACHE_TTL)
+    cache.set(key, result, getattr(settings, 'CACHE_TTL', 3600))
     return result
 
-@router.get("/retention", response_model=RetentionAnalysis)
+@router.get("/retention")
 async def analyze_user_retention(
     start_date: Optional[datetime] = None,
     cohort_size: Optional[int] = 7,
@@ -95,17 +95,17 @@ async def analyze_user_retention(
     if not start_date:
         start_date = datetime.now() - timedelta(days=90)
         
-    key = f"v1:analytics:retention:{start_date.isoformat()}:{cohort_size}"
+    key = f"v3:analytics:retention:{start_date.isoformat()}:{cohort_size}"
     cached = cache.get(key)
     if cached is not None:
         return cached
     result = await get_retention_analysis(
         db, start_date, cohort_size
     )
-    cache.set(key, result, settings.CACHE_TTL)
+    cache.set(key, result, getattr(settings, 'CACHE_TTL', 3600))
     return result
 
-@router.get("/seo", response_model=SEOAnalysis)
+@router.get("/seo")
 async def analyze_seo_performance(
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
@@ -120,15 +120,15 @@ async def analyze_seo_performance(
     if not end_date:
         end_date = datetime.now()
         
-    key = f"v1:analytics:seo:{start_date.isoformat()}:{end_date.isoformat()}"
+    key = f"v3:analytics:seo:{start_date.isoformat()}:{end_date.isoformat()}"
     cached = cache.get(key)
     if cached is not None:
         return cached
     result = await get_seo_analysis(db, start_date, end_date)
-    cache.set(key, result, settings.CACHE_TTL)
+    cache.set(key, result, getattr(settings, 'CACHE_TTL', 3600))
     return result
 
-@router.get("/comprehensive", response_model=ComprehensiveAnalysis)
+@router.get("/comprehensive")
 async def get_comprehensive_analytics(
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
@@ -143,14 +143,14 @@ async def get_comprehensive_analytics(
     if not end_date:
         end_date = datetime.now()
         
-    key = f"v1:analytics:comprehensive:{start_date.isoformat()}:{end_date.isoformat()}"
+    key = f"v3:analytics:comprehensive:{start_date.isoformat()}:{end_date.isoformat()}"
     cached = cache.get(key)
     if cached is not None:
         return cached
     result = await get_comprehensive_analysis(
         db, start_date, end_date
     )
-    cache.set(key, result, settings.CACHE_TTL)
+    cache.set(key, result, getattr(settings, 'CACHE_TTL', 3600))
     return result
 
 @router.get("/orchestrator/status")

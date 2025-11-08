@@ -2,6 +2,7 @@
 Event Ingestion API
 """
 from fastapi import APIRouter, Depends, Query
+from bson import ObjectId
 from typing import List, Optional
 
 from app.models.event import Event, EventBatch
@@ -10,6 +11,15 @@ from ..deps import get_db, get_optional_user
 from ..models import EventResponse
 
 router = APIRouter()
+
+def _clean_doc(d: dict) -> dict:
+    out = {}
+    for k, v in d.items():
+        if isinstance(v, ObjectId):
+            out[k] = str(v)
+        else:
+            out[k] = v
+    return out
 
 @router.post("/", response_model=EventResponse)
 async def ingest_single_event(
@@ -43,7 +53,12 @@ async def get_session_summary(
     """
     Get session event summary
     """
-    events = await db.events.get_session_events(session_id)
+    events_col = db.db["events"]
+    try:
+        events = list(events_col.find({"session_id": session_id}).sort([("timestamp", 1)]))
+        events = [_clean_doc(e) for e in events]
+    except Exception:
+        events = []
     return {
         "session_id": session_id,
         "event_count": len(events),
@@ -58,8 +73,22 @@ async def get_recent_sessions(
     """
     Get recent sessions
     """
-    sessions = await db.events.get_recent_sessions(limit)
-    return {
-        "sessions": sessions,
-        "count": len(sessions)
-    }
+    events_col = db.db["events"]
+    sessions: list[dict] = []
+    try:
+        pipeline = [
+            {"$sort": {"timestamp": -1}},
+            {"$group": {"_id": "$session_id", "last_event": {"$first": "$timestamp"}, "user_id": {"$first": "$user_id"}}},
+            {"$sort": {"last_event": -1}},
+            {"$limit": int(limit)}
+        ]
+        agg = list(events_col.aggregate(pipeline))
+        for d in agg:
+            sessions.append({
+                "session_id": d.get("_id"),
+                "last_event": d.get("last_event"),
+                "user_id": str(d.get("user_id")) if isinstance(d.get("user_id"), ObjectId) else d.get("user_id"),
+            })
+    except Exception:
+        sessions = []
+    return {"sessions": sessions, "count": len(sessions)}

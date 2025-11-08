@@ -3,8 +3,10 @@ Spark journey analytics optimized implementation
 """
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
+from datetime import datetime
 
 from app.core.spark import create_spark_session, optimize_spark_df
+from app.core.db_sync import events_col
 
 def analyze_user_journeys(events_df, min_path_freq=10):
     """
@@ -73,3 +75,49 @@ def analyze_user_journeys(events_df, min_path_freq=10):
         },
         "conversion_rate": conversion_rate
     }
+
+def analyze_customer_journeys(username: str | None = None, limit: int | None = None):
+    """Backward-compatible wrapper expected by orchestrator.
+    Loads events from MongoDB, constructs a Spark DataFrame, and delegates to analyze_user_journeys.
+    """
+    try:
+        spark = create_spark_session("journey-analytics")
+        # Build Mongo query
+        query = {}
+        if username:
+            try:
+                user = events_col().database.users.find_one({"username": username})
+                if user:
+                    query["user_id"] = user.get("_id")
+            except Exception:
+                pass
+
+        cur = events_col().find(query, projection={"session_id": 1, "event_type": 1, "timestamp": 1}).sort("timestamp", 1)
+        if limit:
+            try:
+                cur = cur.limit(int(limit))
+            except Exception:
+                pass
+        docs = list(cur)
+        if not docs:
+            return {
+                "common_paths": [],
+                "path_metrics": {"average_length": 0, "median_length": 0, "max_length": 0},
+                "conversion_rate": 0.0,
+            }
+
+        rows = []
+        for d in docs:
+            ts = d.get("timestamp")
+            if isinstance(ts, (int, float)):
+                ts = datetime.utcfromtimestamp(ts)
+            rows.append((
+                d.get("session_id", ""),
+                d.get("event_type", ""),
+                ts
+            ))
+
+        df = spark.createDataFrame(rows, ["session_id", "event_type", "timestamp"])
+        return analyze_user_journeys(df)
+    except Exception as e:
+        return {"error": str(e)}

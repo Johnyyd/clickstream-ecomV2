@@ -1,6 +1,6 @@
 """Metrics analytics module."""
-from typing import Dict, Any, Optional
-from datetime import datetime
+from typing import Dict, Any, Optional, List
+from datetime import datetime, timedelta
 
 def get_user_metrics(user_id: str) -> Dict[str, Any]:
     """Get metrics for a specific user."""
@@ -35,3 +35,207 @@ def get_engagement_metrics() -> Dict[str, Any]:
         "pages_per_session": 0.0,
         "bounce_rate": 0.0
     }
+
+# New implementations used by API endpoints
+
+async def get_business_metrics(db, start_date: datetime, end_date: datetime) -> Dict[str, Any]:
+    """Compute core business metrics from orders and events collections.
+
+    Falls back to zeros when data is missing.
+    """
+    orders_col = None
+    events_col = None
+    if hasattr(db, "db"):
+        try:
+            orders_col = db.db["orders"]
+        except Exception:
+            orders_col = None
+        try:
+            events_col = db.db["events"]
+        except Exception:
+            events_col = None
+
+    revenue = 0.0
+    orders = 0
+    conversion_rate = 0.0
+    visitors = 0
+    total_sessions = 0
+    start_ts = int(start_date.timestamp())
+    end_ts = int(end_date.timestamp())
+
+    try:
+        if orders_col:
+            cursor = orders_col.find({
+                "created_at": {"$gte": start_date, "$lte": end_date}
+            }, {"total": 1})
+            for o in cursor:
+                orders += 1
+                try:
+                    revenue += float(o.get("total", 0) or 0)
+                except Exception:
+                    pass
+        if events_col:
+            # Visitors and sessions
+            user_ids = events_col.distinct("user_id", {
+                "timestamp": {"$gte": start_ts, "$lte": end_ts}
+            })
+            visitors = len([u for u in user_ids if u])
+            sess_ids = events_col.distinct("session_id", {
+                "timestamp": {"$gte": start_ts, "$lte": end_ts}
+            })
+            total_sessions = len([s for s in sess_ids if s])
+            # Conversions and revenue from purchase events
+            purchases = list(events_col.find({
+                "event_type": "purchase",
+                "timestamp": {"$gte": start_ts, "$lte": end_ts}
+            }, {"properties.total_amount": 1}))
+            conv_count = len(purchases)
+            # If no orders data, derive orders/revenue from purchases
+            if orders == 0 and conv_count:
+                orders = conv_count
+            try:
+                revenue_from_purchases = sum(float((p.get("properties") or {}).get("total_amount", 0) or 0) for p in purchases)
+                if revenue_from_purchases:
+                    revenue += revenue_from_purchases
+            except Exception:
+                pass
+            conversions = conv_count
+            conversion_rate = (conversions / visitors) if visitors else 0.0
+    except Exception:
+        # Keep safe defaults on any DB error
+        pass
+
+    average_order_value = (revenue / orders) if orders else 0.0
+    return {
+        "revenue": revenue,
+        "orders": orders,
+        "average_order_value": average_order_value,
+        "conversion_rate": conversion_rate,
+        "total_users": visitors,
+        "total_sessions": total_sessions,
+    }
+
+async def get_behavior_metrics(db, start_date: datetime, end_date: datetime, segment: Optional[str] = None) -> Dict[str, Any]:
+    """Compute user behavior metrics from events collection.
+
+    Returns defaults if data missing.
+    """
+    events_col = db.db.get("events") if hasattr(db, "db") else None
+    sessions = 0
+    page_views = 0
+    bounce_rate = 0.0
+    try:
+        if events_col:
+            query = {"timestamp": {"$gte": start_date, "$lte": end_date}}
+            if segment:
+                query["segment"] = segment
+            page_views = events_col.count_documents({**query, "event_type": "page_view"})
+            sessions_docs = events_col.distinct("session_id", query)
+            sessions = len([s for s in sessions_docs if s])
+            bounces = events_col.count_documents({**query, "event_type": "bounce"})
+            bounce_rate = (bounces / sessions) if sessions else 0.0
+    except Exception:
+        pass
+    return {
+        "sessions": sessions,
+        "page_views": page_views,
+        "bounce_rate": bounce_rate,
+    }
+
+async def get_performance_metrics(db, start_date: datetime, end_date: datetime) -> Dict[str, Any]:
+    """Compute simple system performance metrics using an events/errors collection when present."""
+    logs_col = None
+    if hasattr(db, "db"):
+        try:
+            logs_col = db.db["logs"]
+        except Exception:
+            logs_col = None
+    successes = 0
+    errors = 0
+    try:
+        if logs_col:
+            successes = logs_col.count_documents({
+                "level": "info",
+                "timestamp": {"$gte": start_date, "$lte": end_date}
+            })
+            errors = logs_col.count_documents({
+                "level": {"$in": ["error", "exception"]},
+                "timestamp": {"$gte": start_date, "$lte": end_date}
+            })
+    except Exception:
+        pass
+    total = successes + errors
+    success_rate = (successes / total) if total else 0.0
+    return {
+        "success_rate": success_rate,
+        "success_count": successes,
+        "error_count": errors,
+    }
+
+async def get_trends(db, metrics: List[str], period: str, start_date: datetime, end_date: datetime) -> List[Dict[str, Any]]:
+    """Return very simple trend series per metric name using events/orders counts.
+
+    This is a placeholder DB-backed implementation to avoid 500s.
+    """
+    events_col = None
+    orders_col = None
+    if hasattr(db, "db"):
+        try:
+            events_col = db.db["events"]
+        except Exception:
+            events_col = None
+        try:
+            orders_col = db.db["orders"]
+        except Exception:
+            orders_col = None
+    series: List[Dict[str, Any]] = []
+
+    # Determine bucket size
+    delta = timedelta(days=1)
+    if period == "weekly":
+        delta = timedelta(weeks=1)
+    elif period == "monthly":
+        delta = timedelta(days=30)
+
+    # Build buckets
+    buckets = []
+    t = start_date
+    while t <= end_date:
+        buckets.append(t)
+        t = t + delta
+
+    def count_in_range(col, query_extra: Dict[str, Any]) -> List[int]:
+        vals: List[int] = []
+        for i, bt in enumerate(buckets):
+            bt_end = buckets[i+1] if i+1 < len(buckets) else end_date
+            q = {
+                "timestamp": {"$gte": bt, "$lte": bt_end},
+                **query_extra,
+            }
+            try:
+                vals.append(col.count_documents(q))
+            except Exception:
+                vals.append(0)
+        return vals
+
+    for m in metrics or []:
+        data = []
+        if m in ("page_views", "sessions", "events") and events_col:
+            data = count_in_range(events_col, {} if m == "events" else {"event_type": "page_view"})
+        elif m in ("orders", "purchases") and orders_col:
+            # assume orders have created_at field
+            vals: List[int] = []
+            for i, bt in enumerate(buckets):
+                bt_end = buckets[i+1] if i+1 < len(buckets) else end_date
+                try:
+                    vals.append(orders_col.count_documents({
+                        "created_at": {"$gte": bt, "$lte": bt_end}
+                    }))
+                except Exception:
+                    vals.append(0)
+            data = vals
+        else:
+            data = [0 for _ in buckets]
+        series.append({"name": m, "data": data})
+
+    return series

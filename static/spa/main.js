@@ -12,6 +12,21 @@ const state = {
 const el = (sel) => document.querySelector(sel);
 const httpCache = new Map();
 function cacheKey(url){ return url; }
+// LocalStorage-backed persistence
+const LS_NS = 'spa_cache_v1:';
+const SNAP_NS = 'spa_snap_v1:';
+function lsKey(url){ return LS_NS + url; }
+function lsGet(url){
+  try{ const s = localStorage.getItem(lsKey(url)); return s ? JSON.parse(s) : null; }catch{ return null; }
+}
+function lsSet(url, data){
+  try{ localStorage.setItem(lsKey(url), JSON.stringify({ data, ts: Date.now() })); }catch{}
+}
+function lsData(payload){ return payload && typeof payload === 'object' ? (payload.data ?? payload) : payload; }
+function lsDel(url){ try{ localStorage.removeItem(lsKey(url)); }catch{} }
+function snapKey(tab){ return SNAP_NS + tab; }
+function snapSet(tab, payload){ try{ localStorage.setItem(snapKey(tab), JSON.stringify({ ts: Date.now(), payload })); }catch{} }
+function snapGet(tab){ try{ const s = localStorage.getItem(snapKey(tab)); return s ? JSON.parse(s).payload : null; }catch{ return null; } }
 function requestIdle(cb){
   if(window.requestIdleCallback){ return window.requestIdleCallback(cb, { timeout: 1500 }); }
   return setTimeout(cb, 300);
@@ -69,10 +84,18 @@ async function safeGet(url){
   try{
     const key = cacheKey(url);
     if(httpCache.has(key)) return httpCache.get(key);
-    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    const persisted = lsGet(key);
+    if(persisted){
+      const data = lsData(persisted);
+      httpCache.set(key, data);
+      return data;
+    }
+    const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
+    const res = await fetch(url, { headers: { 'Accept': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) } });
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     httpCache.set(key, json);
+    lsSet(key, json);
     return json;
   }catch(e){
     showToast(`Request failed: ${String(e)}`, 'error');
@@ -84,10 +107,12 @@ async function preload(url){
   const key = cacheKey(url);
   if(httpCache.has(key)) return;
   try{
-    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
+    const res = await fetch(url, { headers: { 'Accept': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) } });
     if(!res.ok) return;
     const json = await res.json();
     httpCache.set(key, json);
+    lsSet(key, json);
   }catch{}
 }
 
@@ -114,116 +139,139 @@ function buildQuery(){
 }
 
 async function loadOverview(){
-  // skeletons
   view.innerHTML = `
-    <div class="grid kpi">
-      <div class="card skel" style="height:84px"></div>
-      <div class="card skel" style="height:84px"></div>
-      <div class="card skel" style="height:84px"></div>
-      <div class="card skel" style="height:84px"></div>
+    <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:8px">
+      <button id="ov-load" class="tab">Load</button>
+      <button id="ov-refresh" class="tab">Refresh</button>
+      <span id="ov-status" class="muted"></span>
     </div>
-    <div class="grid" style="grid-template-columns: 1fr 1fr; margin-top:12px;">
-      <div class="card skel" style="height:300px"></div>
-      <div class="card skel" style="height:300px"></div>
-    </div>
-  `;
-  const q = buildQuery();
-  // KPIs from business metrics
-  const business = await safeGet(`/api/v1/metrics/business?${q}`);
-  // Traffic trend and distribution from SEO analysis
-  const seo = await safeGet(`/api/v1/analytics/seo?${q}`);
-
-  const data = {
-    total_sessions: business.total_sessions ?? business.sessions ?? null,
-    total_users: business.total_users ?? business.users ?? null,
-    conversion_rate: business.conversion_rate ?? null,
-    revenue: business.revenue ?? null,
-    traffic_trend: seo.traffic_trend ?? { categories: [], series: [] },
-    segments: business.segments ?? { categories: [], series: [] }
-  };
-
-  el('#qk-sessions').textContent = fmt(data.total_sessions);
-  el('#qk-cr').textContent = `${fmt(data.conversion_rate*100, 2)}%`;
-  el('#qk-revenue').textContent = `$${fmt(data.revenue, 2)}`;
-
-  view.innerHTML = `
     <div class="grid kpi">
-      <div class="card"><h3>Total Sessions</h3><div class="kpi-value">${fmt(data.total_sessions)}</div></div>
-      <div class="card"><h3>Total Users</h3><div class="kpi-value">${fmt(data.total_users)}</div></div>
-      <div class="card"><h3>Conversion Rate</h3><div class="kpi-value">${fmt(data.conversion_rate*100,2)}%</div></div>
-      <div class="card"><h3>Revenue</h3><div class="kpi-value">$${fmt(data.revenue,2)}</div></div>
+      <div class="card"><h3>Total Sessions</h3><div class="kpi-value" id="qk-sessions">—</div></div>
+      <div class="card"><h3>Total Users</h3><div class="kpi-value" id="qk-users">—</div></div>
+      <div class="card"><h3>Conversion Rate</h3><div class="kpi-value" id="qk-cr">—</div></div>
+      <div class="card"><h3>Revenue</h3><div class="kpi-value" id="qk-rev">—</div></div>
     </div>
     <div class="grid" style="grid-template-columns: 1fr 1fr; margin-top:12px;">
       <div class="card"><h3>Traffic Sources Trend</h3><div class="chart" id="chart-trend"></div></div>
       <div class="card"><h3>User Segmentation</h3><div class="chart" id="chart-seg"></div></div>
     </div>
   `;
-
-  // Trend chart
-  const trendChart = echarts.init(el('#chart-trend'));
-  if(Array.isArray(data.traffic_trend.categories) && data.traffic_trend.categories.length){
-    trendChart.setOption({
-      tooltip: {},
-      legend: { data: data.traffic_trend.series.map(s=>s.name) },
-      xAxis: { type: 'category', data: data.traffic_trend.categories },
-      yAxis: { type: 'value' },
-      series: data.traffic_trend.series
-    });
-  } else { el('#chart-trend').innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
-
-  // Segmentation chart
-  const segChart = echarts.init(el('#chart-seg'));
-  if(Array.isArray(data.segments.categories) && data.segments.categories.length && Array.isArray(data.segments.series) && data.segments.series[0]?.data){
-    segChart.setOption({
-      tooltip: {},
-      xAxis: { type: 'category', data: data.segments.categories },
-      yAxis: { type: 'value' },
-      series: [{ type: 'bar', name: 'Users', data: data.segments.series[0].data }]
-    });
-  } else { el('#chart-seg').innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
-
-  // Render cohort table if available
-  const cEl = el('#cohort-table');
-  function renderCohortTable(matrix){
-    if(!matrix) { cEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu cohort.</div>'; return; }
-    const rows = matrix.rows || matrix.row_labels || [];
-    const cols = matrix.cols || matrix.col_labels || [];
-    const vals = matrix.values || matrix.data || [];
-    if(!rows.length || !cols.length || !Array.isArray(vals) || !vals.length){
-      cEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu cohort.</div>';
-      return;
+  const statusEl = el('#ov-status');
+  // Restore from last snapshot if any (no fetch)
+  const snap = snapGet('overview');
+  if(snap){
+    el('#qk-sessions').textContent = fmt(snap.total_sessions);
+    el('#qk-users').textContent = fmt(snap.total_users);
+    el('#qk-cr').textContent = `${fmt((snap.conversion_rate||0)*100, 2)}%`;
+    el('#qk-rev').textContent = `$${fmt(snap.revenue,2)}`;
+    const trendEl = el('#chart-trend');
+    if(trendEl && Array.isArray(snap.traffic_trend?.categories) && snap.traffic_trend.categories.length){
+      const chart = echarts.init(trendEl); chart.setOption({ tooltip:{}, legend:{ data: snap.traffic_trend.series.map(s=>s.name) }, xAxis:{ type:'category', data: snap.traffic_trend.categories }, yAxis:{ type:'value' }, series: snap.traffic_trend.series });
     }
-    const thead = '<thead><tr><th style="position:sticky;top:0;background:#f8fafc;padding:6px;border-bottom:1px solid #e5e7eb">Cohort\\Period</th>' + cols.map(c=>`<th style="position:sticky;top:0;background:#f8fafc;padding:6px;border-bottom:1px solid #e5e7eb">${c}</th>`).join('') + '</tr></thead>';
-    const tbody = '<tbody>' + rows.map((r, i)=>{
-      const cells = (vals[i] || []).map(v=>`<td style="padding:6px;border-bottom:1px solid #e5e7eb">${typeof v==='number'? (Math.round(v*1000)/10)+'%': (v??'')}</td>`).join('');
-      return `<tr><th style="padding:6px;border-bottom:1px solid #e5e7eb;text-align:left">${r}</th>${cells}</tr>`;
-    }).join('') + '</tbody>';
-    cEl.innerHTML = `<table style="width:100%;border-collapse:collapse">${thead}${tbody}</table>`;
+    const segEl = el('#chart-seg');
+    if(segEl && Array.isArray(snap.segments?.categories) && snap.segments.categories.length && Array.isArray(snap.segments.series) && snap.segments.series[0]?.data){
+      const seg = echarts.init(segEl); seg.setOption({ tooltip:{}, xAxis:{ type:'category', data: snap.segments.categories }, yAxis:{ type:'value' }, series:[{ type:'bar', name:'Users', data: snap.segments.series[0].data }] });
+    }
+    statusEl.textContent = 'Restored from cache';
   }
-  if(retention && (retention.cohort || retention.cohort_matrix || retention.cohorts)){
-    const m = retention.cohort || retention.cohort_matrix || retention.cohorts;
-    renderCohortTable(m);
-  }else{
-    renderCohortTable(null);
+  async function run(fetchFresh=false){
+    const q = buildQuery();
+    const bizUrl = `/api/v1/metrics/business?${q}`;
+    const seoUrl = `/api/v1/analytics/seo?${q}`;
+    if(fetchFresh){ httpCache.delete(cacheKey(bizUrl)); httpCache.delete(cacheKey(seoUrl)); lsDel(cacheKey(bizUrl)); lsDel(cacheKey(seoUrl)); }
+    statusEl.textContent = 'Loading…';
+    const business = await safeGet(bizUrl);
+    const seo = await safeGet(seoUrl);
+    statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
+
+    const data = {
+      total_sessions: business.total_sessions ?? business.sessions ?? null,
+      total_users: business.total_users ?? business.users ?? null,
+      conversion_rate: business.conversion_rate ?? null,
+      revenue: business.revenue ?? null,
+      traffic_trend: seo.traffic_trend ?? { categories: [], series: [] },
+      segments: business.segments ?? { categories: [], series: [] }
+    };
+    // Save snapshot for instant restore on tab switch
+    snapSet('overview', data);
+
+    el('#qk-sessions').textContent = fmt(data.total_sessions);
+    el('#qk-users').textContent = fmt(data.total_users);
+    el('#qk-cr').textContent = `${fmt((data.conversion_rate||0)*100, 2)}%`;
+    el('#qk-rev').textContent = `$${fmt(data.revenue,2)}`;
+
+    // Trend chart
+    const trendEl = el('#chart-trend');
+    if(trendEl && Array.isArray(data.traffic_trend.categories) && data.traffic_trend.categories.length){
+      const trendChart = echarts.init(trendEl);
+      trendChart.setOption({
+        tooltip: {},
+        legend: { data: data.traffic_trend.series.map(s=>s.name) },
+        xAxis: { type: 'category', data: data.traffic_trend.categories },
+        yAxis: { type: 'value' },
+        series: data.traffic_trend.series
+      });
+    } else if(trendEl){ trendEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
+
+    // Segmentation chart
+    const segEl = el('#chart-seg');
+    if(segEl && Array.isArray(data.segments.categories) && data.segments.categories.length && Array.isArray(data.segments.series) && data.segments.series[0]?.data){
+      const segChart = echarts.init(segEl);
+      segChart.setOption({
+        tooltip: {},
+        xAxis: { type: 'category', data: data.segments.categories },
+        yAxis: { type: 'value' },
+        series: [{ type: 'bar', name: 'Users', data: data.segments.series[0].data }]
+      });
+    } else if(segEl){ segEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
   }
+  el('#ov-load').addEventListener('click', ()=>run(false));
+  el('#ov-refresh').addEventListener('click', ()=>run(true));
+  // Do not auto-fetch; only restore above. User controls Load/Refresh.
 }
 
 async function renderCart(){
   view.innerHTML = `
-    <div class="grid" style="grid-template-columns: 1fr 1fr;">
-      <div class="card skel" style="height:300px"></div>
-      <div class="card skel" style="height:300px"></div>
+    <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:8px">
+      <button id="cart-load" class="tab">Load</button>
+      <button id="cart-refresh" class="tab">Refresh</button>
+      <span id="cart-status" class="muted"></span>
     </div>
-  `;
-  view.innerHTML = `
     <div class="grid" style="grid-template-columns: 1fr 1fr;">
       <div class="card"><h3>Abandonment by Channel</h3><div class="chart" id="chart-ab"></div></div>
       <div class="card"><h3>Cart Size Distribution</h3><div class="chart" id="chart-dist"></div></div>
     </div>
   `;
-  const q = buildQuery();
-  const analysis = await safeGet(`/api/v1/analytics/cart?${q}`);
-  const trends = await safeGet(`/api/v1/cart/trends?${q}`);
+  const statusEl = el('#cart-status');
+  // Restore snapshot
+  (function(){
+    const snap = snapGet('cart');
+    if(!snap) return;
+    // Abandonment chart
+    const channels = (snap.channels && Object.keys(snap.channels)) || [];
+    const abData = channels.map(c=> typeof snap.channels?.[c]?.abandonment_rate === 'number' ? Math.round(snap.channels[c].abandonment_rate*1000)/10 : null);
+    const abEl = el('#chart-ab');
+    if(abEl && abData.length){ const ab = echarts.init(abEl); ab.setOption({ tooltip:{ trigger:'axis' }, legend:{ data:['Abandonment %'] }, xAxis:{ type:'category', data: channels }, yAxis:{ type:'value', axisLabel:{ formatter:'{value}%' } }, series:[{ name:'Abandonment %', type:'bar', data: abData }] }); }
+    // Size distribution
+    const distEl = el('#chart-dist'); const distCats=['1','2','3','4','5+'];
+    if(Array.isArray(snap.size_distribution)){
+      const map = new Map(snap.size_distribution.map(r=>[String(r.size), r.count]));
+      const distData = distCats.map(k=>map.get(k) ?? 0);
+      if(distEl){ const chart = echarts.init(distEl); chart.setOption({ tooltip:{}, xAxis:{ type:'category', data: distCats }, yAxis:{ type:'value' }, series:[{ type:'line', data: distData }] }); }
+    }
+    statusEl.textContent = 'Restored from cache';
+  })();
+  async function run(fetchFresh=false){
+    const q = buildQuery();
+    const urlA = `/api/v1/analytics/cart?${q}`;
+    const urlT = `/api/v1/cart/trends?${q}`;
+    if(fetchFresh){ [urlA,urlT].forEach(u=>{ httpCache.delete(cacheKey(u)); lsDel(cacheKey(u)); }); }
+    statusEl.textContent = 'Loading…';
+    const analysis = await safeGet(urlA);
+    const trends = await safeGet(urlT);
+    statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
+    // Save snapshot for Cart
+    snapSet('cart', { channels: analysis?.channels ?? {}, size_distribution: analysis?.size_distribution ?? [] });
 
   // Abandonment by channel
   const channels = (analysis.channels && Object.keys(analysis.channels)) || [];
@@ -231,8 +279,9 @@ async function renderCart(){
     const v = analysis.channels?.[c]?.abandonment_rate;
     return typeof v === 'number' ? Math.round(v*1000)/10 : null;
   });
-  const ab = echarts.init(el('#chart-ab'));
-  if(abData.length){
+  const abEl = el('#chart-ab');
+  if(abEl && abData.length){
+    const ab = echarts.init(abEl);
     ab.setOption({
       tooltip: { trigger:'axis' },
       legend: { data:['Abandonment %'] },
@@ -240,10 +289,10 @@ async function renderCart(){
       yAxis: { type:'value', axisLabel:{ formatter: '{value}%' } },
       series: [{ name:'Abandonment %', type:'bar', data: abData }]
     });
-  } else { el('#chart-ab').innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
+  } else if(abEl) { abEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
 
   // Cart size distribution
-  const distChart = echarts.init(el('#chart-dist'));
+  const distEl = el('#chart-dist');
   const distCats = ['1','2','3','4','5+'];
   let distData = [];
   if(analysis.size_distribution && Array.isArray(analysis.size_distribution)){
@@ -254,31 +303,53 @@ async function renderCart(){
     }
     distData = distCats.map(k=>map.get(k) ?? 0);
   }
-  if(distData.length){
+  if(distEl && distData.length){
+    const distChart = echarts.init(distEl);
     distChart.setOption({
       tooltip: {},
       xAxis: { type:'category', data: distCats },
       yAxis: { type:'value' },
       series: [{ type:'line', data: distData }]
     });
-  } else { el('#chart-dist').innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
+  } else if(distEl) { distEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
+  }
+  el('#cart-load').addEventListener('click', ()=>run(false));
+  el('#cart-refresh').addEventListener('click', ()=>run(true));
 }
 
 async function renderJourney(){
   view.innerHTML = `
-    <div class="grid" style="grid-template-columns: 2fr 1fr;">
-      <div class="card skel" style="height:300px"></div>
-      <div class="card skel" style="height:300px"></div>
+    <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:8px">
+      <button id="jn-load" class="tab">Load</button>
+      <button id="jn-refresh" class="tab">Refresh</button>
+      <span id="jn-status" class="muted"></span>
     </div>
-  `;
-  view.innerHTML = `
     <div class="grid" style="grid-template-columns: 2fr 1fr;">
       <div class="card"><h3>Funnel</h3><div class="chart" id="chart-funnel"></div></div>
       <div class="card"><h3>Top Paths (Sankey)</h3><div class="chart" id="chart-sankey"></div></div>
     </div>
   `;
-  const q = buildQuery();
-  const journey = await safeGet(`/api/v1/analytics/journey?${q}`);
+  const statusEl = el('#jn-status');
+  // Restore snapshot
+  (function(){
+    const snap = snapGet('journey'); if(!snap) return;
+    // Funnel
+    let funnelData=[]; if(snap.funnel && Array.isArray(snap.funnel.steps)) funnelData = snap.funnel.steps.map(s=>({ name:s.name||s.step||'', value:s.value||s.count||0 })); else if(snap.funnel && typeof snap.funnel==='object') funnelData = Object.entries(snap.funnel).map(([name,value])=>({ name, value }));
+    const funnelEl = el('#chart-funnel'); if(funnelEl && funnelData.length){ const chart=echarts.init(funnelEl); chart.setOption({ tooltip:{ trigger:'item' }, series:[{ type:'funnel', data:funnelData }] }); }
+    // Sankey
+    let nodes=[], links=[]; if(snap.paths?.links){ links=snap.paths.links; nodes = snap.paths.nodes || Array.from(new Set(links.flatMap(l=>[l.source,l.target]))); }
+    const sankeyEl = el('#chart-sankey'); if(sankeyEl && nodes.length && links.length){ const sankey=echarts.init(sankeyEl); sankey.setOption({ tooltip:{}, series:[{ type:'sankey', data:nodes.map(n=>({ name:n })), links }] }); }
+    statusEl.textContent = 'Restored from cache';
+  })();
+  async function run(fetchFresh=false){
+    const q = buildQuery();
+    const url = `/api/v1/analytics/journey?${q}`;
+    if(fetchFresh){ httpCache.delete(cacheKey(url)); lsDel(cacheKey(url)); }
+    statusEl.textContent = 'Loading…';
+    const journey = await safeGet(url);
+    statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
+    // Save snapshot for Journey
+    snapSet('journey', { funnel: journey?.funnel ?? null, paths: journey?.paths ?? null });
 
   // Funnel data
   let funnelData = [];
@@ -290,13 +361,14 @@ async function renderJourney(){
       funnelData = Object.entries(journey.funnel).map(([name, value])=>({ name, value }));
     }
   }
-  const funnel = echarts.init(el('#chart-funnel'));
-  if(funnelData.length){
+  const funnelEl = el('#chart-funnel');
+  if(funnelEl && funnelData.length){
+    const funnel = echarts.init(funnelEl);
     funnel.setOption({
       tooltip: { trigger: 'item' },
       series: [{ type: 'funnel', data: funnelData }]
     });
-  } else { el('#chart-funnel').innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
+  } else if(funnelEl) { funnelEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
 
   // Sankey data
   let nodes = [];
@@ -311,13 +383,17 @@ async function renderJourney(){
       nodes = Array.from(new Set(links.flatMap(l=>[l.source,l.target])));
     }
   }
-  const sankey = echarts.init(el('#chart-sankey'));
-  if(nodes.length && links.length){
+  const sankeyEl = el('#chart-sankey');
+  if(sankeyEl && nodes.length && links.length){
+    const sankey = echarts.init(sankeyEl);
     sankey.setOption({
       tooltip: {},
       series: [{ type: 'sankey', data: nodes.map(n=>({ name:n })), links }]
     });
-  } else { el('#chart-sankey').innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
+  } else if(sankeyEl) { sankeyEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
+  }
+  el('#jn-load').addEventListener('click', ()=>run(false));
+  el('#jn-refresh').addEventListener('click', ()=>run(true));
 }
 
 async function renderReco(){
@@ -380,11 +456,18 @@ async function renderReco(){
         const q = new URLSearchParams(); if(uid) q.set('user_id', uid); q.set('limit', String(limit));
         const res = await safeGet(`/api/v1/recommendations/personalized?${q.toString()}`);
         data = Array.isArray(res) ? res : (res.items || []);
+        // Save snapshot for personalized: only store recommendations array from first entry
+        const recs = Array.isArray(data) && data[0]?.recommendations ? data[0].recommendations : [];
+        snapSet('reco:personalized', { user_id: uid || null, items: recs });
+        renderItems(recs);
+        return;
       }else{
         const tf = timeSel.value;
         const q = new URLSearchParams({ timeframe: tf, limit: String(limit) });
         const res = await safeGet(`/api/v1/recommendations/trending?${q.toString()}`);
         data = Array.isArray(res) ? res : (res.items || []);
+        // Save snapshot for trending keyed by timeframe
+        snapSet(`reco:trending:${tf}`, { items: data });
       }
       renderItems(data);
     }catch(e){
@@ -401,40 +484,68 @@ async function renderReco(){
 
   // initial state
   timeSel.style.display = 'none';
-  await load();
+  // Restore snapshot without network
+  (function(){
+    const mode = 'personalized';
+    const snapP = snapGet('reco:personalized');
+    if(snapP && Array.isArray(snapP.items) && snapP.items.length){
+      renderItems(snapP.items);
+      return;
+    }
+    const snapT = snapGet('reco:trending:day');
+    if(snapT && Array.isArray(snapT.items)) renderItems(snapT.items);
+  })();
 }
 
 async function renderSEO(){
   view.innerHTML = `
-    <div class="grid" style="grid-template-columns: 1fr 1fr;">
-      <div class="card skel" style="height:300px"></div>
-      <div class="card skel" style="height:300px"></div>
+    <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:8px">
+      <button id="seo-load" class="tab">Load</button>
+      <button id="seo-refresh" class="tab">Refresh</button>
+      <span id="seo-status" class="muted"></span>
     </div>
-  `;
-  view.innerHTML = `
     <div class="grid" style="grid-template-columns: 1fr 1fr;">
       <div class="card"><h3>Traffic Source Distribution</h3><div class="chart" id="chart-donut"></div></div>
       <div class="card"><h3>Traffic Trend</h3><div class="chart" id="chart-traffic"></div></div>
     </div>
   `;
-  const q = buildQuery();
-  const seo = await safeGet(`/api/v1/analytics/seo?${q}`);
+  const statusEl = el('#seo-status');
+  // Restore snapshot
+  (function(){
+    const snap = snapGet('seo'); if(!snap) return;
+    // Donut
+    const donutEl = el('#chart-donut'); let dist=[]; if(snap.sources?.distribution){ dist = Object.entries(snap.sources.distribution).map(([name,value])=>({ name, value })); }
+    if(donutEl && dist.length){ const donut=echarts.init(donutEl); donut.setOption({ tooltip:{ trigger:'item' }, series:[{ type:'pie', radius:['40%','70%'], data: dist }] }); }
+    // Trend
+    const trafficEl = el('#chart-traffic'); if(trafficEl && Array.isArray(snap.timeseries)){ const categories = snap.timeseries.map(r=> r.date || r.time || r.t || ''); const build = k=> snap.timeseries.map(r=> r[k] ?? r[k?.toUpperCase()] ?? 0); const series=[{ name:'SEO', type:'line', data: build('seo') },{ name:'Direct', type:'line', data: build('direct') },{ name:'Social', type:'line', data: build('social') }]; const traffic=echarts.init(trafficEl); traffic.setOption({ tooltip:{ trigger:'axis' }, legend:{ data: series.map(s=>s.name) }, xAxis:{ type:'category', data: categories }, yAxis:{ type:'value' }, series }); }
+    statusEl.textContent = 'Restored from cache';
+  })();
+  async function run(fetchFresh=false){
+    const q = buildQuery();
+    const url = `/api/v1/analytics/seo?${q}`;
+    if(fetchFresh){ httpCache.delete(cacheKey(url)); lsDel(cacheKey(url)); }
+    statusEl.textContent = 'Loading…';
+    const seo = await safeGet(url);
+    statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
+    // Save snapshot for SEO
+    snapSet('seo', seo || {});
 
   // Distribution
-  const donut = echarts.init(el('#chart-donut'));
+  const donutEl = el('#chart-donut');
   let dist = [];
   if(seo && seo.sources && seo.sources.distribution){
     dist = Object.entries(seo.sources.distribution).map(([name, value])=>({ name, value }));
   }
-  if(dist.length){
+  if(donutEl && dist.length){
+    const donut = echarts.init(donutEl);
     donut.setOption({
       tooltip: { trigger:'item' },
       series: [{ type:'pie', radius:['40%','70%'], data: dist }]
     });
-  } else { el('#chart-donut').innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
+  } else if(donutEl) { donutEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
 
   // Trend
-  const traffic = echarts.init(el('#chart-traffic'));
+  const trafficEl = el('#chart-traffic');
   let series = [];
   let categories = [];
   if(Array.isArray(seo?.timeseries)){
@@ -446,7 +557,8 @@ async function renderSEO(){
       { name:'Social', type:'line', data: build('social') },
     ];
   }
-  if(categories.length && series.length){
+  if(trafficEl && categories.length && series.length){
+    const traffic = echarts.init(trafficEl);
     traffic.setOption({
       tooltip: { trigger:'axis' },
       legend: { data: series.map(s=>s.name) },
@@ -454,28 +566,48 @@ async function renderSEO(){
       yAxis: { type:'value' },
       series
     });
-  } else { el('#chart-traffic').innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
+  } else if(trafficEl) { trafficEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
+  }
+  el('#seo-load').addEventListener('click', ()=>run(false));
+  el('#seo-refresh').addEventListener('click', ()=>run(true));
 }
 
 async function renderRetention(){
   view.innerHTML = `
-    <div class="grid" style="grid-template-columns: 1fr 1fr;">
-      <div class="card skel" style="height:300px"></div>
-      <div class="card skel" style="height:300px"></div>
+    <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:8px">
+      <button id="ret-load" class="tab">Load</button>
+      <button id="ret-refresh" class="tab">Refresh</button>
+      <span id="ret-status" class="muted"></span>
     </div>
-  `;
-  view.innerHTML = `
     <div class="grid" style="grid-template-columns: 1fr 1fr;">
       <div class="card"><h3>Retention / Churn</h3><div class="chart" id="chart-ret"></div></div>
       <div class="card"><h3>Cohort</h3><div id="cohort-table" style="max-height:320px;overflow:auto"></div></div>
     </div>
   `;
-  const q = buildQuery();
-  // Prefer analytics/retention; analyses/retention as fallback
-  let retention = await safeGet(`/api/v1/analytics/retention?${q}`);
-  if(retention && retention.error) {
-    retention = await safeGet(`/api/v1/analyses/retention?${q}`);
-  }
+  const statusEl = el('#ret-status');
+  // Restore snapshot
+  (function(){
+    const snap = snapGet('retention'); if(!snap) return;
+    const labels = []; const retVals=[]; const churnVals=[];
+    if(Array.isArray(snap.timeseries)){
+      for(const r of snap.timeseries){ labels.push(r.date || r.t || r.period || ''); retVals.push(typeof r.retention==='number'? Math.round(r.retention*1000)/10 : (r.retention ?? 0)); churnVals.push(typeof r.churn==='number'? Math.round(r.churn*1000)/10 : (r.churn ?? 0)); }
+      const retEl = el('#chart-ret'); if(retEl){ const chart=echarts.init(retEl); chart.setOption({ tooltip:{ trigger:'axis' }, legend:{ data:['Retention %','Churn %'] }, xAxis:{ type:'category', data: labels }, yAxis:{ type:'value', axisLabel:{ formatter:'{value}%' } }, series:[{ name:'Retention %', type:'line', data: retVals }, { name:'Churn %', type:'line', data: churnVals }] }); }
+    }
+    statusEl.textContent = 'Restored from cache';
+  })();
+  async function run(fetchFresh=false){
+    const q = buildQuery();
+    let urlA = `/api/v1/analytics/retention?${q}`;
+    let urlB = `/api/v1/analyses/retention?${q}`;
+    if(fetchFresh){ [urlA,urlB].forEach(u=>{ httpCache.delete(cacheKey(u)); lsDel(cacheKey(u)); }); }
+    // Prefer analytics/retention; analyses/retention as fallback
+    let retention = await safeGet(urlA);
+    if(retention && retention.error) {
+      retention = await safeGet(urlB);
+    }
+    statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
+    // Save snapshot for Retention
+    snapSet('retention', retention || {});
   const labels = [];
   const retVals = [];
   const churnVals = [];
@@ -491,7 +623,9 @@ async function renderRetention(){
     retVals.push(68,66,64,65,67,69);
     churnVals.push(32,34,36,35,33,31);
   }
-  const ret = echarts.init(el('#chart-ret'));
+  const retEl = el('#chart-ret');
+  if(!retEl) return;
+  const ret = echarts.init(retEl);
   ret.setOption({
     tooltip: { trigger:'axis' },
     legend: { data:['Retention %','Churn %'] },
@@ -502,6 +636,9 @@ async function renderRetention(){
       { name:'Churn %', type:'line', data: churnVals },
     ]
   });
+  }
+  el('#ret-load').addEventListener('click', ()=>run(false));
+  el('#ret-refresh').addEventListener('click', ()=>run(true));
 }
 
 async function renderOrchestrator(){
@@ -597,7 +734,14 @@ async function renderOrchestrator(){
     const p = new URLSearchParams();
     const u = userIn.value.trim(); if(u) p.set('username', u);
     p.set('max_workers', maxSel.value);
-    const res = await fetch(`/api/v1/analytics/orchestrator/run?${p.toString()}`, { method: 'POST' });
+    const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
+    const res = await fetch(`/api/v1/analytics/orchestrator/run?${p.toString()}`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      }
+    });
     const json = await res.json().catch(()=>({}));
     msg.textContent = res.ok ? 'Completed' : 'Error';
     statusPre.textContent = JSON.stringify(json, null, 2);
@@ -807,14 +951,6 @@ function init(){
   guardAuth();
   initNav();
   initFilters();
-  // Prefetch common next-tab data on idle for current filters
-  requestIdle(async ()=>{
-    const q = buildQuery();
-    await Promise.all([
-      preload(`/api/v1/analytics/seo?${q}`),
-      preload(`/api/v1/analytics/cart?${q}`)
-    ]);
-  });
 }
 
 window.addEventListener('DOMContentLoaded', init);

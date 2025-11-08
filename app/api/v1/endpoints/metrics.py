@@ -22,7 +22,7 @@ from ..deps import get_db, get_current_user, verify_api_key
 
 router = APIRouter()
 
-@router.get("/business", response_model=BusinessMetrics)
+@router.get("/business")
 async def get_business_metrics(
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
@@ -40,7 +40,7 @@ async def get_business_metrics(
         if not end_date:
             end_date = datetime.utcnow()
             
-        key = f"v1:metrics:business:{start_date.isoformat()}:{end_date.isoformat()}"
+        key = f"v3:metrics:business:{start_date.isoformat()}:{end_date.isoformat()}"
         cached = cache.get(key)
         if cached is not None:
             return cached
@@ -49,13 +49,13 @@ async def get_business_metrics(
             start_date=start_date,
             end_date=end_date
         )
-        cache.set(key, result, settings.CACHE_TTL)
+        cache.set(key, result, getattr(settings, 'CACHE_TTL', 3600))
         return result
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/user-behavior", response_model=UserBehaviorMetrics)
+@router.get("/user-behavior")
 async def get_user_behavior_metrics(
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
@@ -74,7 +74,7 @@ async def get_user_behavior_metrics(
         if not end_date:
             end_date = datetime.utcnow()
             
-        key = f"v1:metrics:user_behavior:{start_date.isoformat()}:{end_date.isoformat()}:{segment or 'all'}"
+        key = f"v3:metrics:user_behavior:{start_date.isoformat()}:{end_date.isoformat()}:{segment or 'all'}"
         cached = cache.get(key)
         if cached is not None:
             return cached
@@ -84,13 +84,13 @@ async def get_user_behavior_metrics(
             end_date=end_date,
             segment=segment
         )
-        cache.set(key, result, settings.CACHE_TTL)
+        cache.set(key, result, getattr(settings, 'CACHE_TTL', 3600))
         return result
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/performance", response_model=PerformanceMetrics)
+@router.get("/performance")
 async def get_performance_metrics(
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
@@ -108,7 +108,7 @@ async def get_performance_metrics(
         if not end_date:
             end_date = datetime.utcnow()
             
-        key = f"v1:metrics:performance:{start_date.isoformat()}:{end_date.isoformat()}"
+        key = f"v3:metrics:performance:{start_date.isoformat()}:{end_date.isoformat()}"
         cached = cache.get(key)
         if cached is not None:
             return cached
@@ -117,13 +117,13 @@ async def get_performance_metrics(
             start_date=start_date,
             end_date=end_date
         )
-        cache.set(key, result, settings.CACHE_TTL)
+        cache.set(key, result, getattr(settings, 'CACHE_TTL', 3600))
         return result
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/trends", response_model=List[TrendMetrics])
+@router.get("/trends")
 async def get_metric_trends(
     metrics: List[str] = Query(..., description="List of metric names to analyze"),
     period: str = "daily",
@@ -143,7 +143,7 @@ async def get_metric_trends(
         if not end_date:
             end_date = datetime.utcnow()
             
-        key = f"v1:metrics:trends:{','.join(sorted(metrics or []))}:{period}:{start_date.isoformat()}:{end_date.isoformat()}"
+        key = f"v3:metrics:trends:{','.join(sorted(metrics or []))}:{period}:{start_date.isoformat()}:{end_date.isoformat()}"
         cached = cache.get(key)
         if cached is not None:
             return cached
@@ -154,13 +154,13 @@ async def get_metric_trends(
             start_date=start_date,
             end_date=end_date
         )
-        cache.set(key, result, settings.CACHE_TTL)
+        cache.set(key, result, getattr(settings, 'CACHE_TTL', 3600))
         return result
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/time-based/{metric_name}", response_model=List[TimeMetrics])
+@router.get("/time-based/{metric_name}")
 async def get_time_based_metrics(
     metric_name: str,
     interval: str = "hourly",
@@ -190,7 +190,7 @@ async def get_time_based_metrics(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/compare", response_model=Dict[str, Any])
+@router.get("/compare")
 async def compare_metrics(
     period1_start: datetime,
     period1_end: datetime,
@@ -217,7 +217,7 @@ async def compare_metrics(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/realtime", response_model=Dict[str, Any])
+@router.get("/realtime")
 async def get_realtime_metrics(
     metrics: List[str] = Query(..., description="List of metrics to track in realtime"),
     window_minutes: int = 5,
@@ -238,7 +238,7 @@ async def get_realtime_metrics(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/forecast/{metric_name}", response_model=Dict[str, Any])
+@router.get("/forecast/{metric_name}")
 async def forecast_metric(
     metric_name: str,
     forecast_days: int = 7,

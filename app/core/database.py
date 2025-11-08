@@ -20,14 +20,14 @@ class DatabaseManager:
     @property
     def client(self) -> MongoClient:
         """Get MongoDB client with connection pooling"""
-        if not self._client:
+        if self._client is None:
             self._client = MongoClient(**self.config.get_connection_settings())
         return self._client
 
     @property 
     def db(self) -> Database:
         """Get database instance"""
-        if not self._db:
+        if self._db is None:
             self._db = self.client[self.config.DB]
         return self._db
 

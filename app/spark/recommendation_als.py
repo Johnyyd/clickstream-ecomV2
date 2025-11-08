@@ -531,3 +531,14 @@ def recommend_from_saved(username: str | None = None, top_n: int = 10, model_dir
     except Exception as e:
         logger.exception("[ALS] Error generating from saved model: %s", e)
         return {"error": str(e)}
+
+
+def get_recommendations(username=None, limit=None, top_n=None):
+    """Backward-compatible wrapper expected by orchestrator.
+    limit is interpreted as desired number of recommendations when top_n is not provided.
+    """
+    try:
+        n = int(top_n) if top_n is not None else (int(limit) if isinstance(limit, int) or (isinstance(limit, str) and str(limit).isdigit()) else 10)
+    except Exception:
+        n = 10
+    return ml_product_recommendations_als(username=username, top_n=n)

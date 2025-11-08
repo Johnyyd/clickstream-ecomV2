@@ -119,8 +119,8 @@
             console.log('Cart sync error (không ảnh hưởng):', e);
           }
           
-          // Redirect dựa trên role: admin -> dashboard (index.html), user -> home
-          const redirectUrl = role === 'admin' ? '/dashboard' : '/home';
+          // Redirect dựa trên role: admin -> dashboard SPA, user -> home
+          const redirectUrl = role === 'admin' ? '/dashboard-spa' : '/home';
           console.log('🔄 Redirecting to:', redirectUrl, '(role:', role, ')');
           
           // Tăng delay để đảm bảo localStorage đã lưu

@@ -2,7 +2,7 @@
 Analytics API endpoints
 """
 from fastapi import APIRouter, Depends, Query
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 
 from app.services.analytics import (
@@ -13,6 +13,7 @@ from app.services.analytics import (
     get_comprehensive_analysis
 )
 from ..deps import get_db, get_current_user
+
 from ..models import (
     JourneyAnalysis,
     CartAnalysis, 
@@ -22,6 +23,15 @@ from ..models import (
 )
 
 router = APIRouter()
+
+# Simple in-memory orchestration status
+_last_orchestration: Dict[str, Any] = {"status": "idle"}
+_orchestration_history: list[Dict[str, Any]] = []  # ring buffer of recent runs
+_ORCH_HISTORY_MAX = 20
+
+from app.core.cache import cache
+from app.core.config import settings
+from app.core.database import db_manager
 
 @router.get("/journey", response_model=JourneyAnalysis)
 async def analyze_user_journey(
@@ -39,9 +49,15 @@ async def analyze_user_journey(
     if not end_date:
         end_date = datetime.now()
         
-    return await get_user_journey_analysis(
+    key = f"v1:analytics:journey:{start_date.isoformat()}:{end_date.isoformat()}:{user_id or 'all'}"
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    result = await get_user_journey_analysis(
         db, start_date, end_date, user_id
     )
+    cache.set(key, result, settings.CACHE_TTL)
+    return result
 
 @router.get("/cart", response_model=CartAnalysis)
 async def analyze_cart_behavior(
@@ -58,7 +74,13 @@ async def analyze_cart_behavior(
     if not end_date:
         end_date = datetime.now()
         
-    return await get_cart_analysis(db, start_date, end_date)
+    key = f"v1:analytics:cart:{start_date.isoformat()}:{end_date.isoformat()}"
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    result = await get_cart_analysis(db, start_date, end_date)
+    cache.set(key, result, settings.CACHE_TTL)
+    return result
 
 @router.get("/retention", response_model=RetentionAnalysis)
 async def analyze_user_retention(
@@ -73,9 +95,15 @@ async def analyze_user_retention(
     if not start_date:
         start_date = datetime.now() - timedelta(days=90)
         
-    return await get_retention_analysis(
+    key = f"v1:analytics:retention:{start_date.isoformat()}:{cohort_size}"
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    result = await get_retention_analysis(
         db, start_date, cohort_size
     )
+    cache.set(key, result, settings.CACHE_TTL)
+    return result
 
 @router.get("/seo", response_model=SEOAnalysis)
 async def analyze_seo_performance(
@@ -92,7 +120,13 @@ async def analyze_seo_performance(
     if not end_date:
         end_date = datetime.now()
         
-    return await get_seo_analysis(db, start_date, end_date)
+    key = f"v1:analytics:seo:{start_date.isoformat()}:{end_date.isoformat()}"
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    result = await get_seo_analysis(db, start_date, end_date)
+    cache.set(key, result, settings.CACHE_TTL)
+    return result
 
 @router.get("/comprehensive", response_model=ComprehensiveAnalysis)
 async def get_comprehensive_analytics(
@@ -109,6 +143,123 @@ async def get_comprehensive_analytics(
     if not end_date:
         end_date = datetime.now()
         
-    return await get_comprehensive_analysis(
+    key = f"v1:analytics:comprehensive:{start_date.isoformat()}:{end_date.isoformat()}"
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    result = await get_comprehensive_analysis(
         db, start_date, end_date
     )
+    cache.set(key, result, settings.CACHE_TTL)
+    return result
+
+@router.get("/orchestrator/status")
+async def get_orchestrator_status(
+    current_user = Depends(get_current_user)
+):
+    """
+    Return last orchestration run status and summary
+    """
+    return _last_orchestration
+
+@router.get("/orchestrator/history")
+async def get_orchestrator_history(
+    limit: int = Query(10, ge=1, le=50),
+    current_user = Depends(get_current_user)
+):
+    """
+    Return recent orchestration runs (most recent last)
+    """
+    # Prefer DB; fallback to in-memory buffer
+    try:
+        col = db_manager.db['orchestrator_runs']
+        docs = list(col.find({}, sort=[('ts', -1)], limit=limit))
+        # Clean ObjectId for JSON
+        out = []
+        for d in docs:
+            d.pop('_id', None)
+            out.append(d)
+        out.reverse()  # most recent last to match previous UI expectation
+        return {"items": out}
+    except Exception:
+        return {"items": _orchestration_history[-limit:]}
+
+@router.get("/orchestrator/history/item")
+async def get_orchestrator_history_item(
+    ts: str = Query(..., description="Timestamp of the run (ISO string)"),
+    current_user = Depends(get_current_user)
+):
+    """
+    Return a single orchestrator run by its timestamp
+    """
+    # Prefer DB
+    try:
+        col = db_manager.db['orchestrator_runs']
+        doc = col.find_one({ 'ts': ts })
+        if doc:
+            doc.pop('_id', None)
+            return doc
+    except Exception:
+        pass
+    # Fallback to memory
+    for item in _orchestration_history:
+        if item.get('ts') == ts:
+            return item
+    return { "error": "NOT_FOUND" }
+
+@router.post("/orchestrator/run")
+async def run_orchestrator(
+    username: Optional[str] = Query(None),
+    limit: Optional[int] = Query(None, ge=1),
+    max_workers: int = Query(4, ge=1, le=16),
+    current_user = Depends(get_current_user)
+):
+    """
+    Trigger a comprehensive analytics orchestration run (synchronous)
+    """
+    try:
+        from app.spark.analytics_orchestrator import AnalyticsOrchestrator as SparkOrchestrator
+        orch = SparkOrchestrator()
+        result = orch.run_all(username=username, limit=limit, max_workers=max_workers)
+        # Normalize minimal status view
+        global _last_orchestration
+        # Build module summaries if available
+        modules_summary: list[dict[str, Any]] = []
+        try:
+            resmap = result.get("results", {}) or {}
+            for name, payload in resmap.items():
+                modules_summary.append({
+                    "name": name,
+                    "status": "error" if isinstance(payload, dict) and payload.get("error") else "success",
+                    "execution_time": (payload or {}).get("execution_time") if isinstance(payload, dict) else None,
+                })
+        except Exception:
+            modules_summary = []
+        _last_orchestration = {
+            "status": result.get("status", "completed"),
+            "start_time": result.get("start_time"),
+            "end_time": result.get("end_time"),
+            "duration_seconds": result.get("duration_seconds"),
+            "module_statistics": result.get("module_statistics"),
+            "errors": result.get("errors", {}),
+            "username": username,
+            "max_workers": max_workers,
+            "modules": modules_summary,
+        }
+        # Append to history (ring buffer)
+        item = {
+            "ts": datetime.utcnow().isoformat(),
+            **_last_orchestration
+        }
+        # Persist to MongoDB (best-effort)
+        try:
+            col = db_manager.db['orchestrator_runs']
+            col.insert_one(item)
+        except Exception:
+            # Fallback to in-memory ring buffer
+            _orchestration_history.append(item)
+            if len(_orchestration_history) > _ORCH_HISTORY_MAX:
+                del _orchestration_history[0:len(_orchestration_history)-_ORCH_HISTORY_MAX]
+        return result
+    except Exception as e:
+        return {"status": "error", "error": str(e)}

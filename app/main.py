@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, status, Request
 from fastapi import Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
@@ -51,6 +52,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Enable GZip compression for responses
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # Setup error handlers
 setup_error_handlers(app)
@@ -186,6 +190,7 @@ _pretty_routes = {
     "/cart": "cart.html",
     "/checkout": "checkout.html",
     "/dashboard": "index.html",
+    "/dashboard-spa": "spa/index.html",
     "/auth": "auth.html",
 }
 

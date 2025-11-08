@@ -125,6 +125,14 @@ class Settings(BaseSettings):
         1000, ge=100,
         description="Maximum cache size"
     )
+    CACHE_BACKEND: str = Field(
+        "memory",
+        description="Cache backend: 'memory' or 'redis'"
+    )
+    REDIS_URL: Optional[str] = Field(
+        default="redis://localhost:6379/0",
+        description="Redis connection URL (only used if CACHE_BACKEND='redis')"
+    )
     
     # Logging Settings
     LOG_LEVEL: str = Field("INFO", description="Logging level")

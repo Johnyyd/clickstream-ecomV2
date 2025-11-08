@@ -8,6 +8,8 @@ from bson import ObjectId
 
 from app.core.database import db_manager
 from app.core.spark import spark_manager
+from app.core.cache import cache
+from app.core.config import settings
 from app.models.user import User
 from ..models import (
     BusinessMetrics,
@@ -38,11 +40,18 @@ async def get_business_metrics(
         if not end_date:
             end_date = datetime.utcnow()
             
-        return await get_business_metrics(
+        key = f"v1:metrics:business:{start_date.isoformat()}:{end_date.isoformat()}"
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+        result = await get_business_metrics(
             db=db,
             start_date=start_date,
             end_date=end_date
         )
+        cache.set(key, result, settings.CACHE_TTL)
+        return result
+    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -65,12 +74,19 @@ async def get_user_behavior_metrics(
         if not end_date:
             end_date = datetime.utcnow()
             
-        return await get_behavior_metrics(
+        key = f"v1:metrics:user_behavior:{start_date.isoformat()}:{end_date.isoformat()}:{segment or 'all'}"
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+        result = await get_behavior_metrics(
             db=db,
             start_date=start_date,
             end_date=end_date,
             segment=segment
         )
+        cache.set(key, result, settings.CACHE_TTL)
+        return result
+    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -92,11 +108,18 @@ async def get_performance_metrics(
         if not end_date:
             end_date = datetime.utcnow()
             
-        return await get_performance_metrics(
+        key = f"v1:metrics:performance:{start_date.isoformat()}:{end_date.isoformat()}"
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+        result = await get_performance_metrics(
             db=db,
             start_date=start_date,
             end_date=end_date
         )
+        cache.set(key, result, settings.CACHE_TTL)
+        return result
+    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -120,13 +143,20 @@ async def get_metric_trends(
         if not end_date:
             end_date = datetime.utcnow()
             
-        return await get_trends(
+        key = f"v1:metrics:trends:{','.join(sorted(metrics or []))}:{period}:{start_date.isoformat()}:{end_date.isoformat()}"
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+        result = await get_trends(
             db=db,
             metrics=metrics,
             period=period,
             start_date=start_date,
             end_date=end_date
         )
+        cache.set(key, result, settings.CACHE_TTL)
+        return result
+    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

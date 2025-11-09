@@ -12,6 +12,139 @@ const state = {
 const el = (sel) => document.querySelector(sel);
 const httpCache = new Map();
 function cacheKey(url){ return url; }
+
+async function renderML(){
+  view.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input id="ml-user" placeholder="Username (optional)" style="padding:6px;border:1px solid #e5e7eb;border-radius:8px" />
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="ml-load" class="tab">Load</button>
+        <button id="ml-refresh" class="tab">Refresh</button>
+        <span id="ml-status" class="muted"></span>
+      </div>
+    </div>
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+      <div class="card"><h3>Conversion Prediction</h3><div id="ml-conv" class="chart"></div></div>
+      <div class="card"><h3>Purchase Probability</h3><div id="ml-prob" class="chart"></div></div>
+      <div class="card" style="grid-column: 1 / -1"><h3>User Segmentation</h3><div id="ml-seg" class="chart"></div></div>
+    </div>
+  `;
+  const userIn = el('#ml-user');
+  const statusEl = el('#ml-status');
+
+  // Restore snapshot if exists
+  (function(){
+    const snap = snapGet('ml');
+    if(!snap) return;
+    renderConv(snap.conversion||{});
+    renderProb(snap.purchase||{});
+    renderSeg(snap.segmentation||{});
+    statusEl.textContent = 'Restored from cache';
+  })();
+
+  function renderConv(data){
+    const elc = el('#ml-conv');
+    if(!elc) return;
+    // Support Decision Tree payload: feature_importance map and sample_predictions[].confidence
+    let avg = 0; let n = 0;
+    try{
+      if(Array.isArray(data.sample_predictions)){
+        for(const p of data.sample_predictions){
+          const v = Number(p.confidence ?? p.purchase_probability ?? 0);
+          if(isFinite(v)){ avg += v; n++; }
+        }
+      }
+    }catch{}
+    const score = n ? (avg/n) : Number(data.avg_probability ?? 0);
+    const title = `Avg Likelihood: ${fmt((score||0)*100,2)}%` + (data.auc_score?` • AUC ${fmt(Number(data.auc_score||0),3)}`:'');
+    // Feature importance bar if available
+    let cats=[], vals=[];
+    try{
+      const fmap = data.feature_importance;
+      if(fmap && typeof fmap==='object'){
+        cats = Object.keys(fmap);
+        vals = cats.map(k=> Number(fmap[k]||0));
+      }
+    }catch{}
+    const chart = echarts.init(elc);
+    if(cats.length){
+      chart.setOption({
+        title:{ text:title, left:'center', textStyle:{ fontSize:12 } },
+        tooltip:{}, xAxis:{ type:'category', data: cats }, yAxis:{ type:'value' },
+        series:[{ type:'bar', name:'Importance', data: vals }]
+      });
+    }else{
+      chart.setOption({ title:{ text:title, left:'center', textStyle:{ fontSize:12 } }, xAxis:{ type:'category', data:['Likelihood'] }, yAxis:{ type:'value', max:100 }, series:[{ type:'bar', data:[Math.round((score||0)*10000)/100] }] });
+    }
+  }
+  function renderProb(data){
+    const elp = el('#ml-prob');
+    if(!elp) return;
+    // Logistic Regression payload: feature_coefficients map and sample_predictions[].purchase_probability
+    let avg=0, n=0;
+    try{
+      if(Array.isArray(data.sample_predictions)){
+        for(const p of data.sample_predictions){ const v=Number(p.purchase_probability||0); if(isFinite(v)){ avg+=v; n++; } }
+      }
+    }catch{}
+    const score = n ? (avg/n) : Number(data.avg_probability||0);
+    let cats=[], vals=[];
+    try{
+      const coeff = data.feature_coefficients;
+      if(coeff && typeof coeff==='object'){
+        cats = Object.keys(coeff);
+        vals = cats.map(k=> Math.abs(Number(coeff[k]||0)));
+      } 
+    }catch{}
+    const chart = echarts.init(elp);
+    const title = `Avg Purchase Prob: ${fmt((score||0)*100,2)}%` + (data.auc_score?` • AUC ${fmt(Number(data.auc_score||0),3)}`:'');
+    if(cats.length){ chart.setOption({ title:{ text:title, left:'center', textStyle:{ fontSize:12 } }, tooltip:{}, xAxis:{ type:'category', data: cats }, yAxis:{ type:'value' }, series:[{ type:'bar', data: vals }] }); }
+    else { chart.setOption({ title:{ text:title||'No detailed features. Showing placeholder.', left:'center', textStyle:{ fontSize:12 } }, xAxis:{ show:false }, yAxis:{ show:false }, series:[{ type:'bar', data:[Math.round((score||0)*10000)/100] }] }); }
+  }
+  function renderSeg(data){
+    const els = el('#ml-seg');
+    if(!els) return;
+    // KMeans payload: cluster_stats map keyed by cluster label -> {user_count,...}
+    let cats=[], vals=[];
+    try{
+      const stats = data.cluster_stats;
+      if(stats && typeof stats==='object'){
+        cats = Object.keys(stats);
+        vals = cats.map(k=> Number((stats[k]||{}).user_count || 0));
+      }
+    }catch{}
+    const chart = echarts.init(els);
+    if(cats.length){
+      chart.setOption({ tooltip:{}, xAxis:{ type:'category', data: cats }, yAxis:{ type:'value' }, series:[{ type:'bar', data: vals }] });
+    }else{
+      chart.setOption({ title:{ text:'No segmentation data', left:'center', textStyle:{ fontSize:12 } } });
+    }
+  }
+
+  async function run(fetchFresh=false){
+    const username = (userIn.value||'').trim();
+    const q = new URLSearchParams(); if(username) q.set('username', username);
+    let uConv = `/api/v1/spark-analytics/conversion-prediction` + (q.toString()?`?${q.toString()}`:'');
+    let uProb = `/api/v1/spark-analytics/purchase-probability` + (q.toString()?`?${q.toString()}`:'');
+    let uSeg = `/api/v1/spark-analytics/user-segmentation` + (q.toString()?`?${q.toString()}`:'');
+    if(fetchFresh){ [uConv,uProb,uSeg].forEach(u=>{ httpCache.delete(u); lsDel(u); }); }
+    statusEl.textContent = 'Loading…';
+    const [conv, prob, seg] = await Promise.all([
+      fetchFresh ? safeGet(uConv) : getWithTTL(uConv, 600000),
+      fetchFresh ? safeGet(uProb) : getWithTTL(uProb, 600000),
+      fetchFresh ? safeGet(uSeg) : getWithTTL(uSeg, 600000)
+    ]);
+    statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
+    snapSet('ml', { conversion: conv||{}, purchase: prob||{}, segmentation: seg||{} });
+    renderConv(conv||{}); renderProb(prob||{}); renderSeg(seg||{});
+  }
+
+  el('#ml-load').addEventListener('click', ()=>run(false));
+  el('#ml-refresh').addEventListener('click', ()=>run(true));
+  if(!snapGet('ml')){ await run(false); }
+}
 // LocalStorage-backed persistence
 const LS_NS = 'spa_cache_v1:';
 const SNAP_NS = 'spa_snap_v1:';
@@ -1254,6 +1387,7 @@ async function render(){
     case 'cart': await renderCart(); break;
     case 'journey': await renderJourney(); break;
     case 'reco': renderReco(); break;
+    case 'ml': await renderML(); break;
     case 'seo': await renderSEO(); break;
     case 'retention': await renderRetention(); break;
     case 'orchestrator': await renderOrchestrator(); break;

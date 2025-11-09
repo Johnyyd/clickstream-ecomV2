@@ -134,6 +134,23 @@ async def get_business_metrics(db, start_date: datetime, end_date: datetime) -> 
             except Exception:
                 visitors = visitors or 0
 
+            # If after all attempts the session count is still zero, fallback to events-based counting
+            if total_sessions == 0 and events_col:
+                try:
+                    sess_ids = events_col.distinct("session_id", {
+                        "timestamp": {"$gte": start_ts, "$lte": end_ts}
+                    })
+                    total_sessions = len([s for s in sess_ids if s])
+                except Exception:
+                    total_sessions = 0
+                try:
+                    user_ids = events_col.distinct("user_id", {
+                        "timestamp": {"$gte": start_ts, "$lte": end_ts}
+                    })
+                    visitors = len([u for u in user_ids if u]) or visitors or 0
+                except Exception:
+                    visitors = visitors or 0
+
         elif events_col:
             # Visitors and sessions estimated from events when sessions collection not available
             user_ids = events_col.distinct("user_id", {
@@ -147,15 +164,28 @@ async def get_business_metrics(db, start_date: datetime, end_date: datetime) -> 
 
         # Conversions and revenue from purchase events (from events)
         if events_col:
-            purchases = list(events_col.find({
+            # Match purchase events whether they were ingested with numeric epoch 'timestamp'
+            # or with a datetime 'occurred_at' field (ingest_sync adds it; async ingest may write datetime timestamp)
+            purchase_query = {
                 "event_type": "purchase",
-                "timestamp": {"$gte": start_ts, "$lte": end_ts}
-            }, {"properties.total_amount": 1}))
+                "$or": [
+                    {"timestamp": {"$gte": start_ts, "$lte": end_ts}},
+                    {"occurred_at": {"$gte": start_date, "$lte": end_date}},
+                ]
+            }
+            purchases = list(events_col.find(purchase_query, {"properties.total_amount": 1}))
             conv_count = len(purchases)
             if orders == 0 and conv_count:
                 orders = conv_count
             try:
-                revenue_from_purchases = sum(float((p.get("properties") or {}).get("total_amount", 0) or 0) for p in purchases)
+                def _to_amount(p):
+                    props = (p.get("properties") or {})
+                    val = props.get("total_amount", 0)
+                    try:
+                        return float(val or 0)
+                    except Exception:
+                        return 0.0
+                revenue_from_purchases = sum(_to_amount(p) for p in purchases)
                 if revenue_from_purchases:
                     revenue += revenue_from_purchases
             except Exception:

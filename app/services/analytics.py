@@ -53,6 +53,83 @@ async def get_user_journey_analysis(db, start_date: datetime, end_date: datetime
     except Exception:
         pass
 
+    # Build Top Paths (Sankey) from per-session sequences
+    paths_nodes: set[str] = set()
+    paths_counter: dict[tuple[str, str], int] = {}
+    try:
+        # Group events by session and sort by timestamp
+        by_session: dict[str, list[dict]] = {}
+        for e in events:
+            sid = e.get("session_id")
+            if not sid:
+                continue
+            by_session.setdefault(sid, []).append(e)
+
+        def label_for(e: dict) -> str:
+            et = (e.get("event_type") or "").lower()
+            props = (e.get("properties") or {})
+            # Prefer human friendly page labels
+            page = props.get("page") or props.get("title") or props.get("name")
+            if et in ("pageview", "search") or ("view" in et):
+                return str(page or props.get("path") or "Page")
+            if et == "add_to_cart":
+                return "Add to Cart"
+            if et == "checkout":
+                return "Checkout"
+            if et == "purchase":
+                return "Purchase"
+            # fallback to event_type
+            return et.title() or "Event"
+
+        # Define a stage order to keep graph acyclic
+        STAGE_ORDER = {
+            "Views": 0, "View": 0, "Page": 0,
+            "Add to Cart": 1,
+            "Checkout": 2,
+            "Purchase": 3,
+        }
+        def stage_of(label: str) -> int:
+            # Unknown labels default to 0 (treated as early-stage pages)
+            return STAGE_ORDER.get(label, 0)
+
+        for sid, evs in by_session.items():
+            evs.sort(key=lambda x: int(x.get("timestamp", 0)))
+            # Build sequence of labels; collapse duplicates in a row
+            seq: list[str] = []
+            last = None
+            for e in evs:
+                lbl = label_for(e)
+                if not lbl:
+                    continue
+                if lbl != last:
+                    seq.append(lbl)
+                    last = lbl
+            # Count adjacent transitions (forward only) and avoid in-session duplicates
+            seen_edges_in_session: set[tuple[str,str]] = set()
+            for i in range(len(seq)-1):
+                a, b = seq[i], seq[i+1]
+                if not a or not b or a == b:
+                    continue
+                # Keep only strictly forward transitions to avoid cycles (drop same-stage and backward)
+                if stage_of(a) >= stage_of(b):
+                    continue
+                edge = (a, b)
+                if edge in seen_edges_in_session:
+                    continue
+                seen_edges_in_session.add(edge)
+                paths_nodes.add(a); paths_nodes.add(b)
+                paths_counter[edge] = paths_counter.get(edge, 0) + 1
+
+        # Build nodes/links for Sankey, keep top N links
+        topN = 40
+        links = sorted(({"source": a, "target": b, "value": c} for (a, b), c in paths_counter.items()), key=lambda x: x["value"], reverse=True)[:topN]
+        nodes = sorted({n for n in paths_nodes})
+        # Provide both compact top_paths (for any consumer) and SPA-compatible 'paths'
+        top_paths = links
+        paths = {"nodes": nodes, "links": links}
+    except Exception:
+        paths = None
+
     return {
         "session_metrics": session_metrics,
         "top_paths": top_paths,
@@ -63,6 +140,8 @@ async def get_user_journey_analysis(db, start_date: datetime, end_date: datetime
         "recommendations": recommendations,
         # SPA compat minimal funnel field
         "funnel": {"steps": conversion_funnel} if conversion_funnel else None,
+        # SPA expects paths to have {nodes, links}
+        "paths": paths,
     }
 
 async def get_cart_analysis(db, start_date: datetime, end_date: datetime):
@@ -180,27 +259,88 @@ async def get_retention_analysis(db, start_date: datetime, cohort_size: int = 7)
     start_ts = int(start_date.timestamp())
     events = list(events_col.find({
         "timestamp": {"$gte": start_ts}
-    }))
+    }, {"user_id":1, "timestamp":1}))
 
-    # Safe defaults
-    overall_retention_rate = 0.0
-    cohort_metrics: list[dict] = []
-    retention_periods: list[dict] = []
-    user_segments: list[dict] = []
-    churn_indicators: list[dict] = []
-    engagement_factors: list[dict] = []
-    recommendations: list[str] = []
-    risk_alerts: list[str] = []
+    # Defaults
+    timeseries: list[dict] = []
+    cohort: list[dict] = []
+    try:
+        # Build month buckets
+        def month_key(ts: int) -> str:
+            from datetime import datetime as _dt
+            return _dt.utcfromtimestamp(int(ts)).strftime('%Y-%m')
+
+        # Map: user_id -> sorted list of active months
+        user_months: dict[str, set[str]] = {}
+        for e in events:
+            uid = e.get("user_id")
+            if not uid:
+                continue
+            mk = month_key(e.get("timestamp", start_ts))
+            user_months.setdefault(str(uid), set()).add(mk)
+
+        # Month set in range
+        months_sorted = sorted({m for s in user_months.values() for m in s})
+        # Build simple retention/churn timeseries: active users per month
+        month_active_counts = {m:0 for m in months_sorted}
+        for months in user_months.values():
+            for m in months:
+                month_active_counts[m] = month_active_counts.get(m, 0) + 1
+        # Estimate retention% as active users month-over-month
+        prev = None
+        for m in months_sorted:
+            cur = month_active_counts[m]
+            if prev is None:
+                timeseries.append({"date": m, "retention": 0.0, "churn": 0.0})
+            else:
+                retention = (cur/prev) if prev else 0.0
+                churn = max(0.0, 1.0 - retention)
+                timeseries.append({"date": m, "retention": retention, "churn": churn})
+            prev = cur
+
+        # Build cohorts: group by first month seen
+        cohorts: dict[str, list[str]] = {}
+        for uid, months in user_months.items():
+            if not months:
+                continue
+            fm = sorted(months)[0]
+            cohorts.setdefault(fm, []).append(uid)
+
+        # For each cohort, compute retention across next 5 months
+        from datetime import datetime as _dt
+        def next_months(start_m: str, n: int = 5) -> list[str]:
+            # start_m format 'YYYY-MM'
+            y, m = map(int, start_m.split('-'))
+            arr = []
+            yy, mm = y, m
+            for _ in range(n):
+                arr.append(f"{yy:04d}-{mm:02d}")
+                mm += 1
+                if mm > 12:
+                    mm = 1
+                    yy += 1
+            return arr
+
+        for cm, users in sorted(cohorts.items()):
+            size = len(users)
+            horizon = next_months(cm, 6)  # include cohort month
+            months_ret = []
+            user_set = set(users)
+            for m in horizon:
+                # retained if user has activity in month m
+                active = 0
+                for uid in user_set:
+                    if m in user_months.get(uid, set()):
+                        active += 1
+                months_ret.append(round((active/size) if size else 0.0, 4))
+            cohort.append({"cohort": cm, "size": size, "months": months_ret})
+    except Exception:
+        # ignore errors and keep defaults
+        pass
 
     return {
-        "overall_retention_rate": overall_retention_rate,
-        "cohort_metrics": cohort_metrics,
-        "retention_periods": retention_periods,
-        "user_segments": user_segments,
-        "churn_indicators": churn_indicators,
-        "engagement_factors": engagement_factors,
-        "recommendations": recommendations,
-        "risk_alerts": risk_alerts,
+        "timeseries": timeseries,
+        "cohort": cohort,
     }
 
 async def get_seo_analysis(db, start_date: datetime, end_date: datetime):

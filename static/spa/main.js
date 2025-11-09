@@ -530,13 +530,20 @@ async function renderJourney(){
   // Sankey data
   let nodes = [];
   let links = [];
-  if(journey && journey.paths){
-    // shapes: paths as [{source,target,value}] or {nodes:[...], links:[...]}
-    if(Array.isArray(journey.paths.links)){
-      links = journey.paths.links;
-      nodes = (journey.paths.nodes || Array.from(new Set(links.flatMap(l=>[l.source,l.target]))));
-    }else if(Array.isArray(journey.paths)){
-      links = journey.paths;
+  if(journey){
+    // Prefer paths if present
+    if(journey.paths){
+      if(Array.isArray(journey.paths.links)){
+        links = journey.paths.links;
+        nodes = (journey.paths.nodes || Array.from(new Set(links.flatMap(l=>[l.source,l.target]))));
+      }else if(Array.isArray(journey.paths)){
+        links = journey.paths;
+        nodes = Array.from(new Set(links.flatMap(l=>[l.source,l.target])));
+      }
+    }
+    // Fallback to top_paths (array of links) if paths missing
+    if(!links.length && Array.isArray(journey.top_paths) && journey.top_paths.length){
+      links = journey.top_paths;
       nodes = Array.from(new Set(links.flatMap(l=>[l.source,l.target])));
     }
   }
@@ -549,8 +556,11 @@ async function renderJourney(){
     });
   } else if(sankeyEl) { sankeyEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
   }
-  el('#jn-load').addEventListener('click', ()=>run(false));
-  el('#jn-refresh').addEventListener('click', ()=>run(true));
+  // Ensure buttons are clickable
+  const jnLoadBtn = el('#jn-load');
+  const jnRefBtn = el('#jn-refresh');
+  if(jnLoadBtn){ jnLoadBtn.disabled = false; jnLoadBtn.style.pointerEvents = 'auto'; jnLoadBtn.addEventListener('click', ()=>run(false)); }
+  if(jnRefBtn){ jnRefBtn.disabled = false; jnRefBtn.style.pointerEvents = 'auto'; jnRefBtn.addEventListener('click', ()=>run(true)); }
   // Auto-fetch on first visit if there is no snapshot yet
   if(!snapGet('journey')){ await run(false); }
 }
@@ -801,9 +811,40 @@ async function renderRetention(){
       { name:'Churn %', type:'line', data: churnVals },
     ]
   });
+
+  // Render cohort table
+  const cohortDiv = el('#cohort-table');
+  if(cohortDiv){
+    const cohort = Array.isArray(retention?.cohort) ? retention.cohort : [];
+    if(cohort.length){
+      const monthCount = Math.max(...cohort.map(c => Array.isArray(c.months) ? c.months.length : 0));
+      const header = ['Cohort','Size', ...Array.from({length: monthCount}, (_,i)=>`M+${i}`)];
+      cohortDiv.innerHTML = `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="text-align:left;border-bottom:1px solid #e5e7eb">${header.map(h=>`<th style="padding:6px">${h}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${cohort.map(row => `
+              <tr style="border-bottom:1px solid #e5e7eb">
+                <td style="padding:6px">${row.cohort||''}</td>
+                <td style="padding:6px">${row.size??''}</td>
+                ${Array.from({length: monthCount}, (_,i)=>{
+                  const v = (row.months||[])[i];
+                  const pct = (typeof v === 'number' && isFinite(v)) ? (Math.round(v*1000)/10)+'%' : '';
+                  return `<td style="padding:6px">${pct}</td>`;
+                }).join('')}
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      `;
+    }else{
+      cohortDiv.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu cohort.</div>';
+    }
   }
-  el('#ret-load').addEventListener('click', ()=>run(false));
-  el('#ret-refresh').addEventListener('click', ()=>run(true));
+  }
+  const retLoadBtn = el('#ret-load');
+  const retRefBtn = el('#ret-refresh');
+  if(retLoadBtn){ retLoadBtn.disabled = false; retLoadBtn.style.pointerEvents = 'auto'; retLoadBtn.addEventListener('click', ()=>run(false)); }
+  if(retRefBtn){ retRefBtn.disabled = false; retRefBtn.style.pointerEvents = 'auto'; retRefBtn.addEventListener('click', ()=>run(true)); }
   // Auto-fetch on first visit if there is no snapshot yet
   if(!snapGet('retention')){ await run(false); }
 }

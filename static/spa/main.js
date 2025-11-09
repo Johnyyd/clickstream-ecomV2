@@ -27,6 +27,30 @@ function lsDel(url){ try{ localStorage.removeItem(lsKey(url)); }catch{} }
 function snapKey(tab){ return SNAP_NS + tab; }
 function snapSet(tab, payload){ try{ localStorage.setItem(snapKey(tab), JSON.stringify({ ts: Date.now(), payload })); }catch{} }
 function snapGet(tab){ try{ const s = localStorage.getItem(snapKey(tab)); return s ? JSON.parse(s).payload : null; }catch{ return null; } }
+// TTL-aware local cache getter
+async function getWithTTL(url, ttlMs = 600000){
+  const key = cacheKey(url);
+  if(httpCache.has(key)) return httpCache.get(key);
+  const persisted = lsGet(key);
+  if(persisted && typeof persisted === 'object' && typeof persisted.ts === 'number'){
+    if(Date.now() - persisted.ts <= ttlMs){
+      const data = lsData(persisted);
+      httpCache.set(key, data);
+      return data;
+    }
+    // expired -> drop
+    lsDel(key);
+  }
+  const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
+  const res = await fetch(url, { headers: { 'Accept': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) } });
+  if(!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = await res.json();
+  httpCache.set(key, json);
+  lsSet(key, json);
+  return json;
+}
+// Simple debounce helper
+function debounce(fn, ms){ let t; return (...args)=>{ clearTimeout(t); t = setTimeout(()=>fn.apply(null,args), ms); }; }
 function requestIdle(cb){
   if(window.requestIdleCallback){ return window.requestIdleCallback(cb, { timeout: 1500 }); }
   return setTimeout(cb, 300);
@@ -477,8 +501,8 @@ async function renderCart(){
 async function renderJourney(){
   view.innerHTML = `
     <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:8px">
-      <button id="jn-load" class="tab">Load</button>
-      <button id="jn-refresh" class="tab">Refresh</button>
+      <button id="jn-load" type="button" class="tab">Load</button>
+      <button id="jn-refresh" type="button" class="tab">Refresh</button>
       <span id="jn-status" class="muted"></span>
     </div>
     <div class="grid" style="grid-template-columns: 2fr 1fr;">
@@ -495,6 +519,41 @@ async function renderJourney(){
     const funnelEl = el('#chart-funnel'); if(funnelEl && funnelData.length){ const chart=echarts.init(funnelEl); chart.setOption({ tooltip:{ trigger:'item' }, series:[{ type:'funnel', data:funnelData }] }); }
     // Sankey
     let nodes=[], links=[]; if(snap.paths?.links){ links=snap.paths.links; nodes = snap.paths.nodes || Array.from(new Set(links.flatMap(l=>[l.source,l.target]))); }
+    // If snapshot lacks links, synthesize from funnel steps as a fallback
+    if((!links || !links.length) && snap.funnel){
+      try{
+        let steps=[];
+        if(Array.isArray(snap.funnel.steps)) steps = snap.funnel.steps.map(s=>({ name:s.name||s.step||'', value:s.value||s.count||0 }));
+        else if(typeof snap.funnel==='object') steps = Object.entries(snap.funnel).map(([name,value])=>({ name, value }));
+        steps = steps.filter(s=>s.name);
+        const syn=[]; for(let i=0;i<steps.length-1;i++){ const a=steps[i], b=steps[i+1]; const v = isFinite(b.value) && b.value>0 ? b.value : Math.max(0, Math.min(a.value||0, b.value||0)); syn.push({ source:a.name, target:b.name, value:v }); }
+        if(syn.length){ links = syn; nodes = Array.from(new Set(syn.flatMap(l=>[l.source,l.target]))); }
+      }catch{}
+    }
+    // Enforce DAG and limit edges for snapshot render
+    if(Array.isArray(links) && links.length){
+      const stageOf = (label)=>{
+        const s = String(label||'').toLowerCase();
+        if(/purchase|order|success|complete/.test(s)) return 3;
+        if(/checkout|payment|pay/.test(s)) return 2;
+        if(/add\s*to\s*cart|cart/.test(s)) return 1;
+        if(/view|landing|home|list|product/.test(s)) return 0;
+        return 4;
+      };
+      const seen = new Set();
+      links = links.filter(l=>{
+        if(!l || !l.source || !l.target) return false;
+        const a = String(l.source), b = String(l.target);
+        if(a === b) return false;
+        const sa = stageOf(a), sb = stageOf(b);
+        if(!(sa < sb)) return false;
+        const key = a+"->"+b;
+        if(seen.has(key)) return false;
+        seen.add(key); return true;
+      });
+      if(links.length > 100){ links = links.slice().sort((a,b)=>(b.value||0)-(a.value||0)).slice(0,100); }
+      nodes = Array.from(new Set(links.flatMap(l=>[l.source,l.target])));
+    }
     const sankeyEl = el('#chart-sankey'); if(sankeyEl && nodes.length && links.length){ const sankey=echarts.init(sankeyEl); sankey.setOption({ tooltip:{}, series:[{ type:'sankey', data:nodes.map(n=>({ name:n })), links }] }); }
     statusEl.textContent = 'Restored from cache';
   })();
@@ -503,7 +562,10 @@ async function renderJourney(){
     const url = `/api/v1/analytics/journey?${q}`;
     if(fetchFresh){ httpCache.delete(cacheKey(url)); lsDel(cacheKey(url)); }
     statusEl.textContent = 'Loading…';
-    const journey = await safeGet(url);
+    let journey = null;
+    try{
+      journey = fetchFresh ? (await safeGet(url)) : (await getWithTTL(url, 600000));
+    }catch(e){ console.debug('Journey fetch error', e); }
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
     // Save snapshot for Journey
     snapSet('journey', { funnel: journey?.funnel ?? null, paths: journey?.paths ?? null });
@@ -535,34 +597,79 @@ async function renderJourney(){
     if(journey.paths){
       if(Array.isArray(journey.paths.links)){
         links = journey.paths.links;
-        nodes = (journey.paths.nodes || Array.from(new Set(links.flatMap(l=>[l.source,l.target]))));
+        // Limit to Top 100 edges by value
+        if(links.length > 100){ links = links.slice().sort((a,b)=>(b.value||0)-(a.value||0)).slice(0,100); }
+        // Recompute nodes from limited links
+        nodes = Array.from(new Set(links.flatMap(l=>[l.source,l.target])));
       }else if(Array.isArray(journey.paths)){
         links = journey.paths;
+        if(links.length > 100){ links = links.slice().sort((a,b)=>(b.value||0)-(a.value||0)).slice(0,100); }
         nodes = Array.from(new Set(links.flatMap(l=>[l.source,l.target])));
       }
     }
     // Fallback to top_paths (array of links) if paths missing
     if(!links.length && Array.isArray(journey.top_paths) && journey.top_paths.length){
       links = journey.top_paths;
+      if(links.length > 100){ links = links.slice().sort((a,b)=>(b.value||0)-(a.value||0)).slice(0,100); }
       nodes = Array.from(new Set(links.flatMap(l=>[l.source,l.target])));
     }
   }
+  // Final fallback: synthesize links from funnel steps when API links are missing
+  if(!links.length && Array.isArray(funnelData) && funnelData.length > 1){
+    try{
+      const steps = funnelData
+        .map(s=>({ name: String(s.name||'').trim()||'Step', value: Number(s.value||0) }))
+        .filter(s=>s.name && isFinite(s.value));
+      const syn = [];
+      for(let i=0;i<steps.length-1;i++){
+        const a = steps[i];
+        const b = steps[i+1];
+        const v = isFinite(b.value) && b.value>0 ? b.value : Math.max(0, Math.min(a.value||0, b.value||0));
+        syn.push({ source: a.name, target: b.name, value: v });
+      }
+      if(syn.length){
+        links = syn;
+        nodes = Array.from(new Set(links.flatMap(l=>[l.source,l.target])));
+      }
+    }catch{}
+  }
   const sankeyEl = el('#chart-sankey');
   if(sankeyEl && nodes.length && links.length){
+    sankeyEl.innerHTML = '';
     const sankey = echarts.init(sankeyEl);
     sankey.setOption({
       tooltip: {},
       series: [{ type: 'sankey', data: nodes.map(n=>({ name:n })), links }]
     });
+    console.debug('Journey Sankey rendered', { nodeCount: nodes.length, linkCount: links.length });
   } else if(sankeyEl) { sankeyEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
+  if(!(nodes.length && links.length)){
+    console.debug('Journey Sankey empty', { nodes, links });
+    statusEl.textContent = 'No path data';
+  }
   }
   // Ensure buttons are clickable
   const jnLoadBtn = el('#jn-load');
   const jnRefBtn = el('#jn-refresh');
-  if(jnLoadBtn){ jnLoadBtn.disabled = false; jnLoadBtn.style.pointerEvents = 'auto'; jnLoadBtn.addEventListener('click', ()=>run(false)); }
-  if(jnRefBtn){ jnRefBtn.disabled = false; jnRefBtn.style.pointerEvents = 'auto'; jnRefBtn.addEventListener('click', ()=>run(true)); }
+  const runDeb = debounce((fresh)=>run(fresh), 700);
+  if(jnLoadBtn){
+    jnLoadBtn.disabled = false; jnLoadBtn.style.pointerEvents = 'auto'; jnLoadBtn.style.cursor = 'pointer'; jnLoadBtn.style.zIndex = 10; jnLoadBtn.style.position = 'relative';
+    const handler=()=>{ console.debug('Journey: Load clicked'); statusEl.textContent = 'Loading…'; runDeb(false); };
+    jnLoadBtn.addEventListener('click', handler, { capture: true });
+    jnLoadBtn.onpointerdown = handler;
+    jnLoadBtn.onclick = handler;
+  }
+  if(jnRefBtn){
+    jnRefBtn.disabled = false; jnRefBtn.style.pointerEvents = 'auto'; jnRefBtn.style.cursor = 'pointer'; jnRefBtn.style.zIndex = 10; jnRefBtn.style.position = 'relative';
+    const handler=()=>{ console.debug('Journey: Refresh clicked'); statusEl.textContent = 'Loading…'; runDeb(true); };
+    jnRefBtn.addEventListener('click', handler, { capture: true });
+    jnRefBtn.onpointerdown = handler;
+    jnRefBtn.onclick = handler;
+  }
   // Auto-fetch on first visit if there is no snapshot yet
   if(!snapGet('journey')){ await run(false); }
+  // Expose for console-driven testing
+  window.journeyRun = run;
 }
 
 async function renderReco(){
@@ -768,6 +875,35 @@ async function renderRetention(){
       for(const r of snap.timeseries){ labels.push(r.date || r.t || r.period || ''); retVals.push(typeof r.retention==='number'? Math.round(r.retention*1000)/10 : (r.retention ?? 0)); churnVals.push(typeof r.churn==='number'? Math.round(r.churn*1000)/10 : (r.churn ?? 0)); }
       const retEl = el('#chart-ret'); if(retEl){ const chart=echarts.init(retEl); chart.setOption({ tooltip:{ trigger:'axis' }, legend:{ data:['Retention %','Churn %'] }, xAxis:{ type:'category', data: labels }, yAxis:{ type:'value', axisLabel:{ formatter:'{value}%' } }, series:[{ name:'Retention %', type:'line', data: retVals }, { name:'Churn %', type:'line', data: churnVals }] }); }
     }
+    // Render cohort table from snapshot
+    const cohortDiv = el('#cohort-table');
+    if(cohortDiv){
+      let cohort = Array.isArray(snap.cohort) ? snap.cohort : [];
+      if(cohort.length){
+        try{ cohort = cohort.sort((a,b)=> String(a.cohort).localeCompare(String(b.cohort))).slice(-12); }catch{}
+        const monthCount = Math.max(...cohort.map(c => Array.isArray(c.months) ? c.months.length : 0));
+        const header = ['Cohort','Size', ...Array.from({length: monthCount}, (_,i)=>`M+${i}`)];
+        cohortDiv.innerHTML = `
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr style="text-align:left;border-bottom:1px solid #e5e7eb">${header.map(h=>`<th style=\"padding:6px\">${h}</th>`).join('')}</tr></thead>
+            <tbody>
+              ${cohort.map(row => `
+                <tr style=\"border-bottom:1px solid #e5e7eb\">
+                  <td style=\"padding:6px\">${row.cohort||''}</td>
+                  <td style=\"padding:6px\">${row.size??''}</td>
+                  ${Array.from({length: monthCount}, (_,i)=>{
+                    const v = (row.months||[])[i];
+                    const pct = (typeof v === 'number' && isFinite(v)) ? (Math.round(v*1000)/10)+'%' : '';
+                    return `<td style=\"padding:6px\">${pct}</td>`;
+                  }).join('')}
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        `;
+      }else{
+        cohortDiv.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu cohort.</div>';
+      }
+    }
     statusEl.textContent = 'Restored from cache';
   })();
   async function run(fetchFresh=false){
@@ -776,9 +912,9 @@ async function renderRetention(){
     let urlB = `/api/v1/analyses/retention?${q}`;
     if(fetchFresh){ [urlA,urlB].forEach(u=>{ httpCache.delete(cacheKey(u)); lsDel(cacheKey(u)); }); }
     // Prefer analytics/retention; analyses/retention as fallback
-    let retention = await safeGet(urlA);
+    let retention = fetchFresh ? (await safeGet(urlA)) : (await getWithTTL(urlA, 600000));
     if(retention && retention.error) {
-      retention = await safeGet(urlB);
+      retention = fetchFresh ? (await safeGet(urlB)) : (await getWithTTL(urlB, 600000));
     }
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
     // Save snapshot for Retention
@@ -815,8 +951,12 @@ async function renderRetention(){
   // Render cohort table
   const cohortDiv = el('#cohort-table');
   if(cohortDiv){
-    const cohort = Array.isArray(retention?.cohort) ? retention.cohort : [];
+    let cohort = Array.isArray(retention?.cohort) ? retention.cohort : [];
     if(cohort.length){
+      // Keep only the 12 most recent cohorts (by cohort label like 'YYYY-MM')
+      try{
+        cohort = cohort.sort((a,b)=> String(a.cohort).localeCompare(String(b.cohort))).slice(-12);
+      }catch{}
       const monthCount = Math.max(...cohort.map(c => Array.isArray(c.months) ? c.months.length : 0));
       const header = ['Cohort','Size', ...Array.from({length: monthCount}, (_,i)=>`M+${i}`)];
       cohortDiv.innerHTML = `
@@ -843,8 +983,15 @@ async function renderRetention(){
   }
   const retLoadBtn = el('#ret-load');
   const retRefBtn = el('#ret-refresh');
-  if(retLoadBtn){ retLoadBtn.disabled = false; retLoadBtn.style.pointerEvents = 'auto'; retLoadBtn.addEventListener('click', ()=>run(false)); }
-  if(retRefBtn){ retRefBtn.disabled = false; retRefBtn.style.pointerEvents = 'auto'; retRefBtn.addEventListener('click', ()=>run(true)); }
+  const runRetDeb = debounce((fresh)=>run(fresh), 700);
+  if(retLoadBtn){
+    retLoadBtn.disabled = false; retLoadBtn.style.pointerEvents = 'auto'; retLoadBtn.style.cursor = 'pointer';
+    retLoadBtn.addEventListener('click', ()=>{ console.debug('Retention: Load clicked'); statusEl.textContent = 'Loading…'; runRetDeb(false); });
+  }
+  if(retRefBtn){
+    retRefBtn.disabled = false; retRefBtn.style.pointerEvents = 'auto'; retRefBtn.style.cursor = 'pointer';
+    retRefBtn.addEventListener('click', ()=>{ console.debug('Retention: Refresh clicked'); statusEl.textContent = 'Loading…'; runRetDeb(true); });
+  }
   // Auto-fetch on first visit if there is no snapshot yet
   if(!snapGet('retention')){ await run(false); }
 }

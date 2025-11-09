@@ -1115,7 +1115,7 @@ async function renderRaw(){
   view.innerHTML = `
     <div class="card">
       <h3>Raw Data - Recent Sessions</h3>
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
         <label class="muted">Limit</label>
         <select id="raw-limit" aria-label="Số lượng phiên" style="padding:6px;border:1px solid #e5e7eb;border-radius:8px;">
           <option value="10">10</option>
@@ -1124,6 +1124,7 @@ async function renderRaw(){
           <option value="100">100</option>
         </select>
         <button id="raw-reload" class="tab">Reload</button>
+        <input id="raw-userq" placeholder="Filter by User ID" style="padding:6px;border:1px solid #e5e7eb;border-radius:8px;min-width:220px" />
       </div>
       <div class="muted" id="raw-status">Loading…</div>
       <div style="display:grid;grid-template-columns: 2fr 1fr; gap:12px; margin-top:8px;">
@@ -1153,17 +1154,18 @@ async function renderRaw(){
 
   const limitSel = el('#raw-limit');
   const reloadBtn = el('#raw-reload');
+  const userQ = el('#raw-userq');
   const statusEl = el('#raw-status');
   const rowsEl = el('#raw-rows');
   const detailEl = el('#raw-detail');
 
-  async function loadSessions(){
-    statusEl.textContent = 'Loading…';
+  let allItems = [];
+
+  function renderRows(){
+    const q = String(userQ.value || '').trim().toLowerCase();
     rowsEl.innerHTML = '';
-    const limit = Number(limitSel.value || '50');
-    const data = await safeGet(`/api/v1/events/sessions/recent?limit=${limit}`);
-    const items = data.items || data.sessions || [];
-    statusEl.textContent = `${items.length} sessions`;
+    const items = q ? allItems.filter(s => String(s.user_id||'').toLowerCase().includes(q)) : allItems;
+    statusEl.textContent = `${items.length} sessions` + (q ? ` • filtered` : '');
     for(const s of items){
       const tr = document.createElement('tr');
       tr.style.borderBottom = '1px solid #e5e7eb';
@@ -1176,6 +1178,22 @@ async function renderRaw(){
       `;
       rowsEl.appendChild(tr);
     }
+  }
+
+  async function loadSessions(fetchFresh=false){
+    statusEl.textContent = 'Loading…';
+    rowsEl.innerHTML = '';
+    const limit = Math.min(500, Number(limitSel.value || '50'));
+    const params = new URLSearchParams({ limit: String(limit) });
+    const q = String(userQ.value || '').trim();
+    if(q) params.set('user', q);
+    let url = `/api/v1/events/sessions/recent?${params.toString()}`;
+    if(fetchFresh){
+      httpCache.delete(url);
+    }
+    const data = await safeGet(url);
+    allItems = data.items || data.sessions || [];
+    renderRows();
   }
 
   function toCSV(rows){
@@ -1224,8 +1242,9 @@ async function renderRaw(){
     if(!btn) return;
     loadDetail(btn.dataset.sid);
   });
-  reloadBtn.addEventListener('click', loadSessions);
-  limitSel.addEventListener('change', loadSessions);
+  reloadBtn.addEventListener('click', ()=>loadSessions(true));
+  limitSel.addEventListener('change', ()=>loadSessions(true));
+  userQ.addEventListener('input', debounce(()=>loadSessions(true), 300));
 
   await loadSessions();
 }

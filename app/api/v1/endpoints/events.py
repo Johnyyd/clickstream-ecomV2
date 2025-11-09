@@ -67,7 +67,8 @@ async def get_session_summary(
 
 @router.get("/sessions/recent")
 async def get_recent_sessions(
-    limit: int = Query(10, ge=1, le=100),
+    limit: int = Query(10, ge=1, le=500),
+    user: Optional[str] = Query(None, description="Filter by user id substring (case-insensitive)"),
     db = Depends(get_db)
 ):
     """
@@ -76,8 +77,14 @@ async def get_recent_sessions(
     events_col = db.db["events"]
     sessions: list[dict] = []
     try:
-        pipeline = [
-            {"$sort": {"timestamp": -1}},
+        pipeline = [{"$sort": {"timestamp": -1}}]
+        if user:
+            # Match by substring against stringified user_id to support ObjectId or string ids
+            pipeline += [
+                {"$addFields": {"user_id_str": {"$toString": "$user_id"}}},
+                {"$match": {"user_id_str": {"$regex": user, "$options": "i"}}},
+            ]
+        pipeline += [
             {"$group": {"_id": "$session_id", "last_event": {"$first": "$timestamp"}, "user_id": {"$first": "$user_id"}}},
             {"$sort": {"last_event": -1}},
             {"$limit": int(limit)}

@@ -266,11 +266,11 @@ async def get_retention_analysis(db, start_date: datetime, cohort_size: int = 7)
     cohort: list[dict] = []
     try:
         # Build month buckets
+        from datetime import datetime as _dt
         def month_key(ts: int) -> str:
-            from datetime import datetime as _dt
             return _dt.utcfromtimestamp(int(ts)).strftime('%Y-%m')
 
-        # Map: user_id -> sorted list of active months
+        # Map: user_id -> set of active months
         user_months: dict[str, set[str]] = {}
         for e in events:
             uid = e.get("user_id")
@@ -279,24 +279,50 @@ async def get_retention_analysis(db, start_date: datetime, cohort_size: int = 7)
             mk = month_key(e.get("timestamp", start_ts))
             user_months.setdefault(str(uid), set()).add(mk)
 
-        # Month set in range
-        months_sorted = sorted({m for s in user_months.values() for m in s})
-        # Build simple retention/churn timeseries: active users per month
-        month_active_counts = {m:0 for m in months_sorted}
-        for months in user_months.values():
+        # Build contiguous month list from min to max month seen
+        if user_months:
+            all_months = sorted({m for s in user_months.values() for m in s})
+        else:
+            all_months = []
+        def to_ym(mstr: str):
+            y, m = map(int, mstr.split('-'))
+            return y, m
+        def ym_iter(start_m: str, end_m: str):
+            sy, sm = to_ym(start_m)
+            ey, em = to_ym(end_m)
+            y, m = sy, sm
+            out = []
+            while (y < ey) or (y == ey and m <= em):
+                out.append(f"{y:04d}-{m:02d}")
+                m += 1
+                if m > 12:
+                    m = 1; y += 1
+            return out
+        months_sorted = ym_iter(all_months[0], all_months[-1]) if all_months else []
+
+        # Active users per month as sets
+        active_sets: dict[str, set[str]] = {m: set() for m in months_sorted}
+        for uid, months in user_months.items():
             for m in months:
-                month_active_counts[m] = month_active_counts.get(m, 0) + 1
-        # Estimate retention% as active users month-over-month
-        prev = None
+                if m in active_sets:
+                    active_sets[m].add(uid)
+
+        # Timeseries retention = returning users (consecutive months) / active users in previous month
+        prev_m = None
         for m in months_sorted:
-            cur = month_active_counts[m]
-            if prev is None:
+            if prev_m is None:
                 timeseries.append({"date": m, "retention": 0.0, "churn": 0.0})
             else:
-                retention = (cur/prev) if prev else 0.0
+                prev_users = active_sets.get(prev_m, set())
+                cur_users = active_sets.get(m, set())
+                if prev_users:
+                    returning = len(prev_users & cur_users)
+                    retention = round(returning / len(prev_users), 4)
+                else:
+                    retention = 0.0
                 churn = max(0.0, 1.0 - retention)
                 timeseries.append({"date": m, "retention": retention, "churn": churn})
-            prev = cur
+            prev_m = m
 
         # Build cohorts: group by first month seen
         cohorts: dict[str, list[str]] = {}

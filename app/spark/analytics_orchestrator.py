@@ -276,8 +276,9 @@ class AnalyticsOrchestrator:
     
     def _run_recommendations(self, username: Optional[str], limit: Optional[int]) -> Dict[str, Any]:
         """Run product recommendations"""
+        # If username is not provided, run in all-users mode and return sample output
         if not username:
-            return {"error": "Username required for recommendations"}
+            return self.modules["recommendations"].run(username=None, limit=limit or 10)
         return self.modules["recommendations"].run(username=username, limit=limit)
     
     def _run_segmentation(self, username: Optional[str], limit: Optional[int]) -> Dict[str, Any]:

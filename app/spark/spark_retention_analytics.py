@@ -209,7 +209,7 @@ def analyze_cohort_retention(username=None):
             FROM (
                 SELECT 
                     user_id,
-                    DATEDIFF(CURRENT_DATE(), MAX(DATE(timestamp))) as days_since_last_activity
+                    DATEDIFF(CURRENT_DATE(), MAX(to_date(from_unixtime(timestamp)))) as days_since_last_activity
                 FROM events
                 GROUP BY user_id
             )

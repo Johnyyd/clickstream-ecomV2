@@ -8,13 +8,15 @@ from typing import Optional, List
 from pydantic import BaseModel
 import traceback
 
-router = APIRouter(prefix="/analytics", tags=["analytics"])
+router = APIRouter(tags=["analytics"])
 
 
 class AnalyticsRequest(BaseModel):
     username: Optional[str] = None
     limit: Optional[int] = None
     modules: List[str] = ["all"]  # seo, cart, retention, journey, recommendations, ml
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
 
 
 @router.get("/seo")

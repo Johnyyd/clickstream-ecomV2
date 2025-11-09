@@ -168,7 +168,8 @@ app.include_router(api_router)
 try:
     app.include_router(metrics_api.router, prefix="/api/v1/metrics")
     app.include_router(cart_api.router, prefix="/api/v1/cart")
-    app.include_router(analytics_comprehensive_api.router, prefix="/api/v1/analytics")
+    # Mount spark-heavy analytics on a separate prefix to avoid shadowing lightweight service endpoints
+    app.include_router(analytics_comprehensive_api.router, prefix="/api/v1/spark-analytics")
     app.include_router(recommendations_api.router, prefix="/api/v1/recommendations")
     app.include_router(products_api.router, prefix="/api/v1/products")
     app.include_router(analysis_api.router, prefix="/api/v1/analyses")

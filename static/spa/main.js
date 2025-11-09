@@ -103,6 +103,33 @@ async function safeGet(url){
   }
 }
 
+async function safePost(url, body){
+  try{
+    const key = cacheKey(url + JSON.stringify(body));
+    if(httpCache.has(key)) return httpCache.get(key);
+    // Note: POST requests are not typically cached in localStorage the same way as GET.
+    // This is a simple implementation that does not use lsGet/lsSet for POST.
+    const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify(body)
+    });
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    httpCache.set(key, json);
+    // Do not lsSet for POST to avoid caching mutable operations
+    return json;
+  }catch(e){
+    showToast(`Request failed: ${String(e)}`, 'error');
+    return { error: String(e) };
+  }
+}
+
 async function preload(url){
   const key = cacheKey(url);
   if(httpCache.has(key)) return;
@@ -157,77 +184,158 @@ async function loadOverview(){
     </div>
   `;
   const statusEl = el('#ov-status');
-  // Restore from last snapshot if any (no fetch)
-  const snap = snapGet('overview');
-  if(snap){
-    el('#qk-sessions').textContent = fmt(snap.total_sessions);
-    el('#qk-users').textContent = fmt(snap.total_users);
-    el('#qk-cr').textContent = `${fmt((snap.conversion_rate||0)*100, 2)}%`;
-    el('#qk-rev').textContent = `$${fmt(snap.revenue,2)}`;
-    const trendEl = el('#chart-trend');
-    if(trendEl && Array.isArray(snap.traffic_trend?.categories) && snap.traffic_trend.categories.length){
-      const chart = echarts.init(trendEl); chart.setOption({ tooltip:{}, legend:{ data: snap.traffic_trend.series.map(s=>s.name) }, xAxis:{ type:'category', data: snap.traffic_trend.categories }, yAxis:{ type:'value' }, series: snap.traffic_trend.series });
-    }
-    const segEl = el('#chart-seg');
-    if(segEl && Array.isArray(snap.segments?.categories) && snap.segments.categories.length && Array.isArray(snap.segments.series) && snap.segments.series[0]?.data){
-      const seg = echarts.init(segEl); seg.setOption({ tooltip:{}, xAxis:{ type:'category', data: snap.segments.categories }, yAxis:{ type:'value' }, series:[{ type:'bar', name:'Users', data: snap.segments.series[0].data }] });
-    }
-    statusEl.textContent = 'Restored from cache';
-  }
-  async function run(fetchFresh=false){
-    const q = buildQuery();
-    const bizUrl = `/api/v1/metrics/business?${q}`;
-    const seoUrl = `/api/v1/analytics/seo?${q}`;
-    if(fetchFresh){ httpCache.delete(cacheKey(bizUrl)); httpCache.delete(cacheKey(seoUrl)); lsDel(cacheKey(bizUrl)); lsDel(cacheKey(seoUrl)); }
-    statusEl.textContent = 'Loading…';
-    const business = await safeGet(bizUrl);
-    const seo = await safeGet(seoUrl);
-    statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
 
-    const data = {
-      total_sessions: business.total_sessions ?? business.sessions ?? null,
-      total_users: business.total_users ?? business.users ?? null,
-      conversion_rate: business.conversion_rate ?? null,
-      revenue: business.revenue ?? null,
-      traffic_trend: seo.traffic_trend ?? { categories: [], series: [] },
-      segments: business.segments ?? { categories: [], series: [] }
-    };
-    // Save snapshot for instant restore on tab switch
-    snapSet('overview', data);
-
-    el('#qk-sessions').textContent = fmt(data.total_sessions);
-    el('#qk-users').textContent = fmt(data.total_users);
-    el('#qk-cr').textContent = `${fmt((data.conversion_rate||0)*100, 2)}%`;
-    el('#qk-rev').textContent = `$${fmt(data.revenue,2)}`;
+  // Simplified data update function
+  function updateUI(data){
+    if(!data) {
+      statusEl.textContent = 'No data to display.';
+      return;
+    }
+    // KPIs
+    const kpiSessions = Number(data.total_sessions ?? 0);
+    const kpiUsers = Number(data.total_users ?? 0);
+    const kpiCR = Number(data.conversion_rate ?? 0);
+    const kpiRev = Number(data.revenue ?? 0);
+    el('#qk-sessions').textContent = fmt(Number.isFinite(kpiSessions) ? kpiSessions : 0);
+    el('#qk-users').textContent = fmt(Number.isFinite(kpiUsers) ? kpiUsers : 0);
+    el('#qk-cr').textContent = `${fmt(Number.isFinite(kpiCR) ? kpiCR*100 : 0, 2)}%`;
+    el('#qk-rev').textContent = `$${fmt(Number.isFinite(kpiRev) ? kpiRev : 0, 2)}`;
 
     // Trend chart
     const trendEl = el('#chart-trend');
-    if(trendEl && Array.isArray(data.traffic_trend.categories) && data.traffic_trend.categories.length){
-      const trendChart = echarts.init(trendEl);
-      trendChart.setOption({
+    if(trendEl && data.traffic_trend?.categories?.length){
+      const chart = echarts.init(trendEl);
+      chart.setOption({
         tooltip: {},
-        legend: { data: data.traffic_trend.series.map(s=>s.name) },
+        legend: { data: data.traffic_trend.series.map(s => s.name) },
         xAxis: { type: 'category', data: data.traffic_trend.categories },
         yAxis: { type: 'value' },
         series: data.traffic_trend.series
       });
-    } else if(trendEl){ trendEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
+    } else if(trendEl) {
+      trendEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>';
+    }
 
     // Segmentation chart
     const segEl = el('#chart-seg');
-    if(segEl && Array.isArray(data.segments.categories) && data.segments.categories.length && Array.isArray(data.segments.series) && data.segments.series[0]?.data){
-      const segChart = echarts.init(segEl);
-      segChart.setOption({
+    if(segEl && data.segments?.categories?.length && data.segments.series?.[0]?.data){
+      const seg = echarts.init(segEl);
+      seg.setOption({
         tooltip: {},
         xAxis: { type: 'category', data: data.segments.categories },
         yAxis: { type: 'value' },
         series: [{ type: 'bar', name: 'Users', data: data.segments.series[0].data }]
       });
-    } else if(segEl){ segEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
+    } else if(segEl) {
+      segEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>';
+    }
   }
-  el('#ov-load').addEventListener('click', ()=>run(false));
-  el('#ov-refresh').addEventListener('click', ()=>run(true));
-  // Do not auto-fetch; only restore above. User controls Load/Refresh.
+
+  // Restore from snapshot if available
+  const snap = snapGet('overview');
+  if(snap){
+    updateUI(snap);
+    statusEl.textContent = 'Restored from cache';
+  }
+
+  async function run(fetchFresh = false){
+    const q = buildQuery();
+    const bizUrl = `/api/v1/metrics/business?${q}`;
+    const seoUrl = `/api/v1/analytics/seo?${q}`;
+    const jnUrl = `/api/v1/analytics/journey?${q}`;
+    if(fetchFresh){
+      [bizUrl, seoUrl, jnUrl].forEach(u=>{ httpCache.delete(cacheKey(u)); lsDel(cacheKey(u)); });
+    }
+    statusEl.textContent = 'Loading…';
+    const business = await safeGet(bizUrl);
+    const seo = await safeGet(seoUrl);
+    const journey = await safeGet(jnUrl);
+    // Guard: if any request failed, do not wipe charts; keep last snapshot
+    if(business?.error || seo?.error || journey?.error){
+      statusEl.textContent = `Error: ${business?.error || seo?.error || journey?.error}`;
+      showToast('Overview load failed. Using cached data if available.', 'error');
+      const snapErr = snapGet('overview');
+      if(snapErr) updateUI(snapErr);
+      return;
+    }
+    statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
+
+    // Build fallbacks from SEO when business metrics are missing
+    const seoSite = seo && typeof seo.site_metrics === 'object' ? seo.site_metrics : {};
+    const seoDist = seo && seo.sources && seo.sources.distribution ? seo.sources.distribution : null;
+    const segFromSeo = seoDist ? {
+      categories: Object.keys(seoDist),
+      series: [{ name: 'Users', data: Object.values(seoDist) }]
+    } : { categories: [], series: [] };
+
+    // Derive conversion rate from journey funnel when missing
+    let derivedCR = null;
+    try{
+      const jf = journey && journey.funnel;
+      if(jf){
+        if(Array.isArray(jf.steps)){
+          const views = jf.steps.find(s=>/(view|views)/i.test(String(s.name||s.step||'')));
+          const purch = jf.steps.find(s=>/purchase/i.test(String(s.name||s.step||'')));
+          const v = (views?.value ?? views?.count ?? 0);
+          const p = (purch?.value ?? purch?.count ?? 0);
+          derivedCR = v ? (p / v) : 0;
+        }else if(typeof jf === 'object'){
+          const v = Number(jf.Views ?? jf.views ?? jf.view ?? 0) || 0;
+          const p = Number(jf.Purchase ?? jf.purchase ?? 0) || 0;
+          derivedCR = v ? (p / v) : 0;
+        }
+      }
+    }catch{}
+
+    // Derive sessions from SEO timeseries if needed
+    let derivedSessions = 0;
+    try{
+      if(Array.isArray(seo?.timeseries)){
+        for(const r of seo.timeseries){
+          const a = Number(r.seo ?? r.SEO ?? 0) || 0;
+          const b = Number(r.direct ?? r.Direct ?? 0) || 0;
+          const c = Number(r.social ?? r.Social ?? 0) || 0;
+          derivedSessions += a + b + c;
+        }
+      }
+    }catch{}
+
+    // Traffic trend fallback from seo.timeseries when needed
+    let trafficTrend = seo.traffic_trend;
+    if(!trafficTrend && Array.isArray(seo?.timeseries)){
+      const categories = seo.timeseries.map(r=> r.date || r.time || '');
+      const build = (k)=> seo.timeseries.map(r=> Number(r[k] ?? r[k?.toUpperCase()] ?? 0) || 0);
+      trafficTrend = {
+        categories,
+        series: [
+          { name:'SEO', type:'line', data: build('seo') },
+          { name:'Direct', type:'line', data: build('direct') },
+          { name:'Social', type:'line', data: build('social') },
+        ]
+      };
+    }
+
+    const data = {
+      total_sessions: (business.total_sessions ?? business.sessions ?? seoSite.total_views ?? derivedSessions ?? 0),
+      total_users: (business.total_users ?? business.users ?? seoSite.unique_visitors ?? 0),
+      conversion_rate: (business.conversion_rate ?? (derivedCR ?? 0)),
+      revenue: (business.revenue ?? 0),
+      traffic_trend: trafficTrend ?? { categories: [], series: [] },
+      segments: business.segments ?? segFromSeo
+    };
+
+    // Save snapshot and update UI
+    snapSet('overview', data);
+    updateUI(data);
+  }
+
+  el('#ov-load').addEventListener('click', () => run(false));
+  el('#ov-refresh').addEventListener('click', () => run(true));
+
+  // Auto-fetch on first visit if there is no snapshot
+  if(!snap){
+    await run(false);
+  }
 }
 
 async function renderCart(){
@@ -315,6 +423,8 @@ async function renderCart(){
   }
   el('#cart-load').addEventListener('click', ()=>run(false));
   el('#cart-refresh').addEventListener('click', ()=>run(true));
+  // Auto-fetch on first visit if there is no snapshot yet
+  if(!snapGet('cart')){ await run(false); }
 }
 
 async function renderJourney(){
@@ -394,6 +504,8 @@ async function renderJourney(){
   }
   el('#jn-load').addEventListener('click', ()=>run(false));
   el('#jn-refresh').addEventListener('click', ()=>run(true));
+  // Auto-fetch on first visit if there is no snapshot yet
+  if(!snapGet('journey')){ await run(false); }
 }
 
 async function renderReco(){
@@ -495,6 +607,10 @@ async function renderReco(){
     const snapT = snapGet('reco:trending:day');
     if(snapT && Array.isArray(snapT.items)) renderItems(snapT.items);
   })();
+  // Auto-fetch on first visit if there is no snapshot for either mode
+  if(!(snapGet('reco:personalized')?.items?.length) && !(snapGet('reco:trending:day')?.items?.length)){
+    await load();
+  }
 }
 
 async function renderSEO(){
@@ -570,6 +686,8 @@ async function renderSEO(){
   }
   el('#seo-load').addEventListener('click', ()=>run(false));
   el('#seo-refresh').addEventListener('click', ()=>run(true));
+  // Auto-fetch on first visit if there is no snapshot yet
+  if(!snapGet('seo')){ await run(false); }
 }
 
 async function renderRetention(){
@@ -639,6 +757,8 @@ async function renderRetention(){
   }
   el('#ret-load').addEventListener('click', ()=>run(false));
   el('#ret-refresh').addEventListener('click', ()=>run(true));
+  // Auto-fetch on first visit if there is no snapshot yet
+  if(!snapGet('retention')){ await run(false); }
 }
 
 async function renderOrchestrator(){
@@ -747,6 +867,8 @@ async function renderOrchestrator(){
     statusPre.textContent = JSON.stringify(json, null, 2);
     const errs = json.errors || {};
     errorsPre.textContent = Object.keys(errs).length ? JSON.stringify(errs, null, 2) : '(no errors)';
+    // Auto-refresh latest status + modules + history
+    await loadStatus();
   }
 
   runBtn.addEventListener('click', run);

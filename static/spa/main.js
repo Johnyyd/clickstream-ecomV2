@@ -173,10 +173,10 @@ async function loadOverview(){
       <span id="ov-status" class="muted"></span>
     </div>
     <div class="grid kpi">
-      <div class="card"><h3>Total Sessions</h3><div class="kpi-value" id="qk-sessions">—</div></div>
-      <div class="card"><h3>Total Users</h3><div class="kpi-value" id="qk-users">—</div></div>
-      <div class="card"><h3>Conversion Rate</h3><div class="kpi-value" id="qk-cr">—</div></div>
-      <div class="card"><h3>Revenue</h3><div class="kpi-value" id="qk-rev">—</div></div>
+      <div class="card"><h3>Total Sessions</h3><div class="kpi-value" id="ov-sessions">—</div></div>
+      <div class="card"><h3>Total Users</h3><div class="kpi-value" id="ov-users">—</div></div>
+      <div class="card"><h3>Conversion Rate</h3><div class="kpi-value" id="ov-cr">—</div></div>
+      <div class="card"><h3>Revenue</h3><div class="kpi-value" id="ov-rev">—</div></div>
     </div>
     <div class="grid" style="grid-template-columns: 1fr 1fr; margin-top:12px;">
       <div class="card"><h3>Traffic Sources Trend</h3><div class="chart" id="chart-trend"></div></div>
@@ -192,14 +192,38 @@ async function loadOverview(){
       return;
     }
     // KPIs
-    const kpiSessions = Number(data.total_sessions ?? 0);
+    let kpiSessions = Number(data.total_sessions ?? 0);
     const kpiUsers = Number(data.total_users ?? 0);
-    const kpiCR = Number(data.conversion_rate ?? 0);
+    let kpiCR = Number(data.conversion_rate ?? 0);
+    // Fallbacks if snapshot lacked computed fields
+    if(!Number.isFinite(kpiSessions) || kpiSessions <= 0){
+      const tv = Number(data.seo_site_metrics?.total_views ?? 0);
+      if(Number.isFinite(tv) && tv > 0) kpiSessions = tv;
+    }
+    if(!Number.isFinite(kpiCR) || kpiCR <= 0){
+      const dcr = Number(data.derived_cr ?? 0);
+      if(Number.isFinite(dcr) && dcr > 0) kpiCR = dcr;
+    }
     const kpiRev = Number(data.revenue ?? 0);
-    el('#qk-sessions').textContent = fmt(Number.isFinite(kpiSessions) ? kpiSessions : 0);
-    el('#qk-users').textContent = fmt(Number.isFinite(kpiUsers) ? kpiUsers : 0);
-    el('#qk-cr').textContent = `${fmt(Number.isFinite(kpiCR) ? kpiCR*100 : 0, 2)}%`;
-    el('#qk-rev').textContent = `$${fmt(Number.isFinite(kpiRev) ? kpiRev : 0, 2)}`;
+    // Update header quick KPIs
+    el('#qk-sessions') && (el('#qk-sessions').textContent = fmt(Number.isFinite(kpiSessions) ? kpiSessions : 0));
+    el('#qk-cr') && (el('#qk-cr').textContent = `${fmt(Number.isFinite(kpiCR) ? kpiCR*100 : 0, 2)}%`);
+    // Update Overview card KPIs
+    el('#ov-sessions') && (el('#ov-sessions').textContent = fmt(Number.isFinite(kpiSessions) ? kpiSessions : 0));
+    el('#ov-users') && (el('#ov-users').textContent = fmt(Number.isFinite(kpiUsers) ? kpiUsers : 0));
+    el('#ov-cr') && (el('#ov-cr').textContent = `${fmt(Number.isFinite(kpiCR) ? kpiCR*100 : 0, 2)}%`);
+    // Force fill if still '—'
+    const sessEl = el('#ov-sessions');
+    if(sessEl && (sessEl.textContent === '—' || sessEl.textContent.trim() === '')){
+      const tv = Number(data.seo_site_metrics?.total_views ?? 0);
+      if(Number.isFinite(tv) && tv > 0){ sessEl.textContent = fmt(tv); }
+    }
+    const crEl = el('#ov-cr');
+    if(crEl && (crEl.textContent.startsWith('—') || crEl.textContent.trim() === '' || /NaN/.test(crEl.textContent))){
+      const dcr = Number(data.derived_cr ?? 0);
+      if(Number.isFinite(dcr) && dcr > 0){ crEl.textContent = `${fmt(dcr*100, 2)}%`; }
+    }
+    el('#ov-rev') && (el('#ov-rev').textContent = `$${fmt(Number.isFinite(kpiRev) ? kpiRev : 0, 2)}`);
 
     // Trend chart
     const trendEl = el('#chart-trend');
@@ -236,24 +260,33 @@ async function loadOverview(){
   if(snap){
     updateUI(snap);
     statusEl.textContent = 'Restored from cache';
+    // If critical KPIs missing in snapshot, do an immediate fresh run; else refresh in background
+    const missingCritical = !(Number.isFinite(Number(snap.total_sessions))) || !(Number.isFinite(Number(snap.total_users)));
+    if(missingCritical){
+      run(true).catch(()=>{});
+    }else{
+      // Background refresh so KPIs update even if snapshot was slightly stale
+      requestIdle(()=>{ run(false).catch(()=>{}); });
+    }
   }
 
   async function run(fetchFresh = false){
     const q = buildQuery();
-    const bizUrl = `/api/v1/metrics/business?${q}`;
+    let bizUrl = `/api/v1/metrics/business?${q}`;
     const seoUrl = `/api/v1/analytics/seo?${q}`;
     const jnUrl = `/api/v1/analytics/journey?${q}`;
     if(fetchFresh){
       [bizUrl, seoUrl, jnUrl].forEach(u=>{ httpCache.delete(cacheKey(u)); lsDel(cacheKey(u)); });
+      bizUrl = `${bizUrl}&bypass_cache=true`;
     }
     statusEl.textContent = 'Loading…';
     const business = await safeGet(bizUrl);
     const seo = await safeGet(seoUrl);
     const journey = await safeGet(jnUrl);
-    // Guard: if any request failed, do not wipe charts; keep last snapshot
-    if(business?.error || seo?.error || journey?.error){
-      statusEl.textContent = `Error: ${business?.error || seo?.error || journey?.error}`;
-      showToast('Overview load failed. Using cached data if available.', 'error');
+    // Guard: require SEO to succeed for charts; continue if business/journey fail
+    if(seo?.error){
+      statusEl.textContent = `Error: ${seo?.error}`;
+      showToast('Overview load failed (SEO). Using cached data if available.', 'error');
       const snapErr = snapGet('overview');
       if(snapErr) updateUI(snapErr);
       return;
@@ -315,13 +348,27 @@ async function loadOverview(){
       };
     }
 
+    // Prefer business metrics when they are positive; otherwise fallback to SEO-derived
+    const totalSessions = Number(business.total_sessions ?? business.sessions ?? 0);
+    const totalUsers = Number(business.total_users ?? business.users ?? 0);
+    // Choose conversion rate: prefer journey-derived when business is missing/zero
+    const bizCR = Number(business.conversion_rate ?? 0) || 0;
+    const finalCR = (Number.isFinite(bizCR) && bizCR > 0)
+      ? bizCR
+      : (Number.isFinite(derivedCR) && derivedCR > 0 ? derivedCR : 0);
     const data = {
-      total_sessions: (business.total_sessions ?? business.sessions ?? seoSite.total_views ?? derivedSessions ?? 0),
-      total_users: (business.total_users ?? business.users ?? seoSite.unique_visitors ?? 0),
-      conversion_rate: (business.conversion_rate ?? (derivedCR ?? 0)),
+      total_sessions: (Number.isFinite(totalSessions) && totalSessions > 0)
+        ? totalSessions
+        : Number(seoSite.total_views ?? derivedSessions ?? 0) || 0,
+      total_users: (Number.isFinite(totalUsers) && totalUsers > 0)
+        ? totalUsers
+        : Number(seoSite.unique_visitors ?? 0) || 0,
+      conversion_rate: finalCR,
       revenue: (business.revenue ?? 0),
       traffic_trend: trafficTrend ?? { categories: [], series: [] },
-      segments: business.segments ?? segFromSeo
+      segments: business.segments ?? segFromSeo,
+      seo_site_metrics: seoSite,
+      derived_cr: finalCR
     };
 
     // Save snapshot and update UI

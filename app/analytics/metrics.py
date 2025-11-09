@@ -64,6 +64,15 @@ async def get_business_metrics(db, start_date: datetime, end_date: datetime) -> 
     end_ts = int(end_date.timestamp())
 
     try:
+        # Prefer accurate counts from 'sessions' collection when available
+        sessions_col = None
+        if hasattr(db, "db"):
+            try:
+                # PyMongo Database does not support .get; use direct indexing
+                sessions_col = db.db["sessions"]
+            except Exception:
+                sessions_col = None
+
         if orders_col:
             cursor = orders_col.find({
                 "created_at": {"$gte": start_date, "$lte": end_date}
@@ -74,8 +83,59 @@ async def get_business_metrics(db, start_date: datetime, end_date: datetime) -> 
                     revenue += float(o.get("total", 0) or 0)
                 except Exception:
                     pass
-        if events_col:
-            # Visitors and sessions
+
+        if sessions_col:
+            # Use first_event_at/last_event_at window for session counts
+            used_string_fallback = False
+            try:
+                total_sessions = sessions_col.count_documents({
+                    "first_event_at": {"$gte": start_date, "$lte": end_date}
+                })
+                # If zero, try last_event_at
+                if total_sessions == 0:
+                    total_sessions = sessions_col.count_documents({
+                        "last_event_at": {"$gte": start_date, "$lte": end_date}
+                    })
+            except Exception:
+                total_sessions = 0
+            # If still zero, fallback for string dates using $toDate
+            if total_sessions == 0:
+                try:
+                    pipeline = [
+                        {"$match": {"$expr": {"$and": [
+                            {"$gte": [{"$toDate": "$first_event_at"}, start_date]},
+                            {"$lte": [{"$toDate": "$first_event_at"}, end_date]},
+                        ]}}},
+                        {"$count": "n"}
+                    ]
+                    res = list(sessions_col.aggregate(pipeline))
+                    total_sessions = int(res[0]["n"]) if res else 0
+                    used_string_fallback = True
+                except Exception:
+                    pass
+            # Visitors (distinct user_id) under the same window
+            try:
+                if not used_string_fallback:
+                    uids = sessions_col.distinct("user_id", {
+                        "first_event_at": {"$gte": start_date, "$lte": end_date}
+                    })
+                    visitors = len([u for u in uids if u])
+                else:
+                    pipeline_u = [
+                        {"$match": {"$expr": {"$and": [
+                            {"$gte": [{"$toDate": "$first_event_at"}, start_date]},
+                            {"$lte": [{"$toDate": "$first_event_at"}, end_date]},
+                        ]}}},
+                        {"$group": {"_id": "$user_id"}},
+                        {"$count": "n"}
+                    ]
+                    res_u = list(sessions_col.aggregate(pipeline_u))
+                    visitors = int(res_u[0]["n"]) if res_u else 0
+            except Exception:
+                visitors = visitors or 0
+
+        elif events_col:
+            # Visitors and sessions estimated from events when sessions collection not available
             user_ids = events_col.distinct("user_id", {
                 "timestamp": {"$gte": start_ts, "$lte": end_ts}
             })
@@ -84,13 +144,14 @@ async def get_business_metrics(db, start_date: datetime, end_date: datetime) -> 
                 "timestamp": {"$gte": start_ts, "$lte": end_ts}
             })
             total_sessions = len([s for s in sess_ids if s])
-            # Conversions and revenue from purchase events
+
+        # Conversions and revenue from purchase events (from events)
+        if events_col:
             purchases = list(events_col.find({
                 "event_type": "purchase",
                 "timestamp": {"$gte": start_ts, "$lte": end_ts}
             }, {"properties.total_amount": 1}))
             conv_count = len(purchases)
-            # If no orders data, derive orders/revenue from purchases
             if orders == 0 and conv_count:
                 orders = conv_count
             try:

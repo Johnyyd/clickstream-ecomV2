@@ -26,6 +26,7 @@ router = APIRouter()
 async def get_business_metrics(
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
+    bypass_cache: bool = False,
     db = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -41,7 +42,7 @@ async def get_business_metrics(
             end_date = datetime.utcnow()
             
         key = f"v3:metrics:business:{start_date.isoformat()}:{end_date.isoformat()}"
-        cached = cache.get(key)
+        cached = None if bypass_cache else cache.get(key)
         if cached is not None:
             return cached
         result = await get_business_metrics(

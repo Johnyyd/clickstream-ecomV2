@@ -441,6 +441,68 @@ async def get_seo_analysis(db, start_date: datetime, end_date: datetime):
         {"name": "Social", "type": "line", "data": [t.get("social",0) for t in timeseries]},
     ]
 
+    # Pull revenue from business metrics to expose in this API as requested
+    revenue_value: float = 0.0
+    try:
+        from app.analytics.metrics import get_business_metrics as _get_biz
+        biz = await _get_biz(db=db, start_date=start_date, end_date=end_date)
+        revenue_value = float(biz.get("revenue", 0.0) or 0.0)
+    except Exception:
+        revenue_value = 0.0
+
+    # If revenue still 0, run an internal aggregation directly on events as a fallback
+    if not revenue_value:
+        try:
+            events_col = db.db["events"]
+            # Normalize window bounds
+            start_ts = int(start_date.timestamp())
+            end_ts = int(end_date.timestamp())
+            pipeline = [
+                {"$match": {"$and": [
+                    {"$or": [
+                        {"event_type": "purchase"},
+                        {"$expr": {"$eq": [ {"$toLower": {"$trim": {"input": "$event_type"}}}, "purchase" ]}}
+                    ]},
+                    {"$or": [
+                        {"timestamp": {"$gte": start_ts, "$lte": end_ts}},
+                        {"timestamp": {"$gte": start_ts * 1000, "$lte": end_ts * 1000}},
+                        {"occurred_at": {"$gte": start_date, "$lte": end_date}},
+                        {"$expr": {"$and": [
+                            {"$gte": [ {"$toLong": "$timestamp"}, start_ts ]},
+                            {"$lte": [ {"$toLong": "$timestamp"}, end_ts ]}
+                        ]}},
+                        {"$expr": {"$and": [
+                            {"$gte": [ {"$toLong": "$timestamp"}, start_ts * 1000 ]},
+                            {"$lte": [ {"$toLong": "$timestamp"}, end_ts * 1000 ]}
+                        ]}},
+                        {"$expr": {"$and": [
+                            {"$gte": [ {"$dateFromString": {"dateString": "$occurred_at_iso", "onError": None, "onNull": None}}, start_date ]},
+                            {"$lte": [ {"$dateFromString": {"dateString": "$occurred_at_iso", "onError": None, "onNull": None}}, end_date ]}
+                        ]}}
+                    ]}
+                ]}},
+                {"$project": {
+                    "ta": "$properties.total_amount",
+                    "total": "$properties.total",
+                    "amount": "$properties.amount",
+                    "value": "$properties.value",
+                    "cart_total": "$properties.cart_total",
+                    "price": "$properties.product_details.price",
+                    "items": "$properties.cart_items",
+                }},
+                {"$addFields": {
+                    "picked": {"$ifNull": ["$ta", {"$ifNull": ["$total", {"$ifNull": ["$amount", {"$ifNull": ["$value", "$cart_total"]}]}]}]},
+                    "priceItems": {"$multiply": [ {"$ifNull": ["$price", 0]}, {"$ifNull": ["$items", 1]} ]}
+                }},
+                {"$addFields": {"final": {"$cond": [ {"$gt": ["$picked", 0]}, "$picked", "$priceItems" ]}}},
+                {"$group": {"_id": None, "rev": {"$sum": "$final"}}}
+            ]
+            agg = list(events_col.aggregate(pipeline))
+            if agg:
+                revenue_value = float(agg[0].get("rev") or 0.0)
+        except Exception:
+            pass
+
     return {
         "site_metrics": site_metrics,
         "top_pages": top_pages,
@@ -453,6 +515,7 @@ async def get_seo_analysis(db, start_date: datetime, end_date: datetime):
         "sources": {"distribution": dist},
         "timeseries": timeseries,
         "traffic_trend": {"categories": categories, "series": series},
+        "revenue": revenue_value,
     }
 
 async def get_comprehensive_analysis(db, start_date: datetime, end_date: datetime):

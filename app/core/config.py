@@ -144,6 +144,12 @@ class Settings(BaseSettings):
         None,
         description="Log file path (optional)"
     )
+
+    # Public debug access key (optional): when set, allows debug endpoints without auth if the provided key matches
+    DEBUG_PUBLIC_KEY: Optional[str] = Field(
+        default=None,
+        description="Optional public key to allow debug=true access without auth"
+    )
     
     @validator("LOG_LEVEL")
     def validate_log_level(cls, v):

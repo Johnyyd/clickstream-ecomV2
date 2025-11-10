@@ -18,7 +18,7 @@ from ..models import (
     TrendMetrics,
     TimeMetrics
 )
-from ..deps import get_db, get_current_user, verify_api_key
+from ..deps import get_db, get_current_user, get_optional_user, verify_api_key
 
 router = APIRouter()
 
@@ -27,8 +27,10 @@ async def get_business_metrics(
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
     bypass_cache: bool = False,
+    debug: bool = False,
+    debug_key: Optional[str] = None,
     db = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_optional_user)
 ):
     """
     Get core business metrics (revenue, orders, conversion rates, etc)
@@ -40,15 +42,30 @@ async def get_business_metrics(
             start_date = datetime.utcnow() - timedelta(days=30)
         if not end_date:
             end_date = datetime.utcnow()
+        # Public debug access: allow when debug=true and provided key matches settings.DEBUG_PUBLIC_KEY
+        allow_public_debug = False
+        try:
+            from app.core.config import settings
+            allow_public_debug = bool(debug) and debug_key and settings.DEBUG_PUBLIC_KEY and (debug_key == settings.DEBUG_PUBLIC_KEY)
+        except Exception:
+            allow_public_debug = False
+
+        # Enforce authentication unless public debug is allowed
+        if not allow_public_debug and current_user is None:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=403, detail="Not authenticated")
             
-        key = f"v3:metrics:business:{start_date.isoformat()}:{end_date.isoformat()}"
-        cached = None if bypass_cache else cache.get(key)
+        key = f"v3:metrics:business:{start_date.isoformat()}:{end_date.isoformat()}:debug={str(bool(debug)).lower()}"
+        # When debugging, force bypass to avoid returning cached data without _debug
+        effective_bypass = bypass_cache or bool(debug)
+        cached = None if effective_bypass else cache.get(key)
         if cached is not None:
             return cached
         result = await get_business_metrics(
             db=db,
             start_date=start_date,
-            end_date=end_date
+            end_date=end_date,
+            debug=bool(debug)
         )
         cache.set(key, result, getattr(settings, 'CACHE_TTL', 3600))
         return result

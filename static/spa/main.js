@@ -756,6 +756,7 @@ async function loadOverview(){
     const finalCR = (Number.isFinite(bizCR) && bizCR > 0)
       ? bizCR
       : (Number.isFinite(derivedCR) && derivedCR > 0 ? derivedCR : 0);
+    const revenueVal = (Number(business.revenue ?? 0) || Number(seo.revenue ?? 0) || 0);
     const data = {
       total_sessions: (Number.isFinite(totalSessions) && totalSessions > 0)
         ? totalSessions
@@ -764,7 +765,7 @@ async function loadOverview(){
         ? totalUsers
         : Number(seoSite.unique_visitors ?? 0) || 0,
       conversion_rate: finalCR,
-      revenue: (business.revenue ?? 0),
+      revenue: revenueVal,
       traffic_trend: trafficTrend ?? { categories: [], series: [] },
       segments: business.segments ?? segFromSeo,
       seo_site_metrics: seoSite,

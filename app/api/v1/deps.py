@@ -15,6 +15,8 @@ from .common import AuthError, get_token_header, validate_token
 from app.services.auth import get_user_by_token as resolve_user_by_session_token
 
 security = HTTPBearer()
+# Optional security that does not auto-reject when Authorization is missing
+security_optional = HTTPBearer(auto_error=False)
 
 async def get_db():
     """Get database connection"""
@@ -55,7 +57,7 @@ async def get_current_user(
         
 async def get_optional_user(
     request: Request,
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional)
 ) -> Optional[User]:
     """Get current user if authenticated, otherwise None"""
     if not credentials:

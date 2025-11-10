@@ -38,22 +38,28 @@ def get_engagement_metrics() -> Dict[str, Any]:
 
 # New implementations used by API endpoints
 
-async def get_business_metrics(db, start_date: datetime, end_date: datetime) -> Dict[str, Any]:
+async def get_business_metrics(db, start_date: datetime, end_date: datetime, debug: bool = False) -> Dict[str, Any]:
     """Compute core business metrics from orders and events collections.
 
     Falls back to zeros when data is missing.
     """
     orders_col = None
     events_col = None
-    if hasattr(db, "db"):
-        try:
-            orders_col = db.db["orders"]
-        except Exception:
-            orders_col = None
-        try:
-            events_col = db.db["events"]
-        except Exception:
-            events_col = None
+    dbg: Dict[str, Any] = {}
+
+    try:
+        if hasattr(db, "db"):
+            try:
+                orders_col = db.db["orders"]
+            except Exception:
+                orders_col = None
+            try:
+                events_col = db.db["events"]
+            except Exception:
+                events_col = None
+    except Exception:
+        orders_col = orders_col or None
+        events_col = events_col or None
 
     revenue = 0.0
     orders = 0
@@ -161,7 +167,26 @@ async def get_business_metrics(db, start_date: datetime, end_date: datetime) -> 
 
         elif events_col:
             # Visitors and sessions estimated from events when sessions collection not available
-            time_filter = {"timestamp": {"$gte": start_ts, "$lte": end_ts}}
+            # Support multiple timestamp schemas similar to purchase_match
+            time_filter = {
+                "$or": [
+                    {"timestamp": {"$gte": start_ts, "$lte": end_ts}},
+                    {"timestamp": {"$gte": start_ts * 1000, "$lte": end_ts * 1000}},
+                    {"occurred_at": {"$gte": start_date, "$lte": end_date}},
+                    {"$expr": {"$and": [
+                        {"$gte": [ {"$toLong": "$timestamp"}, start_ts ]},
+                        {"$lte": [ {"$toLong": "$timestamp"}, end_ts ]}
+                    ]}},
+                    {"$expr": {"$and": [
+                        {"$gte": [ {"$toLong": "$timestamp"}, start_ts * 1000 ]},
+                        {"$lte": [ {"$toLong": "$timestamp"}, end_ts * 1000 ]}
+                    ]}},
+                    {"$expr": {"$and": [
+                        {"$gte": [ {"$dateFromString": {"dateString": "$occurred_at_iso", "onError": None, "onNull": None}}, start_date ]},
+                        {"$lte": [ {"$dateFromString": {"dateString": "$occurred_at_iso", "onError": None, "onNull": None}}, end_date ]}
+                    ]}},
+                ]
+            }
             user_ids = events_col.distinct("user_id", time_filter)
             visitors = len([u for u in user_ids if u])
             sess_ids = events_col.distinct("session_id", time_filter)
@@ -170,15 +195,45 @@ async def get_business_metrics(db, start_date: datetime, end_date: datetime) -> 
         # Conversions and revenue from purchase events (from events)
         if events_col:
             # Match purchase events across possible timestamp schemas:
-            # - numeric epoch in 'timestamp'
+            # - numeric epoch seconds in 'timestamp'
+            # - numeric epoch milliseconds in 'timestamp' (string/number)
             # - datetime in 'occurred_at'
-            # - datetime in 'timestamp' (from async ingest)
+            # - string ISO in 'occurred_at_iso' with various timezone formats
             purchase_match = {
-                "event_type": "purchase",
-                "$or": [
-                    {"timestamp": {"$gte": start_ts, "$lte": end_ts}},
-                    {"occurred_at": {"$gte": start_date, "$lte": end_date}},
-                    {"occurred_at_iso": {"$gte": start_date.isoformat(), "$lte": end_date.isoformat()}},
+                "$and": [
+                    {"$or": [
+                        {"event_type": "purchase"},
+                        {"$expr": {"$eq": [ {"$toLower": {"$trim": {"input": "$event_type"}}}, "purchase" ]}}
+                    ]},
+                    {"$or": [
+                        # numeric epoch seconds
+                        {"timestamp": {"$gte": start_ts, "$lte": end_ts}},
+                        # numeric epoch milliseconds (timestamp stored as ms)
+                        {"timestamp": {"$gte": start_ts * 1000, "$lte": end_ts * 1000}},
+                        # datetime field
+                        {"occurred_at": {"$gte": start_date, "$lte": end_date}},
+                        # occurred_at_iso parsed to date
+                        {"$expr": {"$and": [
+                            {"$gte": [
+                                {"$dateFromString": {"dateString": "$occurred_at_iso", "onError": None, "onNull": None}},
+                                start_date
+                            ]},
+                            {"$lte": [
+                                {"$dateFromString": {"dateString": "$occurred_at_iso", "onError": None, "onNull": None}},
+                                end_date
+                            ]}
+                        ]}},
+                        # timestamp stored as string seconds
+                        {"$expr": {"$and": [
+                            {"$gte": [ {"$toLong": "$timestamp"}, start_ts ]},
+                            {"$lte": [ {"$toLong": "$timestamp"}, end_ts ]}
+                        ]}},
+                        # timestamp stored as string milliseconds
+                        {"$expr": {"$and": [
+                            {"$gte": [ {"$toLong": "$timestamp"}, start_ts * 1000 ]},
+                            {"$lte": [ {"$toLong": "$timestamp"}, end_ts * 1000 ]}
+                        ]}},
+                    ]}
                 ]
             }
             # Count conversions cheaply
@@ -192,26 +247,123 @@ async def get_business_metrics(db, start_date: datetime, end_date: datetime) -> 
                 orders = conv_count
             # Python-side sum to avoid aggregation operator compatibility issues
             try:
-                purchases = list(events_col.find(purchase_match, {"properties.total_amount": 1}))
+                # Project commonly used fields; avoid full documents
+                purchases = list(events_col.find(
+                    purchase_match,
+                    {
+                        "properties.total_amount": 1,
+                        "properties.total": 1,
+                        "properties.amount": 1,
+                        "properties.value": 1,
+                        "properties.cart_total": 1,
+                        "properties.cart_items": 1,
+                        "properties.product_details.price": 1,
+                    }
+                ))
                 conv_count = len(purchases)
                 if orders == 0 and conv_count:
                     orders = conv_count
-                def to_amount(p):
-                    props = (p.get("properties") or {})
-                    v = props.get("total_amount", 0)
+                if debug:
+                    dbg["conv_count"] = conv_count
+                    # keep up to 3 sample projected docs (only properties subtree)
+                    samples = []
+                    for p in purchases[:3]:
+                        props = p.get("properties", {}) or {}
+                        samples.append({
+                            "total_amount": props.get("total_amount"),
+                            "total": props.get("total"),
+                            "amount": props.get("amount"),
+                            "value": props.get("value"),
+                            "cart_total": props.get("cart_total"),
+                            "price": (props.get("product_details") or {}).get("price") if isinstance(props.get("product_details"), dict) else None,
+                            "cart_items": props.get("cart_items"),
+                        })
+                    dbg["purchase_samples"] = samples
+                def to_float(x) -> float:
                     try:
-                        return float(v or 0)
+                        return float(x)
                     except Exception:
                         try:
-                            # handle strings with commas
-                            return float(str(v).replace(',', ''))
+                            return float(str(x).replace(',', ''))
                         except Exception:
                             return 0.0
+                def to_amount(p):
+                    props = (p.get("properties") or {})
+                    # Prefer explicit total fields
+                    for k in ("total_amount","total","amount","value","cart_total"):
+                        if k in props and props.get(k) not in (None,""):
+                            return to_float(props.get(k))
+                    # Fallback: price * cart_items when totals are missing
+                    price = None
+                    try:
+                        pd = props.get("product_details") or {}
+                        if isinstance(pd, dict):
+                            price = pd.get("price")
+                    except Exception:
+                        price = None
+                    items = props.get("cart_items") or 1
+                    price_f = to_float(price) if price is not None else 0.0
+                    items_f = to_float(items) if items is not None else 1.0
+                    return price_f * items_f
                 revenue_from_purchases = sum(to_amount(p) for p in purchases)
+                if debug:
+                    dbg["revenue_from_python"] = revenue_from_purchases
                 if revenue_from_purchases:
                     revenue += revenue_from_purchases
             except Exception:
                 pass
+
+            # If still zero revenue and conv_count looks suspiciously low, run a robust aggregation fallback
+            if revenue == 0.0:
+                try:
+                    pipeline = [
+                        {"$match": {"$or": [
+                            {"event_type": "purchase"},
+                            {"$expr": {"$eq": [ {"$toLower": {"$trim": {"input": "$event_type"}}}, "purchase" ]}}
+                        ]}},
+                        {"$addFields": {
+                            "_tLong": {"$toLong": "$timestamp"},
+                            "_dt_iso": {"$dateFromString": {"dateString": "$occurred_at_iso", "onError": None, "onNull": None}},
+                        }},
+                        {"$addFields": {
+                            "_ts_ms": {"$cond": [
+                                {"$and": [ {"$gte": ["$_tLong", 1000000000000]}, {"$lte": ["$_tLong", 9999999999999]} ]},
+                                "$_tLong",
+                                {"$multiply": ["$_tLong", 1000]}
+                            ]},
+                        }},
+                        {"$addFields": {
+                            "event_dt": {"$ifNull": [
+                                {"$toDate": "$occurred_at"},
+                                {"$ifNull": ["$_dt_iso", {"$cond": [ {"$gt": ["$_tLong", None]}, {"$toDate": "$_ts_ms"}, None ]}]}
+                            ]}
+                        }},
+                        {"$match": {"event_dt": {"$gte": start_date, "$lte": end_date}}},
+                        {"$project": {
+                            "ta": "$properties.total_amount",
+                            "total": "$properties.total",
+                            "amount": "$properties.amount",
+                            "value": "$properties.value",
+                            "cart_total": "$properties.cart_total",
+                            "price": "$properties.product_details.price",
+                            "items": "$properties.cart_items",
+                        }},
+                        {"$addFields": {
+                            "picked": {"$ifNull": ["$ta", {"$ifNull": ["$total", {"$ifNull": ["$amount", {"$ifNull": ["$value", "$cart_total"]}]}]}]},
+                            "priceItems": {"$multiply": [ {"$ifNull": ["$price", 0]}, {"$ifNull": ["$items", 1]} ]}
+                        }},
+                        {"$addFields": {"final": {"$cond": [ {"$gt": ["$picked", 0]}, "$picked", "$priceItems" ]}}},
+                        {"$group": {"_id": None, "rev": {"$sum": "$final"}, "orders": {"$sum": 1}}}
+                    ]
+                    agg = list(events_col.aggregate(pipeline))
+                    if agg:
+                        revenue = float(agg[0].get("rev") or 0.0)
+                        if not orders:
+                            orders = int(agg[0].get("orders") or 0)
+                        if debug:
+                            dbg["revenue_from_pipeline"] = revenue
+                except Exception:
+                    pass
             conversions = conv_count
             conversion_rate = (conversions / visitors) if visitors else 0.0
     except Exception:
@@ -219,7 +371,7 @@ async def get_business_metrics(db, start_date: datetime, end_date: datetime) -> 
         pass
 
     average_order_value = (revenue / orders) if orders else 0.0
-    return {
+    result = {
         "revenue": revenue,
         "orders": orders,
         "average_order_value": average_order_value,
@@ -227,6 +379,9 @@ async def get_business_metrics(db, start_date: datetime, end_date: datetime) -> 
         "total_users": visitors,
         "total_sessions": total_sessions,
     }
+    if debug:
+        result["_debug"] = dbg
+    return result
 
 async def get_behavior_metrics(db, start_date: datetime, end_date: datetime, segment: Optional[str] = None) -> Dict[str, Any]:
     """Compute user behavior metrics from events collection.

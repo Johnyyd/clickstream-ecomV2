@@ -1,6 +1,6 @@
 """Metrics analytics module."""
 from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 def get_user_metrics(user_id: str) -> Dict[str, Any]:
     """Get metrics for a specific user."""
@@ -60,8 +60,13 @@ async def get_business_metrics(db, start_date: datetime, end_date: datetime) -> 
     conversion_rate = 0.0
     visitors = 0
     total_sessions = 0
-    start_ts = int(start_date.timestamp())
-    end_ts = int(end_date.timestamp())
+    # Normalize to UTC epoch seconds to avoid tz/localtime mismatches
+    def to_epoch_s(dt: datetime) -> int:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp())
+    start_ts = to_epoch_s(start_date)
+    end_ts = to_epoch_s(end_date)
 
     try:
         # Prefer accurate counts from 'sessions' collection when available
@@ -136,56 +141,73 @@ async def get_business_metrics(db, start_date: datetime, end_date: datetime) -> 
 
             # If after all attempts the session count is still zero, fallback to events-based counting
             if total_sessions == 0 and events_col:
+                time_filter = {
+                    "$or": [
+                        {"timestamp": {"$gte": start_ts, "$lte": end_ts}},
+                        {"occurred_at": {"$gte": start_date, "$lte": end_date}},
+                        {"occurred_at_iso": {"$gte": start_date.isoformat(), "$lte": end_date.isoformat()}},
+                    ]
+                }
                 try:
-                    sess_ids = events_col.distinct("session_id", {
-                        "timestamp": {"$gte": start_ts, "$lte": end_ts}
-                    })
+                    sess_ids = events_col.distinct("session_id", time_filter)
                     total_sessions = len([s for s in sess_ids if s])
                 except Exception:
                     total_sessions = 0
                 try:
-                    user_ids = events_col.distinct("user_id", {
-                        "timestamp": {"$gte": start_ts, "$lte": end_ts}
-                    })
+                    user_ids = events_col.distinct("user_id", time_filter)
                     visitors = len([u for u in user_ids if u]) or visitors or 0
                 except Exception:
                     visitors = visitors or 0
 
         elif events_col:
             # Visitors and sessions estimated from events when sessions collection not available
-            user_ids = events_col.distinct("user_id", {
-                "timestamp": {"$gte": start_ts, "$lte": end_ts}
-            })
+            time_filter = {"timestamp": {"$gte": start_ts, "$lte": end_ts}}
+            user_ids = events_col.distinct("user_id", time_filter)
             visitors = len([u for u in user_ids if u])
-            sess_ids = events_col.distinct("session_id", {
-                "timestamp": {"$gte": start_ts, "$lte": end_ts}
-            })
+            sess_ids = events_col.distinct("session_id", time_filter)
             total_sessions = len([s for s in sess_ids if s])
 
         # Conversions and revenue from purchase events (from events)
         if events_col:
-            # Match purchase events whether they were ingested with numeric epoch 'timestamp'
-            # or with a datetime 'occurred_at' field (ingest_sync adds it; async ingest may write datetime timestamp)
-            purchase_query = {
+            # Match purchase events across possible timestamp schemas:
+            # - numeric epoch in 'timestamp'
+            # - datetime in 'occurred_at'
+            # - datetime in 'timestamp' (from async ingest)
+            purchase_match = {
                 "event_type": "purchase",
                 "$or": [
                     {"timestamp": {"$gte": start_ts, "$lte": end_ts}},
                     {"occurred_at": {"$gte": start_date, "$lte": end_date}},
+                    {"occurred_at_iso": {"$gte": start_date.isoformat(), "$lte": end_date.isoformat()}},
                 ]
             }
-            purchases = list(events_col.find(purchase_query, {"properties.total_amount": 1}))
-            conv_count = len(purchases)
+            # Count conversions cheaply
+            try:
+                conv_count = events_col.count_documents(purchase_match)
+            except Exception:
+                # Fallback to find().count when count_documents fails under some mongos setups
+                purchases_tmp = list(events_col.find(purchase_match, {"_id": 1}).limit(100000))
+                conv_count = len(purchases_tmp)
             if orders == 0 and conv_count:
                 orders = conv_count
+            # Python-side sum to avoid aggregation operator compatibility issues
             try:
-                def _to_amount(p):
+                purchases = list(events_col.find(purchase_match, {"properties.total_amount": 1}))
+                conv_count = len(purchases)
+                if orders == 0 and conv_count:
+                    orders = conv_count
+                def to_amount(p):
                     props = (p.get("properties") or {})
-                    val = props.get("total_amount", 0)
+                    v = props.get("total_amount", 0)
                     try:
-                        return float(val or 0)
+                        return float(v or 0)
                     except Exception:
-                        return 0.0
-                revenue_from_purchases = sum(_to_amount(p) for p in purchases)
+                        try:
+                            # handle strings with commas
+                            return float(str(v).replace(',', ''))
+                        except Exception:
+                            return 0.0
+                revenue_from_purchases = sum(to_amount(p) for p in purchases)
                 if revenue_from_purchases:
                     revenue += revenue_from_purchases
             except Exception:

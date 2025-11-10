@@ -13,6 +13,50 @@ const el = (sel) => document.querySelector(sel);
 const httpCache = new Map();
 function cacheKey(url){ return url; }
 
+async function renderLLM(){
+  view.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:8px">
+      <button id="llm-load" class="tab">Load</button>
+      <button id="llm-refresh" class="tab">Refresh</button>
+      <span id="llm-status" class="muted"></span>
+    </div>
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+      <div class="card" style="grid-column: 1 / -1"><h3>Executive Summary</h3><div id="llm-summary"></div></div>
+      <div class="card"><h3>Key Insights</h3><ul id="llm-insights" class="muted"></ul></div>
+      <div class="card"><h3>Recommendations</h3><ul id="llm-recs" class="muted"></ul></div>
+    </div>
+  `;
+  const statusEl = el('#llm-status');
+
+  function renderReport(payload){
+    const rep = payload?.report?.parsed || payload?.report || {};
+    const summary = rep.executive_summary || rep.summary || rep.insights || '';
+    el('#llm-summary').innerHTML = summary ? `<div style="white-space:pre-wrap">${summary}</div>` : '<div class="muted">No summary.</div>';
+    const ins = Array.isArray(rep.key_insights) ? rep.key_insights : (Array.isArray(rep.highlights) ? rep.highlights : []);
+    const recs = Array.isArray(rep.recommendations) ? rep.recommendations : [];
+    const insEl = el('#llm-insights'); insEl.innerHTML = ins.length ? ins.map(i=>`<li>${i}</li>`).join('') : '<li class="muted">—</li>';
+    const recEl = el('#llm-recs'); recEl.innerHTML = recs.length ? recs.map(i=>`<li>${i}</li>`).join('') : '<li class="muted">—</li>';
+  }
+
+  // Restore
+  (function(){ const snap = snapGet('llm'); if(snap){ renderReport(snap); statusEl.textContent='Restored from cache'; } })();
+
+  async function run(fetchFresh=false){
+    const q = buildQuery();
+    let url = `/api/v1/openrouter/report?${q}`;
+    if(fetchFresh){ httpCache.delete(cacheKey(url)); lsDel(cacheKey(url)); }
+    statusEl.textContent = 'Loading…';
+    const data = fetchFresh ? await safeGet(url) : await getWithTTL(url, 600000);
+    statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
+    snapSet('llm', data);
+    renderReport(data);
+  }
+
+  el('#llm-load').addEventListener('click', ()=>run(false));
+  el('#llm-refresh').addEventListener('click', ()=>run(true));
+  if(!snapGet('llm')){ await run(false); }
+}
+
 async function renderML(){
   view.innerHTML = `
     <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap">
@@ -204,6 +248,8 @@ function setActiveTab(name){
   for(const b of document.querySelectorAll('.tab')){
     b.classList.toggle('active', b.dataset.tab === name);
   }
+  // Expose for debugging
+  window.journeyRun = (typeof run === 'function') ? run : undefined;
   render();
 }
 
@@ -235,6 +281,22 @@ function presetToDates(range){
 function fmt(n, digits=0){
   if(n == null || isNaN(n)) return '—';
   return Intl.NumberFormat(undefined, { maximumFractionDigits: digits }).format(n);
+}
+function fmtCurrency(n){
+  if(n == null || isNaN(n)) return '$0.00';
+  try{
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(Number(n));
+  }catch{
+    return `$${fmt(Number(n),2)}`;
+  }
+}
+function fmtShort(n){
+  if(!isFinite(n)) return '0';
+  const abs = Math.abs(n);
+  if(abs >= 1e9) return (n/1e9).toFixed(1)+'B';
+  if(abs >= 1e6) return (n/1e6).toFixed(1)+'M';
+  if(abs >= 1e3) return (n/1e3).toFixed(1)+'K';
+  return String(Math.round(n));
 }
 
 async function safeGet(url){
@@ -380,7 +442,7 @@ async function loadOverview(){
       const dcr = Number(data.derived_cr ?? 0);
       if(Number.isFinite(dcr) && dcr > 0){ crEl.textContent = `${fmt(dcr*100, 2)}%`; }
     }
-    el('#ov-rev') && (el('#ov-rev').textContent = `$${fmt(Number.isFinite(kpiRev) ? kpiRev : 0, 2)}`);
+    el('#ov-rev') && (el('#ov-rev').textContent = fmtCurrency(Number.isFinite(kpiRev) ? kpiRev : 0));
 
     // Trend chart
     const trendEl = el('#chart-trend');
@@ -390,7 +452,7 @@ async function loadOverview(){
         tooltip: {},
         legend: { data: data.traffic_trend.series.map(s => s.name) },
         xAxis: { type: 'category', data: data.traffic_trend.categories },
-        yAxis: { type: 'value' },
+        yAxis: { type: 'value', axisLabel: { formatter: (v)=> fmtShort(v) } },
         series: data.traffic_trend.series
       });
     } else if(trendEl) {
@@ -404,7 +466,7 @@ async function loadOverview(){
       seg.setOption({
         tooltip: {},
         xAxis: { type: 'category', data: data.segments.categories },
-        yAxis: { type: 'value' },
+        yAxis: { type: 'value', axisLabel: { formatter: (v)=> fmtShort(v) } },
         series: [{ type: 'bar', name: 'Users', data: data.segments.series[0].data }]
       });
     } else if(segEl) {
@@ -687,8 +749,10 @@ async function renderJourney(){
       if(links.length > 100){ links = links.slice().sort((a,b)=>(b.value||0)-(a.value||0)).slice(0,100); }
       nodes = Array.from(new Set(links.flatMap(l=>[l.source,l.target])));
     }
-    const sankeyEl = el('#chart-sankey'); if(sankeyEl && nodes.length && links.length){ const sankey=echarts.init(sankeyEl); sankey.setOption({ tooltip:{}, series:[{ type:'sankey', data:nodes.map(n=>({ name:n })), links }] }); }
+    const sankeyEl = el('#chart-sankey'); if(sankeyEl && nodes.length && links.length){ const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(sankeyEl); if(prev){ prev.dispose(); } const sankey=echarts.init(sankeyEl); sankey.setOption({ tooltip:{}, series:[{ type:'sankey', data:nodes.map(n=>({ name:n })), links }] }); requestAnimationFrame(()=>{ try{ sankey.resize(); }catch{} }); }
     statusEl.textContent = 'Restored from cache';
+    // Background refresh to ensure latest data appears after tab switch
+    requestIdle(()=>{ try{ run(false); }catch{} });
   })();
   async function run(fetchFresh=false){
     const q = buildQuery();
@@ -715,11 +779,14 @@ async function renderJourney(){
   }
   const funnelEl = el('#chart-funnel');
   if(funnelEl && funnelData.length){
+    const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(funnelEl);
+    if(prev){ prev.dispose(); }
     const funnel = echarts.init(funnelEl);
     funnel.setOption({
       tooltip: { trigger: 'item' },
       series: [{ type: 'funnel', data: funnelData }]
     });
+    requestAnimationFrame(()=>{ try{ funnel.resize(); }catch{} });
   } else if(funnelEl) { funnelEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
 
   // Sankey data
@@ -766,14 +833,19 @@ async function renderJourney(){
       }
     }catch{}
   }
+  // Overwrite snapshot with processed nodes/links so switching tabs restores fresh result
+  try{ snapSet('journey', { funnel: journey?.funnel ?? null, paths: { nodes, links } }); }catch{}
   const sankeyEl = el('#chart-sankey');
   if(sankeyEl && nodes.length && links.length){
+    const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(sankeyEl);
+    if(prev){ prev.dispose(); }
     sankeyEl.innerHTML = '';
     const sankey = echarts.init(sankeyEl);
     sankey.setOption({
       tooltip: {},
       series: [{ type: 'sankey', data: nodes.map(n=>({ name:n })), links }]
     });
+    requestAnimationFrame(()=>{ try{ sankey.resize(); }catch{} });
     console.debug('Journey Sankey rendered', { nodeCount: nodes.length, linkCount: links.length });
   } else if(sankeyEl) { sankeyEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
   if(!(nodes.length && links.length)){
@@ -1388,6 +1460,7 @@ async function render(){
     case 'journey': await renderJourney(); break;
     case 'reco': renderReco(); break;
     case 'ml': await renderML(); break;
+    case 'llm': await renderLLM(); break;
     case 'seo': await renderSEO(); break;
     case 'retention': await renderRetention(); break;
     case 'orchestrator': await renderOrchestrator(); break;

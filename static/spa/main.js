@@ -12,6 +12,35 @@ const state = {
 const el = (sel) => document.querySelector(sel);
 const httpCache = new Map();
 function cacheKey(url){ return url; }
+// Remove snapshot only for a specific tab under the current filter signature
+function clearSnapshotForTabCurrentFilter(tab){
+  try{ localStorage.removeItem(snapKey(tab)); }catch{}
+}
+// Remove all snapshots for a given tab across any filter signature
+function clearSnapshotsForTab(tab){
+  try{
+    const prefix = SNAP_NS + tab + '|';
+    for(let i=localStorage.length-1;i>=0;i--){
+      const k = localStorage.key(i);
+      if(k && k.startsWith(prefix)){
+        try{ localStorage.removeItem(k); }catch{}
+      }
+    }
+  }catch{}
+}
+// Remove all snapshots that match the current filter signature
+function clearSnapshotsForCurrentFilters(){
+  try{
+    const suffix = '|' + filterSig();
+    for(let i=localStorage.length-1;i>=0;i--){
+      const k = localStorage.key(i);
+      if(!k) continue;
+      if(k.startsWith(SNAP_NS) && k.endsWith(suffix)){
+        try{ localStorage.removeItem(k); }catch{}
+      }
+    }
+  }catch{}
+}
 
 async function renderLLM(){
   view.innerHTML = `
@@ -44,16 +73,16 @@ async function renderLLM(){
   async function run(fetchFresh=false){
     const q = buildQuery();
     let url = `/api/v1/openrouter/report?${q}`;
-    if(fetchFresh){ httpCache.delete(cacheKey(url)); lsDel(cacheKey(url)); }
+    if(fetchFresh){ const b = withBypass(url); httpCache.delete(cacheKey(b.clean)); lsDel(cacheKey(b.clean)); url = b.fresh; }
     statusEl.textContent = 'Loading…';
     const data = fetchFresh ? await safeGet(url) : await getWithTTL(url, 600000);
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
-    snapSet('llm', data);
+    snapUpdate('llm', data);
     renderReport(data);
   }
 
-  el('#llm-load').addEventListener('click', ()=>run(false));
-  el('#llm-refresh').addEventListener('click', ()=>run(true));
+  el('#llm-load').addEventListener('click', ()=>{ clearSnapshotForTabCurrentFilter('llm'); run(true); });
+  el('#llm-refresh').addEventListener('click', ()=>{ clearSnapshotForTabCurrentFilter('llm'); run(true); });
   if(!snapGet('llm')){ await run(false); }
 }
 
@@ -173,7 +202,11 @@ async function renderML(){
     let uConv = `/api/v1/spark-analytics/conversion-prediction` + (q.toString()?`?${q.toString()}`:'');
     let uProb = `/api/v1/spark-analytics/purchase-probability` + (q.toString()?`?${q.toString()}`:'');
     let uSeg = `/api/v1/spark-analytics/user-segmentation` + (q.toString()?`?${q.toString()}`:'');
-    if(fetchFresh){ [uConv,uProb,uSeg].forEach(u=>{ httpCache.delete(u); lsDel(u); }); }
+    if(fetchFresh){
+      const arr = [uConv,uProb,uSeg].map(withBypass);
+      arr.forEach(({clean})=>{ httpCache.delete(clean); lsDel(clean); });
+      [uConv,uProb,uSeg] = arr.map(x=>x.fresh);
+    }
     statusEl.textContent = 'Loading…';
     const [conv, prob, seg] = await Promise.all([
       fetchFresh ? safeGet(uConv) : getWithTTL(uConv, 600000),
@@ -181,12 +214,12 @@ async function renderML(){
       fetchFresh ? safeGet(uSeg) : getWithTTL(uSeg, 600000)
     ]);
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
-    snapSet('ml', { conversion: conv||{}, purchase: prob||{}, segmentation: seg||{} });
+    snapUpdate('ml', { conversion: conv||{}, purchase: prob||{}, segmentation: seg||{} });
     renderConv(conv||{}); renderProb(prob||{}); renderSeg(seg||{});
   }
 
-  el('#ml-load').addEventListener('click', ()=>run(false));
-  el('#ml-refresh').addEventListener('click', ()=>run(true));
+  el('#ml-load').addEventListener('click', ()=>{ clearSnapshotForTabCurrentFilter('ml'); run(true); });
+  el('#ml-refresh').addEventListener('click', ()=>{ clearSnapshotForTabCurrentFilter('ml'); run(true); });
   if(!snapGet('ml')){ await run(false); }
 }
 // LocalStorage-backed persistence
@@ -201,9 +234,69 @@ function lsSet(url, data){
 }
 function lsData(payload){ return payload && typeof payload === 'object' ? (payload.data ?? payload) : payload; }
 function lsDel(url){ try{ localStorage.removeItem(lsKey(url)); }catch{} }
-function snapKey(tab){ return SNAP_NS + tab; }
+// Build a stable signature for current filters so snapshots are scoped per-filter
+function filterSig(){
+  const { range, from, to, segment, channel } = state.filters || {};
+  return `r=${range||''}|f=${from||''}|t=${to||''}|s=${segment||''}|c=${channel||''}`;
+}
+function snapKey(tab){ return SNAP_NS + tab + '|' + filterSig(); }
 function snapSet(tab, payload){ try{ localStorage.setItem(snapKey(tab), JSON.stringify({ ts: Date.now(), payload })); }catch{} }
 function snapGet(tab){ try{ const s = localStorage.getItem(snapKey(tab)); return s ? JSON.parse(s).payload : null; }catch{ return null; } }
+function snapRaw(tab){ try{ const s = localStorage.getItem(snapKey(tab)); return s ? JSON.parse(s) : null; }catch{ return null; } }
+function snapAgeMs(tab){ try{ const r = snapRaw(tab); return r && typeof r.ts==='number' ? (Date.now()-r.ts) : Infinity; }catch{ return Infinity; } }
+// Only persist snapshot when payload is non-empty to avoid wiping good cache with empty results
+function hasAnyData(obj){
+  try{
+    if(obj == null) return false;
+    if(Array.isArray(obj)) return obj.length > 0;
+    if(typeof obj !== 'object') return true;
+    // plain object: if no keys -> empty
+    const keys = Object.keys(obj);
+    if(keys.length === 0) return false;
+    for(const k of keys){
+      const v = obj[k];
+      if(Array.isArray(v)){ if(v.length > 0) return true; continue; }
+      if(v && typeof v === 'object'){
+        if(Object.keys(v).length > 0 && hasAnyData(v)) return true;
+        continue;
+      }
+      if(v != null) return true;
+    }
+  }catch{}
+  return false;
+}
+function snapMaybe(tab, payload){ if(hasAnyData(payload)) snapSet(tab, payload); }
+// Update snapshot only if payload has data and is different from the existing one
+function snapUpdate(tab, payload){
+  if(!hasAnyData(payload)) return;
+  try{
+    const prev = snapGet(tab);
+    const same = prev && JSON.stringify(prev) === JSON.stringify(payload);
+    if(!same){ snapSet(tab, payload); }
+  }catch{ snapSet(tab, payload); }
+}
+// Legacy helpers: migrate old snapshots (without filter signature) to new scoped keys
+function snapGetLegacyRaw(tab){
+  try{ const s = localStorage.getItem(SNAP_NS + tab); return s ? JSON.parse(s) : null; }catch{ return null; }
+}
+function migrateOldSnapshots(){
+  try{
+    const prefix = SNAP_NS;
+    for(let i=0;i<localStorage.length;i++){
+      const k = localStorage.key(i);
+      if(!k || !k.startsWith(prefix)) continue;
+      // If already contains filter pipe, skip
+      if(k.includes('|')) continue;
+      const tab = k.slice(prefix.length);
+      const raw = snapGetLegacyRaw(tab);
+      const payload = raw && raw.payload;
+      if(hasAnyData(payload)){
+        // write to new key scoped by current filters
+        try{ localStorage.setItem(snapKey(tab), JSON.stringify({ ts: Date.now(), payload })); }catch{}
+      }
+    }
+  }catch{}
+}
 // TTL-aware local cache getter
 async function getWithTTL(url, ttlMs = 600000){
   const key = cacheKey(url);
@@ -231,6 +324,11 @@ function debounce(fn, ms){ let t; return (...args)=>{ clearTimeout(t); t = setTi
 function requestIdle(cb){
   if(window.requestIdleCallback){ return window.requestIdleCallback(cb, { timeout: 1500 }); }
   return setTimeout(cb, 300);
+}
+// Build a fresh URL that bypasses caches; also return the original clean URL for invalidation
+function withBypass(url){
+  const join = url.includes('?') ? '&' : '?';
+  return { clean: url, fresh: `${url}${join}bypass_cache=true&_ts=${Date.now()}` };
 }
 function showToast(message, kind = 'info', timeout = 2600){
   const t = el('#toast');
@@ -481,22 +579,18 @@ async function loadOverview(){
     statusEl.textContent = 'Restored from cache';
     // If critical KPIs missing in snapshot, do an immediate fresh run; else refresh in background
     const missingCritical = !(Number.isFinite(Number(snap.total_sessions))) || !(Number.isFinite(Number(snap.total_users)));
-    if(missingCritical){
-      run(true).catch(()=>{});
-    }else{
-      // Background refresh so KPIs update even if snapshot was slightly stale
-      requestIdle(()=>{ run(false).catch(()=>{}); });
-    }
+    // Do not auto-refresh; user actions (Load/Refresh) will fetch and update cache
   }
 
   async function run(fetchFresh = false){
     const q = buildQuery();
     let bizUrl = `/api/v1/metrics/business?${q}`;
-    const seoUrl = `/api/v1/analytics/seo?${q}`;
-    const jnUrl = `/api/v1/analytics/journey?${q}`;
+    let seoUrl = `/api/v1/analytics/seo?${q}`;
+    let jnUrl = `/api/v1/analytics/journey?${q}`;
     if(fetchFresh){
-      [bizUrl, seoUrl, jnUrl].forEach(u=>{ httpCache.delete(cacheKey(u)); lsDel(cacheKey(u)); });
-      bizUrl = `${bizUrl}&bypass_cache=true`;
+      const arr = [bizUrl, seoUrl, jnUrl].map(withBypass);
+      arr.forEach(({clean})=>{ httpCache.delete(cacheKey(clean)); lsDel(cacheKey(clean)); });
+      [bizUrl, seoUrl, jnUrl] = arr.map(x=>x.fresh);
     }
     statusEl.textContent = 'Loading…';
     const business = await safeGet(bizUrl);
@@ -590,13 +684,13 @@ async function loadOverview(){
       derived_cr: finalCR
     };
 
-    // Save snapshot and update UI
-    snapSet('overview', data);
+    // Save snapshot only if fresh or not yet cached
+    snapUpdate('overview', data);
     updateUI(data);
   }
 
-  el('#ov-load').addEventListener('click', () => run(false));
-  el('#ov-refresh').addEventListener('click', () => run(true));
+  el('#ov-load').addEventListener('click', () => { clearSnapshotForTabCurrentFilter('overview'); run(true); });
+  el('#ov-refresh').addEventListener('click', () => { clearSnapshotForTabCurrentFilter('overview'); run(true); });
 
   // Auto-fetch on first visit if there is no snapshot
   if(!snap){
@@ -637,15 +731,15 @@ async function renderCart(){
   })();
   async function run(fetchFresh=false){
     const q = buildQuery();
-    const urlA = `/api/v1/analytics/cart?${q}`;
-    const urlT = `/api/v1/cart/trends?${q}`;
-    if(fetchFresh){ [urlA,urlT].forEach(u=>{ httpCache.delete(cacheKey(u)); lsDel(cacheKey(u)); }); }
+    let urlA = `/api/v1/analytics/cart?${q}`;
+    let urlT = `/api/v1/cart/trends?${q}`;
+    if(fetchFresh){ const a = withBypass(urlA), b = withBypass(urlT); [a,b].forEach(({clean})=>{ httpCache.delete(cacheKey(clean)); lsDel(cacheKey(clean)); }); urlA = a.fresh; urlT = b.fresh; }
     statusEl.textContent = 'Loading…';
     const analysis = await safeGet(urlA);
     const trends = await safeGet(urlT);
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
-    // Save snapshot for Cart
-    snapSet('cart', { channels: analysis?.channels ?? {}, size_distribution: analysis?.size_distribution ?? [] });
+    // Save snapshot for Cart (fresh only or if missing)
+    snapUpdate('cart', { channels: analysis?.channels ?? {}, size_distribution: analysis?.size_distribution ?? [] });
 
   // Abandonment by channel
   const channels = (analysis.channels && Object.keys(analysis.channels)) || [];
@@ -687,8 +781,8 @@ async function renderCart(){
     });
   } else if(distEl) { distEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
   }
-  el('#cart-load').addEventListener('click', ()=>run(false));
-  el('#cart-refresh').addEventListener('click', ()=>run(true));
+  el('#cart-load').addEventListener('click', ()=>{ clearSnapshotForTabCurrentFilter('cart'); run(true); });
+  el('#cart-refresh').addEventListener('click', ()=>{ clearSnapshotForTabCurrentFilter('cart'); run(true); });
   // Auto-fetch on first visit if there is no snapshot yet
   if(!snapGet('cart')){ await run(false); }
 }
@@ -749,10 +843,22 @@ async function renderJourney(){
       if(links.length > 100){ links = links.slice().sort((a,b)=>(b.value||0)-(a.value||0)).slice(0,100); }
       nodes = Array.from(new Set(links.flatMap(l=>[l.source,l.target])));
     }
-    const sankeyEl = el('#chart-sankey'); if(sankeyEl && nodes.length && links.length){ const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(sankeyEl); if(prev){ prev.dispose(); } const sankey=echarts.init(sankeyEl); sankey.setOption({ tooltip:{}, series:[{ type:'sankey', data:nodes.map(n=>({ name:n })), links }] }); requestAnimationFrame(()=>{ try{ sankey.resize(); }catch{} }); }
+    const sankeyEl = el('#chart-sankey'); if(sankeyEl && nodes.length && links.length){
+      // Only re-render if data changed from last render to avoid flicker
+      const currHash = JSON.stringify({nodes,links});
+      if(window.__jnSankeyHash !== currHash){
+        const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(sankeyEl); if(prev){ prev.dispose(); }
+        const sankey=echarts.init(sankeyEl);
+        sankey.setOption({ animation:false, tooltip:{}, series:[{ type:'sankey', data:nodes.map(n=>({ name:n })), links }] });
+        window.__jnSankeyHash = currHash;
+        requestAnimationFrame(()=>{ try{ sankey.resize(); }catch{} });
+      }
+    }
     statusEl.textContent = 'Restored from cache';
-    // Background refresh to ensure latest data appears after tab switch
-    requestIdle(()=>{ try{ run(false); }catch{} });
+    // Background refresh only if snapshot is stale (> 5 minutes) or missing links
+    const stale = snapAgeMs('journey') > 5*60*1000;
+    const needs = !(Array.isArray(links) && links.length > 0);
+    if(stale || needs){ requestIdle(()=>{ try{ run(false); }catch{} }); }
   })();
   async function run(fetchFresh=false){
     const q = buildQuery();
@@ -764,8 +870,8 @@ async function renderJourney(){
       journey = fetchFresh ? (await safeGet(url)) : (await getWithTTL(url, 600000));
     }catch(e){ console.debug('Journey fetch error', e); }
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
-    // Save snapshot for Journey
-    snapSet('journey', { funnel: journey?.funnel ?? null, paths: journey?.paths ?? null });
+    // Save snapshot for Journey only if data is non-empty and not overwriting newer cache
+    snapUpdate('journey', { funnel: journey?.funnel ?? null, paths: journey?.paths ?? null });
 
   // Funnel data
   let funnelData = [];
@@ -833,20 +939,25 @@ async function renderJourney(){
       }
     }catch{}
   }
-  // Overwrite snapshot with processed nodes/links so switching tabs restores fresh result
-  try{ snapSet('journey', { funnel: journey?.funnel ?? null, paths: { nodes, links } }); }catch{}
+  // Overwrite snapshot with processed nodes/links only when non-empty and if fresh or missing
+  try{ snapUpdate('journey', { funnel: journey?.funnel ?? null, paths: { nodes, links } }); }catch{}
   const sankeyEl = el('#chart-sankey');
   if(sankeyEl && nodes.length && links.length){
-    const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(sankeyEl);
-    if(prev){ prev.dispose(); }
-    sankeyEl.innerHTML = '';
-    const sankey = echarts.init(sankeyEl);
-    sankey.setOption({
-      tooltip: {},
-      series: [{ type: 'sankey', data: nodes.map(n=>({ name:n })), links }]
-    });
-    requestAnimationFrame(()=>{ try{ sankey.resize(); }catch{} });
-    console.debug('Journey Sankey rendered', { nodeCount: nodes.length, linkCount: links.length });
+    const currHash = JSON.stringify({nodes,links});
+    if(window.__jnSankeyHash !== currHash){
+      const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(sankeyEl);
+      if(prev){ prev.dispose(); }
+      sankeyEl.innerHTML = '';
+      const sankey = echarts.init(sankeyEl);
+      sankey.setOption({
+        animation:false,
+        tooltip: {},
+        series: [{ type: 'sankey', data: nodes.map(n=>({ name:n })), links }]
+      });
+      window.__jnSankeyHash = currHash;
+      requestAnimationFrame(()=>{ try{ sankey.resize(); }catch{} });
+      console.debug('Journey Sankey rendered', { nodeCount: nodes.length, linkCount: links.length });
+    }
   } else if(sankeyEl) { sankeyEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
   if(!(nodes.length && links.length)){
     console.debug('Journey Sankey empty', { nodes, links });
@@ -859,14 +970,14 @@ async function renderJourney(){
   const runDeb = debounce((fresh)=>run(fresh), 700);
   if(jnLoadBtn){
     jnLoadBtn.disabled = false; jnLoadBtn.style.pointerEvents = 'auto'; jnLoadBtn.style.cursor = 'pointer'; jnLoadBtn.style.zIndex = 10; jnLoadBtn.style.position = 'relative';
-    const handler=()=>{ console.debug('Journey: Load clicked'); statusEl.textContent = 'Loading…'; runDeb(false); };
+    const handler=()=>{ console.debug('Journey: Load clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('journey'); runDeb(true); };
     jnLoadBtn.addEventListener('click', handler, { capture: true });
     jnLoadBtn.onpointerdown = handler;
     jnLoadBtn.onclick = handler;
   }
   if(jnRefBtn){
     jnRefBtn.disabled = false; jnRefBtn.style.pointerEvents = 'auto'; jnRefBtn.style.cursor = 'pointer'; jnRefBtn.style.zIndex = 10; jnRefBtn.style.position = 'relative';
-    const handler=()=>{ console.debug('Journey: Refresh clicked'); statusEl.textContent = 'Loading…'; runDeb(true); };
+    const handler=()=>{ console.debug('Journey: Refresh clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('journey'); runDeb(true); };
     jnRefBtn.addEventListener('click', handler, { capture: true });
     jnRefBtn.onpointerdown = handler;
     jnRefBtn.onclick = handler;
@@ -887,7 +998,7 @@ async function renderReco(){
           <option value="trending">Trending</option>
         </select>
         <input id="reco-user" placeholder="User ID (optional)" style="padding:6px;border:1px solid #e5e7eb;border-radius:8px" />
-        <select id="reco-time" aria-label="Khung thời gian" style="padding:6px;border:1px solid #e5e7eb;border-radius:8px;display:none">
+        <select id="reco-time" aria-label="Khung thởi gian" style="padding:6px;border:1px solid #e5e7eb;border-radius:8px;display:none">
           <option value="day" selected>Day</option>
           <option value="week">Week</option>
           <option value="month">Month</option>
@@ -939,7 +1050,7 @@ async function renderReco(){
         data = Array.isArray(res) ? res : (res.items || []);
         // Save snapshot for personalized: only store recommendations array from first entry
         const recs = Array.isArray(data) && data[0]?.recommendations ? data[0].recommendations : [];
-        snapSet('reco:personalized', { user_id: uid || null, items: recs });
+        snapMaybe('reco:personalized', { user_id: uid || null, items: recs });
         renderItems(recs);
         return;
       }else{
@@ -948,7 +1059,7 @@ async function renderReco(){
         const res = await safeGet(`/api/v1/recommendations/trending?${q.toString()}`);
         data = Array.isArray(res) ? res : (res.items || []);
         // Save snapshot for trending keyed by timeframe
-        snapSet(`reco:trending:${tf}`, { items: data });
+        snapMaybe(`reco:trending:${tf}`, { items: data });
       }
       renderItems(data);
     }catch(e){
@@ -961,7 +1072,7 @@ async function renderReco(){
     timeSel.style.display = trending ? '' : 'none';
     userIn.style.display = trending ? 'none' : '';
   });
-  runBtn.addEventListener('click', load);
+  runBtn.addEventListener('click', ()=>{ clearSnapshotForTabCurrentFilter('reco'); load(); });
 
   // initial state
   timeSel.style.display = 'none';
@@ -1007,13 +1118,13 @@ async function renderSEO(){
   })();
   async function run(fetchFresh=false){
     const q = buildQuery();
-    const url = `/api/v1/analytics/seo?${q}`;
-    if(fetchFresh){ httpCache.delete(cacheKey(url)); lsDel(cacheKey(url)); }
+    let url = `/api/v1/analytics/seo?${q}`;
+    if(fetchFresh){ const b = withBypass(url); httpCache.delete(cacheKey(b.clean)); lsDel(cacheKey(b.clean)); url = b.fresh; }
     statusEl.textContent = 'Loading…';
     const seo = await safeGet(url);
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
-    // Save snapshot for SEO
-    snapSet('seo', seo || {});
+    // Save snapshot for SEO (fresh only or if missing)
+    snapUpdate('seo', seo || {});
 
   // Distribution
   const donutEl = el('#chart-donut');
@@ -1053,8 +1164,8 @@ async function renderSEO(){
     });
   } else if(trafficEl) { trafficEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
   }
-  el('#seo-load').addEventListener('click', ()=>run(false));
-  el('#seo-refresh').addEventListener('click', ()=>run(true));
+  el('#seo-load').addEventListener('click', ()=>{ clearSnapshotForTabCurrentFilter('seo'); run(true); });
+  el('#seo-refresh').addEventListener('click', ()=>{ clearSnapshotForTabCurrentFilter('seo'); run(true); });
   // Auto-fetch on first visit if there is no snapshot yet
   if(!snapGet('seo')){ await run(false); }
 }
@@ -1115,15 +1226,15 @@ async function renderRetention(){
     const q = buildQuery();
     let urlA = `/api/v1/analytics/retention?${q}`;
     let urlB = `/api/v1/analyses/retention?${q}`;
-    if(fetchFresh){ [urlA,urlB].forEach(u=>{ httpCache.delete(cacheKey(u)); lsDel(cacheKey(u)); }); }
+    if(fetchFresh){ const a = withBypass(urlA), b = withBypass(urlB); [a,b].forEach(({clean})=>{ httpCache.delete(cacheKey(clean)); lsDel(cacheKey(clean)); }); urlA = a.fresh; urlB = b.fresh; }
     // Prefer analytics/retention; analyses/retention as fallback
     let retention = fetchFresh ? (await safeGet(urlA)) : (await getWithTTL(urlA, 600000));
     if(retention && retention.error) {
       retention = fetchFresh ? (await safeGet(urlB)) : (await getWithTTL(urlB, 600000));
     }
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
-    // Save snapshot for Retention
-    snapSet('retention', retention || {});
+    // Save snapshot for Retention (fresh only or if missing)
+    snapUpdate('retention', retention || {});
   const labels = [];
   const retVals = [];
   const churnVals = [];
@@ -1191,11 +1302,11 @@ async function renderRetention(){
   const runRetDeb = debounce((fresh)=>run(fresh), 700);
   if(retLoadBtn){
     retLoadBtn.disabled = false; retLoadBtn.style.pointerEvents = 'auto'; retLoadBtn.style.cursor = 'pointer';
-    retLoadBtn.addEventListener('click', ()=>{ console.debug('Retention: Load clicked'); statusEl.textContent = 'Loading…'; runRetDeb(false); });
+    retLoadBtn.addEventListener('click', ()=>{ console.debug('Retention: Load clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('retention'); runRetDeb(true); });
   }
   if(retRefBtn){
     retRefBtn.disabled = false; retRefBtn.style.pointerEvents = 'auto'; retRefBtn.style.cursor = 'pointer';
-    retRefBtn.addEventListener('click', ()=>{ console.debug('Retention: Refresh clicked'); statusEl.textContent = 'Loading…'; runRetDeb(true); });
+    retRefBtn.addEventListener('click', ()=>{ console.debug('Retention: Refresh clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('retention'); runRetDeb(true); });
   }
   // Auto-fetch on first visit if there is no snapshot yet
   if(!snapGet('retention')){ await run(false); }
@@ -1295,7 +1406,7 @@ async function renderOrchestrator(){
     const u = userIn.value.trim(); if(u) p.set('username', u);
     p.set('max_workers', maxSel.value);
     const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
-    const res = await fetch(`/api/v1/analytics/orchestrator/run?${p.toString()}`, {
+    const res = await fetch(`/api/v1/analytics/orchestrator/run?${p.toString()}&_ts=${Date.now()}`, {
       method: 'POST',
       headers: {
         'Accept': 'application/json',
@@ -1476,7 +1587,7 @@ function initNav(){
     if(!btn) return;
     setActiveTab(btn.dataset.tab);
   });
-  // default active
+  // default active (render will be called after filters and migration)
   setActiveTab('overview');
 }
 
@@ -1503,6 +1614,8 @@ function initFilters(){
         state.filters.to = fTo.value || null;
         state.filters.segment = fSeg.value;
         state.filters.channel = fCh.value;
+        // Clear existing snapshots for the new filter set to avoid showing stale data
+        clearSnapshotsForCurrentFilters();
         render();
       }, 250);
     }
@@ -1532,8 +1645,12 @@ function guardAuth(){
 
 function init(){
   guardAuth();
-  initNav();
+  // Initialize filters first so filterSig() is ready
   initFilters();
+  // Migrate old snapshots (pre-filter-scoped) to the new keys for current filters
+  migrateOldSnapshots();
+  // Now init navigation and render
+  initNav();
 }
 
 window.addEventListener('DOMContentLoaded', init);

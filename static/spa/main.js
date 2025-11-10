@@ -15,6 +15,9 @@ function cacheKey(url){ return url; }
 // Remove snapshot only for a specific tab under the current filter signature
 function clearSnapshotForTabCurrentFilter(tab){
   try{ localStorage.removeItem(snapKey(tab)); }catch{}
+  if(tab === 'journey'){
+    try{ delete window.__jnSankeyHash; }catch{}
+  }
 }
 // Remove all snapshots for a given tab across any filter signature
 function clearSnapshotsForTab(tab){
@@ -54,6 +57,22 @@ async function renderLLM(){
       <div class="card"><h3>Key Insights</h3><ul id="llm-insights" class="muted"></ul></div>
       <div class="card"><h3>Recommendations</h3><ul id="llm-recs" class="muted"></ul></div>
     </div>
+    <div class="grid" style="grid-template-columns: 1fr 1fr; margin-top:12px;">
+      <div class="card"><h3>KPIs</h3>
+        <div style="display:flex;gap:16px;flex-wrap:wrap" id="llm-kpis">
+          <div><div class="muted">Sessions</div><div id="llm-kpi-sessions" class="kpi-value">—</div></div>
+          <div><div class="muted">Users</div><div id="llm-kpi-users" class="kpi-value">—</div></div>
+          <div><div class="muted">CR</div><div id="llm-kpi-cr" class="kpi-value">—</div></div>
+          <div><div class="muted">Revenue</div><div id="llm-kpi-rev" class="kpi-value">—</div></div>
+        </div>
+      </div>
+      <div class="card"><h3>Funnel (LLM view)</h3><div class="chart" id="llm-chart-funnel"></div></div>
+      <div class="card"><h3>SEO Distribution</h3><div class="chart" id="llm-chart-seo"></div></div>
+      <div class="card"><h3>Retention</h3><div class="chart" id="llm-chart-ret"></div></div>
+      <div class="card" style="grid-column: 1 / -1"><h3>Data Quality</h3>
+        <div id="llm-dq" class="muted"></div>
+      </div>
+    </div>
   `;
   const statusEl = el('#llm-status');
 
@@ -61,14 +80,81 @@ async function renderLLM(){
     const rep = payload?.report?.parsed || payload?.report || {};
     const summary = rep.executive_summary || rep.summary || rep.insights || '';
     el('#llm-summary').innerHTML = summary ? `<div style="white-space:pre-wrap">${summary}</div>` : '<div class="muted">No summary.</div>';
-    const ins = Array.isArray(rep.key_insights) ? rep.key_insights : (Array.isArray(rep.highlights) ? rep.highlights : []);
-    const recs = Array.isArray(rep.recommendations) ? rep.recommendations : [];
+    // Build grouped insights if structured schema is present
+    let ins = [];
+    try{
+      if(rep.insights && typeof rep.insights==='object'){
+        const groups = ['business','journey','seo','retention'];
+        for(const g of groups){
+          const v = rep.insights[g];
+          if(!v) continue;
+          const bullets = Array.isArray(v) ? v : (Array.isArray(v.bullets)? v.bullets : []);
+          if(bullets.length){
+            ins.push(`${g.toUpperCase()}:`);
+            bullets.forEach(b=> ins.push(`• ${b}`));
+          }
+        }
+      }
+    }catch{}
+    if(!ins.length){
+      ins = Array.isArray(rep.key_insights) ? rep.key_insights : (Array.isArray(rep.highlights) ? rep.highlights : []);
+    }
+    const recEl = el('#llm-recs');
     const insEl = el('#llm-insights'); insEl.innerHTML = ins.length ? ins.map(i=>`<li>${i}</li>`).join('') : '<li class="muted">—</li>';
-    const recEl = el('#llm-recs'); recEl.innerHTML = recs.length ? recs.map(i=>`<li>${i}</li>`).join('') : '<li class="muted">—</li>';
+    // Recommendations: combine recommendations + next_best_actions + risk_alerts
+    const recs = [];
+    try{
+      if(Array.isArray(rep.recommendations)) recs.push(...rep.recommendations);
+      if(Array.isArray(rep.next_best_actions)) recs.push(...rep.next_best_actions.map(a=> typeof a==='string'? a : `${a.action} — impact:${a.impact||''}/effort:${a.effort||''}`));
+      if(Array.isArray(rep.risk_alerts)) recs.push(...rep.risk_alerts.map(r=> typeof r==='string'? r : `Risk(${r.severity||''}): ${r.title||''} — ${r.reason||''}`));
+    }catch{}
+    recEl.innerHTML = recs.length ? recs.map(i=>`<li>${i}</li>`).join('') : '<li class="muted">—</li>';
+  }
+
+  function renderCharts(charts){
+    if(!charts || typeof charts !== 'object') return;
+    try{
+      const k = charts.kpis || {};
+      const s = Number(k.sessions||0), u = Number(k.users||0), cr = Number(k.cr||0), rev = Number(k.revenue||0);
+      const ks = el('#llm-kpi-sessions'); if(ks) ks.textContent = fmt(s);
+      const ku = el('#llm-kpi-users'); if(ku) ku.textContent = fmt(u);
+      const kc = el('#llm-kpi-cr'); if(kc) kc.textContent = `${fmt((cr||0)*100,2)}%`;
+      const kr = el('#llm-kpi-rev'); if(kr) kr.textContent = fmtCurrency(rev);
+    }catch{}
+    // Funnel
+    try{
+      const fEl = el('#llm-chart-funnel');
+      const data = Array.isArray(charts.funnel) ? charts.funnel : [];
+      if(fEl && data.length){ const c=echarts.init(fEl); c.setOption({ tooltip:{ trigger:'item' }, series:[{ type:'funnel', data }] }); }
+    }catch{}
+    // SEO distribution
+    try{
+      const sEl = el('#llm-chart-seo');
+      const dist = Array.isArray(charts.seo_distribution) ? charts.seo_distribution : [];
+      if(sEl && dist.length){ const c=echarts.init(sEl); c.setOption({ tooltip:{ trigger:'item' }, series:[{ type:'pie', radius:['40%','70%'], data: dist }] }); }
+    }catch{}
+    // Retention
+    try{
+      const rEl = el('#llm-chart-ret');
+      const ts = Array.isArray(charts.retention_timeseries) ? charts.retention_timeseries : [];
+      if(rEl && ts.length){ const cats = ts.map(r=>r.date||''); const ret = ts.map(r=> r.retained||0); const ch = ts.map(r=> r.churned||0); const c=echarts.init(rEl); c.setOption({ tooltip:{ trigger:'axis' }, legend:{ data:['Retained','Churned'] }, xAxis:{ type:'category', data: cats }, yAxis:{ type:'value' }, series:[{ name:'Retained', type:'line', data: ret }, { name:'Churned', type:'line', data: ch }] }); }
+    }catch{}
+    // Data quality text
+    try{
+      const dqEl = el('#llm-dq'); const dq = charts.data_quality || {};
+      if(dqEl){ dqEl.innerHTML = `
+        <div style="display:flex;gap:16px;flex-wrap:wrap">
+          <div>Events: <b>${fmt(Number(dq.events_count||0))}</b></div>
+          <div>Sessions: <b>${fmt(Number(dq.sessions_count||0))}</b></div>
+          <div>Missing %: <b>${fmt(Number(dq.missing_values_pct||0),2)}%</b></div>
+          <div>Duplicates %: <b>${fmt(Number(dq.duplicate_events_pct||0),2)}%</b></div>
+          <div>Last event: <b>${dq.last_event_ts ? String(dq.last_event_ts) : '—'}</b></div>
+        </div>`; }
+    }catch{}
   }
 
   // Restore
-  (function(){ const snap = snapGet('llm'); if(snap){ renderReport(snap); statusEl.textContent='Restored from cache'; } })();
+  (function(){ const snap = snapGet('llm'); if(snap){ renderReport(snap); renderCharts(snap.charts); statusEl.textContent='Restored from cache'; } })();
 
   async function run(fetchFresh=false){
     const q = buildQuery();
@@ -79,6 +165,7 @@ async function renderLLM(){
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
     snapUpdate('llm', data);
     renderReport(data);
+    renderCharts(data?.charts);
   }
 
   el('#llm-load').addEventListener('click', ()=>{ clearSnapshotForTabCurrentFilter('llm'); run(true); });
@@ -844,10 +931,10 @@ async function renderJourney(){
       nodes = Array.from(new Set(links.flatMap(l=>[l.source,l.target])));
     }
     const sankeyEl = el('#chart-sankey'); if(sankeyEl && nodes.length && links.length){
-      // Only re-render if data changed from last render to avoid flicker
       const currHash = JSON.stringify({nodes,links});
-      if(window.__jnSankeyHash !== currHash){
-        const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(sankeyEl); if(prev){ prev.dispose(); }
+      const prev = (echarts.getInstanceByDom && echarts.getInstanceByDom(sankeyEl)) || null;
+      if(!prev || window.__jnSankeyHash !== currHash){
+        if(prev){ prev.dispose(); }
         const sankey=echarts.init(sankeyEl);
         sankey.setOption({ animation:false, tooltip:{}, series:[{ type:'sankey', data:nodes.map(n=>({ name:n })), links }] });
         window.__jnSankeyHash = currHash;
@@ -855,23 +942,19 @@ async function renderJourney(){
       }
     }
     statusEl.textContent = 'Restored from cache';
-    // Background refresh only if snapshot is stale (> 5 minutes) or missing links
-    const stale = snapAgeMs('journey') > 5*60*1000;
-    const needs = !(Array.isArray(links) && links.length > 0);
-    if(stale || needs){ requestIdle(()=>{ try{ run(false); }catch{} }); }
+    // Do not auto-refresh; user decides when to fetch new data via Load/Refresh
   })();
   async function run(fetchFresh=false){
     const q = buildQuery();
-    const url = `/api/v1/analytics/journey?${q}`;
-    if(fetchFresh){ httpCache.delete(cacheKey(url)); lsDel(cacheKey(url)); }
+    let url = `/api/v1/analytics/journey?${q}`;
+    if(fetchFresh){ const b = withBypass(url); httpCache.delete(cacheKey(b.clean)); lsDel(cacheKey(b.clean)); url = b.fresh; }
     statusEl.textContent = 'Loading…';
     let journey = null;
     try{
       journey = fetchFresh ? (await safeGet(url)) : (await getWithTTL(url, 600000));
     }catch(e){ console.debug('Journey fetch error', e); }
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
-    // Save snapshot for Journey only if data is non-empty and not overwriting newer cache
-    snapUpdate('journey', { funnel: journey?.funnel ?? null, paths: journey?.paths ?? null });
+    // Do not persist raw API shape; we'll persist processed nodes/links below
 
   // Funnel data
   let funnelData = [];
@@ -939,13 +1022,20 @@ async function renderJourney(){
       }
     }catch{}
   }
-  // Overwrite snapshot with processed nodes/links only when non-empty and if fresh or missing
-  try{ snapUpdate('journey', { funnel: journey?.funnel ?? null, paths: { nodes, links } }); }catch{}
+  // Persist processed nodes/links snapshot only if there is meaningful new data.
+  try{
+    const hasLinks = Array.isArray(links) && links.length > 0;
+    const payload = { funnel: journey?.funnel ?? null, paths: { nodes, links } };
+    if(hasLinks){
+      if(fetchFresh){ snapSet('journey', payload); }
+      else { snapUpdate('journey', payload); }
+    }
+  }catch{}
   const sankeyEl = el('#chart-sankey');
   if(sankeyEl && nodes.length && links.length){
     const currHash = JSON.stringify({nodes,links});
-    if(window.__jnSankeyHash !== currHash){
-      const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(sankeyEl);
+    const prev = (echarts.getInstanceByDom && echarts.getInstanceByDom(sankeyEl)) || null;
+    if(!prev || window.__jnSankeyHash !== currHash){
       if(prev){ prev.dispose(); }
       sankeyEl.innerHTML = '';
       const sankey = echarts.init(sankeyEl);
@@ -970,20 +1060,17 @@ async function renderJourney(){
   const runDeb = debounce((fresh)=>run(fresh), 700);
   if(jnLoadBtn){
     jnLoadBtn.disabled = false; jnLoadBtn.style.pointerEvents = 'auto'; jnLoadBtn.style.cursor = 'pointer'; jnLoadBtn.style.zIndex = 10; jnLoadBtn.style.position = 'relative';
-    const handler=()=>{ console.debug('Journey: Load clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('journey'); runDeb(true); };
+    const handler=()=>{ console.debug('Journey: Load clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('journey'); run(true); };
     jnLoadBtn.addEventListener('click', handler, { capture: true });
-    jnLoadBtn.onpointerdown = handler;
     jnLoadBtn.onclick = handler;
   }
   if(jnRefBtn){
     jnRefBtn.disabled = false; jnRefBtn.style.pointerEvents = 'auto'; jnRefBtn.style.cursor = 'pointer'; jnRefBtn.style.zIndex = 10; jnRefBtn.style.position = 'relative';
-    const handler=()=>{ console.debug('Journey: Refresh clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('journey'); runDeb(true); };
+    const handler=()=>{ console.debug('Journey: Refresh clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('journey'); run(true); };
     jnRefBtn.addEventListener('click', handler, { capture: true });
-    jnRefBtn.onpointerdown = handler;
     jnRefBtn.onclick = handler;
   }
-  // Auto-fetch on first visit if there is no snapshot yet
-  if(!snapGet('journey')){ await run(false); }
+  // Do not auto-fetch; show cache only until user clicks Load/Refresh
   // Expose for console-driven testing
   window.journeyRun = run;
 }

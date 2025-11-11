@@ -577,7 +577,7 @@ async function loadOverview(){
       <span id="ov-status" class="muted"></span>
     </div>
     <div class="grid kpi">
-      <div class="card"><h3>Total Sessions</h3><div class="kpi-value" id="ov-sessions">—</div></div>
+      <div class="card"><h3>Total View Events</h3><div class="kpi-value" id="ov-sessions">—</div></div>
       <div class="card"><h3>Total Users</h3><div class="kpi-value" id="ov-users">—</div></div>
       <div class="card"><h3>Conversion Rate</h3><div class="kpi-value" id="ov-cr">—</div></div>
       <div class="card"><h3>Revenue</h3><div class="kpi-value" id="ov-rev">—</div></div>

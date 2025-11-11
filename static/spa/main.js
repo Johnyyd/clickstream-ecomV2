@@ -1023,14 +1023,11 @@ async function renderJourney(){
       }
     }catch{}
   }
-  // Persist processed nodes/links snapshot only if there is meaningful new data.
+  // Persist latest payload ALWAYS to ensure old cache does not reappear on tab switch
   try{
-    const hasLinks = Array.isArray(links) && links.length > 0;
     const payload = { funnel: journey?.funnel ?? null, paths: { nodes, links } };
-    if(hasLinks){
-      if(fetchFresh){ snapSet('journey', payload); }
-      else { snapUpdate('journey', payload); }
-    }
+    if(fetchFresh){ snapSet('journey', payload); }
+    else { snapUpdate('journey', payload); }
   }catch{}
   const sankeyEl = el('#chart-sankey');
   if(sankeyEl && nodes.length && links.length){
@@ -1160,7 +1157,12 @@ async function renderReco(){
     timeSel.style.display = trending ? '' : 'none';
     userIn.style.display = trending ? 'none' : '';
   });
-  runBtn.addEventListener('click', ()=>{ clearSnapshotForTabCurrentFilter('reco'); load(); });
+  // Ensure we clear all reco snapshots (both personalized and trending variants)
+  runBtn.addEventListener('click', ()=>{
+    clearSnapshotsForTab('reco:personalized');
+    clearSnapshotsForTab('reco:trending');
+    load();
+  });
 
   // initial state
   timeSel.style.display = 'none';
@@ -1446,6 +1448,57 @@ async function renderOrchestrator(){
   const modulesDiv = el('#orch-modules');
   const detailPre = el('#orch-detail');
 
+  // Restore snapshot if available to avoid empty UI while fetching
+  (function(){
+    try{
+      const snap = snapGet('orchestrator');
+      if(!snap) return;
+      const s = snap.status || {};
+      const h = snap.history || {};
+      const lastRun = snap.last_run || null;
+      // Status and errors
+      statusPre.textContent = JSON.stringify(s, null, 2);
+      const errs = (s.errors || {});
+      errorsPre.textContent = Object.keys(errs).length ? JSON.stringify(errs, null, 2) : '(no errors)';
+      // Module details
+      let mods = Array.isArray(s.modules) ? s.modules : [];
+      // If status lacks modules, prefer latest run payload
+      if((!mods || !mods.length) && lastRun && lastRun.results){
+        try{
+          const results = lastRun.results || {};
+          const rows = Object.keys(results).map(name=>{
+            const it = results[name] || {};
+            const exec = Number(it.execution_time_seconds || it.execution_time || 0);
+            const status = it.status || it.outcome || 'done';
+            return { name, status, execution_time: exec };
+          });
+          mods = rows;
+        }catch{}
+      }
+      if(Array.isArray(mods) && mods.length){
+        modulesDiv.innerHTML = `
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr style="text-align:left;border-bottom:1px solid #e5e7eb"><th style="padding:6px">Module</th><th style="padding:6px">Status</th><th style="padding:6px">Exec Time (s)</th></tr></thead>
+            <tbody>
+              ${mods.map(m=>`<tr style=\"border-bottom:1px solid #e5e7eb\"><td style=\"padding:6px\">${m.name || ''}</td><td style=\"padding:6px\">${m.status || ''}</td><td style=\"padding:6px\">${m.execution_time != null ? Number(m.execution_time).toFixed(2) : ''}</td></tr>`).join('')}
+            </tbody>
+          </table>
+        `;
+      }
+      // History
+      if(Array.isArray(h?.items)){
+        historyDiv.innerHTML = `
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr style="text-align:left;border-bottom:1px solid #e5e7eb"><th style="padding:6px">Time</th><th style="padding:6px">Status</th><th style="padding:6px">Duration</th><th style="padding:6px">Workers</th><th style="padding:6px">User</th></tr></thead>
+            <tbody>
+              ${h.items.map(it=>`<tr data-ts="${it.ts || ''}" style="cursor:pointer;border-bottom:1px solid #e5e7eb"><td style="padding:6px">${it.ts || it.end_time || ''}</td><td style="padding:6px">${it.status || ''}</td><td style="padding:6px">${it.duration_seconds ?? ''}</td><td style="padding:6px">${it.max_workers ?? ''}</td><td style="padding:6px">${it.username ?? ''}</td></tr>`).join('')}
+            </tbody>
+          </table>
+        `;
+      }
+    }catch{}
+  })();
+
   async function loadStatus(){
     const s = await safeGet('/api/v1/analytics/orchestrator/status');
     statusPre.textContent = JSON.stringify(s, null, 2);
@@ -1486,6 +1539,8 @@ async function renderOrchestrator(){
         detailPre.textContent = JSON.stringify(doc, null, 2);
       });
     }
+    // Persist latest status+history snapshot
+    try{ snapUpdate('orchestrator', { status: s, history: h, last_run: (snapGet('orchestrator')||{}).last_run || null }); }catch{}
   }
 
   async function run(){
@@ -1506,12 +1561,37 @@ async function renderOrchestrator(){
     statusPre.textContent = JSON.stringify(json, null, 2);
     const errs = json.errors || {};
     errorsPre.textContent = Object.keys(errs).length ? JSON.stringify(errs, null, 2) : '(no errors)';
+    // Render module details from the run response if available
+    try{
+      const results = json.results || {};
+      const rows = Object.keys(results).map(name=>{
+        const it = results[name] || {};
+        const exec = Number(it.execution_time_seconds || it.execution_time || 0);
+        const status = it.status || it.outcome || 'done';
+        return { name, status, execution_time: exec };
+      });
+      if(rows.length){
+        modulesDiv.innerHTML = `
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr style="text-align:left;border-bottom:1px solid #e5e7eb"><th style="padding:6px">Module</th><th style="padding:6px">Status</th><th style="padding:6px">Exec Time (s)</th></tr></thead>
+            <tbody>
+              ${rows.map(m=>`<tr style=\"border-bottom:1px solid #e5e7eb\"><td style=\"padding:6px\">${m.name}</td><td style=\"padding:6px\">${m.status}</td><td style=\"padding:6px\">${isFinite(m.execution_time)?m.execution_time.toFixed(2):''}</td></tr>`).join('')}
+            </tbody>
+          </table>
+        `;
+      }
+    }catch{}
+    // Persist last run payload to snapshot so UI restores immediately after tab switch
+    try{
+      const prev = snapGet('orchestrator') || {};
+      snapUpdate('orchestrator', { ...(prev||{}), last_run: json });
+    }catch{}
     // Auto-refresh latest status + modules + history
     await loadStatus();
   }
 
-  runBtn.addEventListener('click', run);
-  refBtn.addEventListener('click', loadStatus);
+  runBtn.addEventListener('click', ()=>{ clearSnapshotsForTab('orchestrator'); run(); });
+  refBtn.addEventListener('click', ()=>{ clearSnapshotsForTab('orchestrator'); loadStatus(); });
   await loadStatus();
 }
 
@@ -1739,6 +1819,17 @@ function init(){
   migrateOldSnapshots();
   // Now init navigation and render
   initNav();
+  // Clear Cache button: clear dashboard caches while preserving auth
+  try{
+    const btn = document.getElementById('btn-clear-cache');
+    btn?.addEventListener('click', ()=>{
+      const LS_NS = 'spa_cache_v1:'; const SNAP_NS = 'spa_snap_v1:';
+      const keys = Object.keys(localStorage);
+      for(const k of keys){ if(k.startsWith(LS_NS) || k.startsWith(SNAP_NS)) localStorage.removeItem(k); }
+      try{ if(window.httpCache && typeof window.httpCache.clear==='function') window.httpCache.clear(); }catch{}
+      showToast('Cleared dashboard cache');
+    });
+  }catch{}
 }
 
 window.addEventListener('DOMContentLoaded', init);

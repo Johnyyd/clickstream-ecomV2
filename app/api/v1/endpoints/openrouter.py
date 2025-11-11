@@ -173,6 +173,15 @@ async def generate_llm_report(
         except Exception:
             dq = {"events_count": 0, "sessions_count": total_sessions, "missing_values_pct": 0, "duplicate_events_pct": 0, "last_event_ts": None}
 
+        # Fallback revenue from SEO when business revenue is zero
+        if revenue <= 0:
+            try:
+                seo_rev = _num((seo or {}).get("revenue") or 0)
+                if seo_rev > 0:
+                    revenue = seo_rev
+            except Exception:
+                pass
+
         charts = {
             "kpis": {
                 "sessions": total_sessions,

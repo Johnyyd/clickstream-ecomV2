@@ -140,22 +140,34 @@ def ml_user_segmentation_kmeans(username=None):
         )
         df_features = assembler.transform(df)
         
-        # K-Means with k=3 (Low, Medium, High value users)
+        # K-Means: pick k dynamically, ensure at least 2 clusters
         model_dir = _ensure_dir("models/kmeans_basic")
         try:
-            model = KMeansModel.load(str(model_dir))
+            n_users = df.count()
         except Exception:
-            kmeans = KMeans(k=3, seed=42, featuresCol="features", predictionCol="cluster")
-            model = kmeans.fit(df_features)
-            # Save for reuse
-            model.write().overwrite().save(str(model_dir))
+            n_users = 0
+        k_eff = 3 if n_users >= 3 else 2
+        kmeans = KMeans(k=k_eff, seed=42, featuresCol="features", predictionCol="cluster")
+        model = kmeans.fit(df_features)
+        # Save for reuse
+        model.write().overwrite().save(str(model_dir))
+
         
         # Predict clusters
         predictions = model.transform(df_features)
         
-        # Evaluate
+        # Evaluate (only if at least 2 distinct clusters are present)
         evaluator = ClusteringEvaluator(featuresCol="features", predictionCol="cluster", metricName="silhouette")
-        silhouette = evaluator.evaluate(predictions)
+        try:
+            distinct_clusters = predictions.select("cluster").distinct().count()
+        except Exception:
+            distinct_clusters = 0
+        silhouette = None
+        if distinct_clusters and distinct_clusters >= 2:
+            try:
+                silhouette = evaluator.evaluate(predictions)
+            except Exception:
+                silhouette = None
         
         # Collect results
         results = predictions.select("user_id", "cluster", "total_events", 
@@ -191,8 +203,8 @@ def ml_user_segmentation_kmeans(username=None):
         
         result = {
             "algorithm": "K-Means Clustering",
-            "silhouette_score": round(silhouette, 4),
-            "num_clusters": 3,
+            "silhouette_score": (round(float(silhouette), 4) if isinstance(silhouette, (int, float)) else None),
+            "num_clusters": int(distinct_clusters or k_eff),
             "total_users": len(user_data),
             "cluster_stats": clusters,
             "user_clusters": user_clusters,

@@ -612,6 +612,12 @@ async function loadOverview(){
     // Update header quick KPIs
     el('#qk-sessions') && (el('#qk-sessions').textContent = fmt(Number.isFinite(kpiSessions) ? kpiSessions : 0));
     el('#qk-cr') && (el('#qk-cr').textContent = `${fmt(Number.isFinite(kpiCR) ? kpiCR*100 : 0, 2)}%`);
+    // AOV header
+    try{
+      const aov = Number(data.aov ?? 0);
+      const aovEl = el('#qk-aov');
+      if(aovEl){ aovEl.textContent = aov > 0 ? fmtCurrency(aov) : '—'; }
+    }catch{}
     // Update Overview card KPIs
     el('#ov-sessions') && (el('#ov-sessions').textContent = fmt(Number.isFinite(kpiSessions) ? kpiSessions : 0));
     el('#ov-users') && (el('#ov-users').textContent = fmt(Number.isFinite(kpiUsers) ? kpiUsers : 0));
@@ -701,8 +707,9 @@ async function loadOverview(){
       series: [{ name: 'Users', data: Object.values(seoDist) }]
     } : { categories: [], series: [] };
 
-    // Derive conversion rate from journey funnel when missing
+    // Derive conversion rate and purchases from journey funnel when missing
     let derivedCR = null;
+    let derivedPurchases = null;
     try{
       const jf = journey && journey.funnel;
       if(jf){
@@ -712,10 +719,12 @@ async function loadOverview(){
           const v = (views?.value ?? views?.count ?? 0);
           const p = (purch?.value ?? purch?.count ?? 0);
           derivedCR = v ? (p / v) : 0;
+          derivedPurchases = Number(p) || 0;
         }else if(typeof jf === 'object'){
           const v = Number(jf.Views ?? jf.views ?? jf.view ?? 0) || 0;
           const p = Number(jf.Purchase ?? jf.purchase ?? 0) || 0;
           derivedCR = v ? (p / v) : 0;
+          derivedPurchases = Number(p) || 0;
         }
       }
     }catch{}
@@ -757,6 +766,11 @@ async function loadOverview(){
       ? bizCR
       : (Number.isFinite(derivedCR) && derivedCR > 0 ? derivedCR : 0);
     const revenueVal = (Number(business.revenue ?? 0) || Number(seo.revenue ?? 0) || 0);
+    // Compute AOV: prefer business.orders/purchases, fallback to derivedPurchases from journey
+    const orders = Number(business.orders ?? business.purchases ?? 0) || 0;
+    const effOrders = orders > 0 ? orders : (Number.isFinite(derivedPurchases) ? derivedPurchases : 0);
+    const aovVal = (Number(revenueVal) > 0 && effOrders > 0) ? (Number(revenueVal)/effOrders) : 0;
+
     const data = {
       total_sessions: (Number.isFinite(totalSessions) && totalSessions > 0)
         ? totalSessions
@@ -766,6 +780,7 @@ async function loadOverview(){
         : Number(seoSite.unique_visitors ?? 0) || 0,
       conversion_rate: finalCR,
       revenue: revenueVal,
+      aov: aovVal,
       traffic_trend: trafficTrend ?? { categories: [], series: [] },
       segments: business.segments ?? segFromSeo,
       seo_site_metrics: seoSite,
@@ -1058,15 +1073,13 @@ async function renderJourney(){
   const runDeb = debounce((fresh)=>run(fresh), 700);
   if(jnLoadBtn){
     jnLoadBtn.disabled = false; jnLoadBtn.style.pointerEvents = 'auto'; jnLoadBtn.style.cursor = 'pointer'; jnLoadBtn.style.zIndex = 10; jnLoadBtn.style.position = 'relative';
-    const handler=()=>{ console.debug('Journey: Load clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('journey'); run(true); };
+    const handler=()=>{ console.debug('Journey: Load clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('journey'); runDeb(true); };
     jnLoadBtn.addEventListener('click', handler, { capture: true });
-    jnLoadBtn.onclick = handler;
   }
   if(jnRefBtn){
     jnRefBtn.disabled = false; jnRefBtn.style.pointerEvents = 'auto'; jnRefBtn.style.cursor = 'pointer'; jnRefBtn.style.zIndex = 10; jnRefBtn.style.position = 'relative';
-    const handler=()=>{ console.debug('Journey: Refresh clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('journey'); run(true); };
+    const handler=()=>{ console.debug('Journey: Refresh clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('journey'); runDeb(true); };
     jnRefBtn.addEventListener('click', handler, { capture: true });
-    jnRefBtn.onclick = handler;
   }
   // Do not auto-fetch; show cache only until user clicks Load/Refresh
   // Expose for console-driven testing

@@ -608,12 +608,12 @@ def main():
     parser = argparse.ArgumentParser(description="Seed realistic customer-like data")
     parser.add_argument("--username", type=str, default=None, help="Seed only for this username (create if missing)")
     # [TINH CHỈNH] Tăng User Count mặc định để giảm tỷ lệ Sessions/Users
-    parser.add_argument("--user-count", type=int, default=2000, help="Number of users when --username not provided")
-    parser.add_argument("--days", type=int, default=10, help="Days back to generate")
+    parser.add_argument("--user-count", type=int, default=2500, help="Number of users when --username not provided")
+    parser.add_argument("--days", type=int, default=62, help="Days back to generate")
     # [TINH CHỈNH] Giảm Sessions/User/Day mặc định (thực tế 1-3 là hợp lý)
     parser.add_argument("--sessions-per-user", type=int, default=random.randint(1, 3), help="Sessions per user per day")
     # [TINH CHỈNH] Giảm Average Events mặc định để phản ánh độ sâu phiên thực tế hơn
-    parser.add_argument("--avg-events", type=int, default=random.randint(3, 15), help="Average events per session")
+    parser.add_argument("--avg-events", type=int, default=random.randint(2, 12), help="Average events per session")
 
     parser.add_argument("--seed-products", action="store_true", help="Seed products first if empty")
     parser.add_argument("--recent-minutes", type=int, default=None, help="Generate data in last N minutes (overrides --days)")

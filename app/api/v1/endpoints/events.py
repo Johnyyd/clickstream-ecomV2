@@ -4,6 +4,7 @@ Event Ingestion API
 from fastapi import APIRouter, Depends, Query
 from bson import ObjectId
 from typing import List, Optional
+from datetime import datetime
 
 from app.models.event import Event, EventBatch
 from app.services.ingest import ingest_event, ingest_batch
@@ -99,3 +100,115 @@ async def get_recent_sessions(
     except Exception:
         sessions = []
     return {"sessions": sessions, "count": len(sessions)}
+
+@router.get("/activity")
+async def get_activity_histograms(
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    tz_offset_minutes: int = 0,
+    db = Depends(get_db)
+):
+    """
+    Return activity histograms within the specified date range.
+    - hourly: array of 24 counts for hours 0..23 (UTC)
+    - dow: array of 7 counts for Sun..Sat (Mongo $dayOfWeek: 1=Sun..7=Sat)
+    """
+    events_col = db.db["events"]
+    # Defaults to last 30 days if not provided
+    if not end_date:
+        end_date = datetime.utcnow()
+    if not start_date:
+        from datetime import timedelta
+        start_date = end_date - timedelta(days=30)
+    # Normalize timestamp to Date for robust matching regardless of storage format
+    # tsDate =
+    #  - if timestamp is already date: use it
+    #  - if number: interpret as ms if >1e12 else seconds*1000, then toDate
+    #  - if string: $toDate
+    match = {
+        "$and": [
+            {"$expr": {"$ne": ["$timestamp", None]}},
+            {"$expr": {"$ne": [
+                {"$let": {"vars": {"ts": "$timestamp"}, "in": {
+                    "$switch": {
+                        "branches": [
+                            {"case": {"$eq": [{"$type": "$$ts"}, "date"]}, "then": "$$ts"},
+                            {"case": {"$eq": [{"$type": "$$ts"}, "long"]}, "then": {"$toDate": {"$cond": [{"$gt": ["$$ts", 1000000000000]}, "$$ts", {"$multiply": ["$$ts", 1000]}]}}},
+                            {"case": {"$eq": [{"$type": "$$ts"}, "int"]}, "then": {"$toDate": {"$cond": [{"$gt": ["$$ts", 1000000000000]}, "$$ts", {"$multiply": ["$$ts", 1000]}]}}},
+                            {"case": {"$eq": [{"$type": "$$ts"}, "double"]}, "then": {"$toDate": {"$cond": [{"$gt": ["$$ts", 1000000000000]}, "$$ts", {"$multiply": ["$$ts", 1000]}]}}},
+                            {"case": {"$eq": [{"$type": "$$ts"}, "string"]}, "then": {"$toDate": "$$ts"}}
+                        ],
+                        "default": None
+                    }
+                } } },
+                ]}},
+            ]}
+    hourly = [0]*24
+    dow = [0]*7
+    by_date: list[dict] = []
+    peak_day_label: str | None = None
+    try:
+        pipeline = [
+            # Compute tsDate field for consistent matching and bucketing
+            {"$addFields": {
+                "tsDate": {
+                    "$let": {"vars": {"ts": "$timestamp"}, "in": {
+                        "$switch": {
+                            "branches": [
+                                {"case": {"$eq": [{"$type": "$$ts"}, "date"]}, "then": "$$ts"},
+                                {"case": {"$eq": [{"$type": "$$ts"}, "long"]}, "then": {"$toDate": {"$cond": [{"$gt": ["$$ts", 1000000000000]}, "$$ts", {"$multiply": ["$$ts", 1000]}]}}},
+                                {"case": {"$eq": [{"$type": "$$ts"}, "int"]}, "then": {"$toDate": {"$cond": [{"$gt": ["$$ts", 1000000000000]}, "$$ts", {"$multiply": ["$$ts", 1000]}]}}},
+                                {"case": {"$eq": [{"$type": "$$ts"}, "double"]}, "then": {"$toDate": {"$cond": [{"$gt": ["$$ts", 1000000000000]}, "$$ts", {"$multiply": ["$$ts", 1000]}]}}},
+                                {"case": {"$eq": [{"$type": "$$ts"}, "string"]}, "then": {"$toDate": "$$ts"}}
+                            ],
+                            "default": None
+                        }
+                    }}
+                }
+            }},
+            {"$match": {"tsDate": {"$gte": start_date, "$lte": end_date}}},
+            {"$facet": {
+                "hourly": [
+                    # Shift timestamp to local time then extract hour in UTC to avoid DST issues
+                    {"$addFields": {"_ts_local": {"$dateAdd": {"startDate": "$tsDate", "unit": "minute", "amount": {"$multiply": [-1, tz_offset_minutes]}}}}},
+                    {"$group": {"_id": {"$hour": {"date": "$_ts_local", "timezone": "UTC"}}, "count": {"$sum": 1}}},
+                    {"$sort": {"_id": 1}}
+                ],
+                "dow": [
+                    {"$addFields": {"_ts_local": {"$dateAdd": {"startDate": "$tsDate", "unit": "minute", "amount": {"$multiply": [-1, tz_offset_minutes]}}}}},
+                    {"$group": {"_id": {"$dayOfWeek": {"date": "$_ts_local", "timezone": "UTC"}}, "count": {"$sum": 1}}},
+                    {"$sort": {"_id": 1}}
+                ],
+                "by_date": [
+                    {"$addFields": {"_ts_local": {"$dateAdd": {"startDate": "$tsDate", "unit": "minute", "amount": {"$multiply": [-1, tz_offset_minutes]}}}}},
+                    {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$_ts_local"}}, "count": {"$sum": 1}}},
+                    {"$sort": {"_id": 1}}
+                ]
+            }}
+        ]
+        res = list(events_col.aggregate(pipeline))
+        if res:
+            fac = res[0]
+            for r in (fac.get("hourly") or []):
+                try:
+                    h = int(r.get("_id", 0))
+                    if 0 <= h <= 23:
+                        hourly[h] = int(r.get("count", 0) or 0)
+                except Exception:
+                    pass
+            # Mongo dayOfWeek: 1..7 -> Sun..Sat -> map to 0..6
+            for r in (fac.get("dow") or []):
+                try:
+                    d = int(r.get("_id", 1)) - 1
+                    if 0 <= d <= 6:
+                        dow[d] = int(r.get("count", 0) or 0)
+                except Exception:
+                    pass
+            # By date series and peak day
+            by_date = [{"date": x.get("_id"), "count": int(x.get("count", 0) or 0)} for x in (fac.get("by_date") or [])]
+            if by_date:
+                m = max(by_date, key=lambda x: x.get("count", 0) or 0)
+                peak_day_label = m.get("date")
+    except Exception:
+        pass
+    return {"hourly": hourly, "dow": dow, "by_date": by_date, "peak_day": peak_day_label, "start_date": start_date, "end_date": end_date}

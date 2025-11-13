@@ -96,6 +96,7 @@ async function renderLLM(){
         }
       }
     }catch{}
+
     if(!ins.length){
       ins = Array.isArray(rep.key_insights) ? rep.key_insights : (Array.isArray(rep.highlights) ? rep.highlights : []);
     }
@@ -585,6 +586,18 @@ async function loadOverview(){
     <div class="grid" style="grid-template-columns: 1fr 1fr; margin-top:12px;">
       <div class="card"><h3>Traffic Sources Trend</h3><div class="chart" id="chart-trend"></div></div>
       <div class="card"><h3>User Segmentation</h3><div class="chart" id="chart-seg"></div></div>
+      <div class="card" style="grid-column: 1 / -1"><h3>Peaks</h3>
+        <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center">
+          <div>Peak Day: <b id="ov-peak-day" class="muted">—</b></div>
+          <div>Peak Hour (Users): <b id="ov-peak-hour" class="muted">—</b></div>
+        </div>
+        <div id="ov-peak-extra" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px">
+          <div><div class="muted" style="margin-bottom:4px">Top Hours</div><ul id="ov-peak-hours-list" style="margin:0;padding-left:18px"></ul></div>
+          <div><div class="muted" style="margin-bottom:4px">Top Days</div><ul id="ov-peak-days-list" style="margin:0;padding-left:18px"></ul></div>
+        </div>
+      </div>
+      <div class="card"><h3>User Activity by Hour</h3><div class="chart" id="chart-hr"></div></div>
+      <div class="card"><h3>User Activity by Day</h3><div class="chart" id="chart-dow"></div></div>
     </div>
   `;
   const statusEl = el('#ov-status');
@@ -635,6 +648,27 @@ async function loadOverview(){
     }
     el('#ov-rev') && (el('#ov-rev').textContent = fmtCurrency(Number.isFinite(kpiRev) ? kpiRev : 0));
 
+    // Peak labels
+    try{
+      const pd = data.peak_day_label || data.peak_day || '';
+      const ph = data.peak_hour_users_label || data.peak_hour || '';
+      const elPd = el('#ov-peak-day'); if(elPd) elPd.textContent = pd || '—';
+      const elPh = el('#ov-peak-hour'); if(elPh) elPh.textContent = ph || '—';
+      // Top-3 hours and days lists for better overview
+      const hours = Array.isArray(data.activity_hourly) ? data.activity_hourly : [];
+      const hTotal = hours.reduce((a,b)=>a+(Number(b)||0),0) || 1;
+      const hTop = hours.map((v,i)=>({label: String(i).padStart(2,'0')+':00', v:Number(v)||0, pct: ((Number(v)||0)*100)/hTotal}))
+        .sort((a,b)=> b.v - a.v).slice(0,3);
+      const hEl = el('#ov-peak-hours-list');
+      if(hEl){ hEl.innerHTML = hTop.length ? hTop.map(x=> `<li>${x.label}: ${fmt(x.v)} (${x.pct.toFixed(1)}%)</li>`).join('') : '<li class="muted">—</li>'; }
+      const byDate = Array.isArray(data.by_date) ? data.by_date : [];
+      const dTotal = byDate.reduce((a,b)=> a + (Number(b?.count)||0), 0) || 1;
+      const dTop = byDate.map(r=>({label: String(r.date||''), v:Number(r.count)||0, pct: ((Number(r.count)||0)*100)/dTotal}))
+        .sort((a,b)=> b.v - a.v).slice(0,3);
+      const dEl = el('#ov-peak-days-list');
+      if(dEl){ dEl.innerHTML = dTop.length ? dTop.map(x=> `<li>${x.label}: ${fmt(x.v)} (${x.pct.toFixed(1)}%)</li>`).join('') : '<li class="muted">—</li>'; }
+    }catch{}
+
     // Trend chart
     const trendEl = el('#chart-trend');
     if(trendEl && data.traffic_trend?.categories?.length){
@@ -663,6 +697,40 @@ async function loadOverview(){
     } else if(segEl) {
       segEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>';
     }
+
+    // Activity by Hour chart
+    try{
+      const hrEl = el('#chart-hr');
+      const arr = Array.isArray(data.activity_hourly) ? data.activity_hourly : [];
+      if(hrEl){
+        if(arr.length === 24){
+          const labels = Array.from({length:24}, (_,i)=> String(i).padStart(2,'0')+':00');
+          const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(hrEl);
+          if(prev){ prev.dispose(); }
+          const c = echarts.init(hrEl);
+          c.setOption({ tooltip:{}, xAxis:{ type:'category', data: labels }, yAxis:{ type:'value' }, series:[{ type:'bar', data: arr }] });
+        }else{
+          hrEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>';
+        }
+      }
+    }catch{}
+
+    // Activity by Day-of-Week chart
+    try{
+      const dwEl = el('#chart-dow');
+      const arr = Array.isArray(data.activity_dow) ? data.activity_dow : [];
+      if(dwEl){
+        if(arr.length === 7){
+          const labels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+          const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(dwEl);
+          if(prev){ prev.dispose(); }
+          const c = echarts.init(dwEl);
+          c.setOption({ tooltip:{}, xAxis:{ type:'category', data: labels }, yAxis:{ type:'value' }, series:[{ type:'bar', data: arr }] });
+        }else{
+          dwEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>';
+        }
+      }
+    }catch{}
   }
 
   // Restore from snapshot if available
@@ -680,15 +748,34 @@ async function loadOverview(){
     let bizUrl = `/api/v1/metrics/business?${q}`;
     let seoUrl = `/api/v1/analytics/seo?${q}`;
     let jnUrl = `/api/v1/analytics/journey?${q}`;
+    const tzOff = new Date().getTimezoneOffset();
+    let actUrl = `/api/v1/events/activity?${q}&tz_offset_minutes=${encodeURIComponent(tzOff)}`;
     if(fetchFresh){
-      const arr = [bizUrl, seoUrl, jnUrl].map(withBypass);
+      const arr = [bizUrl, seoUrl, jnUrl, actUrl].map(withBypass);
       arr.forEach(({clean})=>{ httpCache.delete(cacheKey(clean)); lsDel(cacheKey(clean)); });
-      [bizUrl, seoUrl, jnUrl] = arr.map(x=>x.fresh);
+      [bizUrl, seoUrl, jnUrl, actUrl] = arr.map(x=>x.fresh);
     }
     statusEl.textContent = 'Loading…';
     const business = await safeGet(bizUrl);
     const seo = await safeGet(seoUrl);
     const journey = await safeGet(jnUrl);
+    const activity = await safeGet(actUrl);
+    // Fetch recent sessions to build user activity histograms
+    let recent = null;
+    try{
+      let recUrl = '/api/v1/events/sessions/recent?limit=500';
+      if(fetchFresh){
+        const b = withBypass(recUrl);
+        httpCache.delete(cacheKey(b.clean));
+        lsDel(cacheKey(b.clean));
+        recUrl = b.fresh;
+        recent = await safeGet(recUrl);
+        console.debug('Recent sessions (fresh) fetched', { count: Array.isArray(recent?.items)? recent.items.length : (Array.isArray(recent?.sessions)? recent.sessions.length : 0) });
+      }else{
+        recent = await getWithTTL(recUrl, 600000);
+        console.debug('Recent sessions (ttl) fetched', { count: Array.isArray(recent?.items)? recent.items.length : (Array.isArray(recent?.sessions)? recent.sessions.length : 0) });
+      }
+    }catch{}
     // Guard: require SEO to succeed for charts; continue if business/journey fail
     if(seo?.error){
       statusEl.textContent = `Error: ${seo?.error}`;
@@ -786,6 +873,85 @@ async function loadOverview(){
       seo_site_metrics: seoSite,
       derived_cr: finalCR
     };
+
+    // Prefer server-side activity histograms aligned to filter window
+    try{
+      const hh = Array.isArray(activity?.hourly) ? activity.hourly : null;
+      const dd = Array.isArray(activity?.dow) ? activity.dow : null;
+      if(hh && hh.length === 24) data.activity_hourly = hh;
+      if(dd && dd.length === 7) data.activity_dow = dd;
+      // Peak day/hour from server activity if not already present
+      if(!data.peak_day_label){
+        const series = Array.isArray(activity?.by_date) ? activity.by_date : [];
+        if(series.length){
+          let best = -1, label = '';
+          for(const r of series){ const v = Number(r.count||0); if(v>best){ best=v; label = String(r.date||''); } }
+          if(label) data.peak_day_label = label;
+        }
+      }
+      if(!data.peak_hour_users_label && Array.isArray(data.activity_hourly) && data.activity_hourly.length===24){
+        let idx=0,best=-1; for(let i=0;i<24;i++){ const v=Number(data.activity_hourly[i]||0); if(v>best){ best=v; idx=i; } }
+        data.peak_hour_users_label = String(idx).padStart(2,'0')+':00';
+      }
+    }catch{}
+
+    // Build activity histograms from recent sessions (fallback)
+    try{
+      const items = Array.isArray(recent?.items) ? recent.items : (Array.isArray(recent?.sessions) ? recent.sessions : []);
+      if(items && items.length){
+        console.debug('Building activity histograms from recent sessions', { sample: items[0] });
+        const hourly = Array(24).fill(0);
+        const dow = Array(7).fill(0);
+        for(const s of items){
+          const raw = s.first_event_at || s.last_event_at || s.last_event || s.start_time || s.end_time || s.ts || null;
+          if(raw == null) continue;
+          let d;
+          if(typeof raw === 'number'){
+            const ms = raw > 1e12 ? raw : raw*1000;
+            d = new Date(ms);
+          }else if(typeof raw === 'string' && /^\d+$/.test(raw)){
+            const num = Number(raw);
+            const ms = num > 1e12 ? num : num*1000;
+            d = new Date(ms);
+          }else{
+            d = new Date(raw);
+          }
+          if(isFinite(d.getTime())){
+            hourly[d.getHours()] += 1;
+            dow[d.getDay()] += 1;
+          }
+        }
+        if(hourly.some(v=>v>0)) data.activity_hourly = hourly;
+        if(dow.some(v=>v>0)) data.activity_dow = dow;
+        console.debug('Histogram built', { hourlyNonZero: hourly.filter(v=>v>0).length, dow, peakHour: data.peak_hour_users_label });
+        // Fill peak hour if still missing
+        if(!data.peak_hour_users_label && hourly.some(v=>v>0)){
+          let idx = 0; let best=-1; for(let i=0;i<24;i++){ if(hourly[i]>best){ best=hourly[i]; idx=i; } }
+          data.peak_hour_users_label = String(idx).padStart(2,'0')+':00';
+        }
+      }
+    }catch{}
+
+    // Compute peaks from available trend
+    try{
+      const tt = data.traffic_trend;
+      const cats = Array.isArray(tt?.categories) ? tt.categories : [];
+      const series = Array.isArray(tt?.series) ? tt.series : [];
+      if(cats.length && series.length){
+        const sums = cats.map((_,i)=> series.reduce((acc,s)=> acc + (Number(s?.data?.[i] ?? 0) || 0), 0));
+        // Peak Day (by sessions)
+        let peakDayIdx = -1, peakDayVal = -1;
+        for(let i=0;i<sums.length;i++){ if(sums[i] > peakDayVal){ peakDayVal = sums[i]; peakDayIdx = i; } }
+        if(peakDayIdx >= 0){ data.peak_day_label = String(cats[peakDayIdx]); }
+        // Peak Hour (Users proxy): only if category includes hour info (e.g., contains ':')
+        const hasHour = cats.some(c=>/\d{1,2}:\d{2}/.test(String(c)) || /T\d{2}:\d{2}/.test(String(c)));
+        if(hasHour){
+          let peakHourIdx = -1, peakHourVal = -1;
+          for(let i=0;i<sums.length;i++){ if(sums[i] > peakHourVal){ peakHourVal = sums[i]; peakHourIdx = i; } }
+          if(peakHourIdx >= 0){ data.peak_hour_users_label = String(cats[peakHourIdx]); }
+        }
+      }
+    }catch{}
 
     // Save snapshot only if fresh or not yet cached
     snapUpdate('overview', data);

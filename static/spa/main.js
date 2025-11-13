@@ -880,16 +880,11 @@ async function loadOverview(){
       const dd = Array.isArray(activity?.dow) ? activity.dow : null;
       if(hh && hh.length === 24) data.activity_hourly = hh;
       if(dd && dd.length === 7) data.activity_dow = dd;
-      // Peak day/hour from server activity if not already present
-      if(!data.peak_day_label){
-        const series = Array.isArray(activity?.by_date) ? activity.by_date : [];
-        if(series.length){
-          let best = -1, label = '';
-          for(const r of series){ const v = Number(r.count||0); if(v>best){ best=v; label = String(r.date||''); } }
-          if(label) data.peak_day_label = label;
-        }
-      }
-      if(!data.peak_hour_users_label && Array.isArray(data.activity_hourly) && data.activity_hourly.length===24){
+      // Prefer server-provided by_date and peak_day; override snapshot/trend
+      if(Array.isArray(activity?.by_date)) data.by_date = activity.by_date;
+      if(activity?.peak_day) data.peak_day_label = String(activity.peak_day);
+      // Always recompute peak hour from hourly if present
+      if(Array.isArray(data.activity_hourly) && data.activity_hourly.length===24){
         let idx=0,best=-1; for(let i=0;i<24;i++){ const v=Number(data.activity_hourly[i]||0); if(v>best){ best=v; idx=i; } }
         data.peak_hour_users_label = String(idx).padStart(2,'0')+':00';
       }

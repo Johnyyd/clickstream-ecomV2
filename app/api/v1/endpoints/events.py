@@ -4,7 +4,7 @@ Event Ingestion API
 from fastapi import APIRouter, Depends, Query
 from bson import ObjectId
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.models.event import Event, EventBatch
 from app.services.ingest import ingest_event, ingest_batch
@@ -120,29 +120,14 @@ async def get_activity_histograms(
     if not start_date:
         from datetime import timedelta
         start_date = end_date - timedelta(days=30)
-    # Normalize timestamp to Date for robust matching regardless of storage format
-    # tsDate =
-    #  - if timestamp is already date: use it
-    #  - if number: interpret as ms if >1e12 else seconds*1000, then toDate
-    #  - if string: $toDate
-    match = {
-        "$and": [
-            {"$expr": {"$ne": ["$timestamp", None]}},
-            {"$expr": {"$ne": [
-                {"$let": {"vars": {"ts": "$timestamp"}, "in": {
-                    "$switch": {
-                        "branches": [
-                            {"case": {"$eq": [{"$type": "$$ts"}, "date"]}, "then": "$$ts"},
-                            {"case": {"$eq": [{"$type": "$$ts"}, "long"]}, "then": {"$toDate": {"$cond": [{"$gt": ["$$ts", 1000000000000]}, "$$ts", {"$multiply": ["$$ts", 1000]}]}}},
-                            {"case": {"$eq": [{"$type": "$$ts"}, "int"]}, "then": {"$toDate": {"$cond": [{"$gt": ["$$ts", 1000000000000]}, "$$ts", {"$multiply": ["$$ts", 1000]}]}}},
-                            {"case": {"$eq": [{"$type": "$$ts"}, "double"]}, "then": {"$toDate": {"$cond": [{"$gt": ["$$ts", 1000000000000]}, "$$ts", {"$multiply": ["$$ts", 1000]}]}}},
-                            {"case": {"$eq": [{"$type": "$$ts"}, "string"]}, "then": {"$toDate": "$$ts"}}
-                        ],
-                        "default": None
-                    }
-                } } },
-                ]}},
-            ]}
+    # Normalize to naive UTC for Mongo comparisons
+    try:
+        if end_date and getattr(end_date, 'tzinfo', None) is not None:
+            end_date = end_date.astimezone(timezone.utc).replace(tzinfo=None)
+        if start_date and getattr(start_date, 'tzinfo', None) is not None:
+            start_date = start_date.astimezone(timezone.utc).replace(tzinfo=None)
+    except Exception:
+        pass
     hourly = [0]*24
     dow = [0]*7
     by_date: list[dict] = []
@@ -151,14 +136,22 @@ async def get_activity_histograms(
         pipeline = [
             # Compute tsDate field for consistent matching and bucketing
             {"$addFields": {
+                "tsRaw": {"$ifNull": [
+                    "$timestamp",
+                    {"$ifNull": [
+                        "$occurred_at",
+                        {"$ifNull": [
+                            "$processed_at",
+                            "$occurred_at_iso"
+                        ]}
+                    ]}
+                ]},
                 "tsDate": {
-                    "$let": {"vars": {"ts": "$timestamp"}, "in": {
+                    "$let": {"vars": {"ts": "$tsRaw"}, "in": {
                         "$switch": {
                             "branches": [
                                 {"case": {"$eq": [{"$type": "$$ts"}, "date"]}, "then": "$$ts"},
-                                {"case": {"$eq": [{"$type": "$$ts"}, "long"]}, "then": {"$toDate": {"$cond": [{"$gt": ["$$ts", 1000000000000]}, "$$ts", {"$multiply": ["$$ts", 1000]}]}}},
-                                {"case": {"$eq": [{"$type": "$$ts"}, "int"]}, "then": {"$toDate": {"$cond": [{"$gt": ["$$ts", 1000000000000]}, "$$ts", {"$multiply": ["$$ts", 1000]}]}}},
-                                {"case": {"$eq": [{"$type": "$$ts"}, "double"]}, "then": {"$toDate": {"$cond": [{"$gt": ["$$ts", 1000000000000]}, "$$ts", {"$multiply": ["$$ts", 1000]}]}}},
+                                {"case": {"$in": [{"$type": "$$ts"}, ["long","int","double"]]}, "then": {"$toDate": {"$cond": [{"$gt": ["$$ts", 1000000000000]}, "$$ts", {"$multiply": ["$$ts", 1000]}]}}},
                                 {"case": {"$eq": [{"$type": "$$ts"}, "string"]}, "then": {"$toDate": "$$ts"}}
                             ],
                             "default": None
@@ -169,20 +162,24 @@ async def get_activity_histograms(
             {"$match": {"tsDate": {"$gte": start_date, "$lte": end_date}}},
             {"$facet": {
                 "hourly": [
-                    # Shift timestamp to local time then extract hour in UTC to avoid DST issues
-                    {"$addFields": {"_ts_local": {"$dateAdd": {"startDate": "$tsDate", "unit": "minute", "amount": {"$multiply": [-1, tz_offset_minutes]}}}}},
-                    {"$group": {"_id": {"$hour": {"date": "$_ts_local", "timezone": "UTC"}}, "count": {"$sum": 1}}},
+                    # Shift timestamp to local time using millisecond arithmetic, then extract hour
+                    {"$addFields": {"_ts_local": {"$add": ["$tsDate", {"$multiply": [-1, tz_offset_minutes, 60000]}]}}},
+                    {"$group": {"_id": {"$hour": "$_ts_local"}, "count": {"$sum": 1}}},
                     {"$sort": {"_id": 1}}
                 ],
                 "dow": [
-                    {"$addFields": {"_ts_local": {"$dateAdd": {"startDate": "$tsDate", "unit": "minute", "amount": {"$multiply": [-1, tz_offset_minutes]}}}}},
-                    {"$group": {"_id": {"$dayOfWeek": {"date": "$_ts_local", "timezone": "UTC"}}, "count": {"$sum": 1}}},
+                    {"$addFields": {"_ts_local": {"$add": ["$tsDate", {"$multiply": [-1, tz_offset_minutes, 60000]}]}}},
+                    {"$group": {"_id": {"$dayOfWeek": "$_ts_local"}, "count": {"$sum": 1}}},
                     {"$sort": {"_id": 1}}
                 ],
                 "by_date": [
-                    {"$addFields": {"_ts_local": {"$dateAdd": {"startDate": "$tsDate", "unit": "minute", "amount": {"$multiply": [-1, tz_offset_minutes]}}}}},
+                    {"$addFields": {"_ts_local": {"$add": ["$tsDate", {"$multiply": [-1, tz_offset_minutes, 60000]}]}}},
                     {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$_ts_local"}}, "count": {"$sum": 1}}},
                     {"$sort": {"_id": 1}}
+                ],
+                "debug_sample": [
+                    {"$project": {"tsRaw": 1, "tsDate": 1, "timestamp": 1, "occurred_at": 1, "processed_at": 1, "occurred_at_iso": 1}},
+                    {"$limit": 5}
                 ]
             }}
         ]
@@ -211,4 +208,4 @@ async def get_activity_histograms(
                 peak_day_label = m.get("date")
     except Exception:
         pass
-    return {"hourly": hourly, "dow": dow, "by_date": by_date, "peak_day": peak_day_label, "start_date": start_date, "end_date": end_date}
+    return {"hourly": hourly, "dow": dow, "by_date": by_date, "peak_day": peak_day_label, "start_date": start_date, "end_date": end_date, "debug_sample": (res[0].get("debug_sample") if 'res' in locals() and res else [])}

@@ -737,19 +737,33 @@ async function loadOverview(){
       }
     }catch{}
 
-    // Activity by Day-of-Week chart
+    // Activity by Day chart: ưu tiên theo từng ngày trong khoảng lọc (by_date), fallback theo thứ trong tuần
     try{
       const dwEl = el('#chart-dow');
-      const arr = Array.isArray(data.activity_dow) ? data.activity_dow : [];
       if(dwEl){
-        if(arr.length === 7){
-          const labels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-          const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(dwEl);
-          if(prev){ prev.dispose(); }
+        const byDate = Array.isArray(data.by_date) ? data.by_date : [];
+        const hasByDate = byDate.length > 0;
+        const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(dwEl);
+        if(prev){ prev.dispose(); }
+        if(hasByDate){
+          const labels = byDate.map(r => String(r.date||''));
+          const vals = byDate.map(r => Number(r.count)||0);
           const c = echarts.init(dwEl);
-          c.setOption({ tooltip:{}, xAxis:{ type:'category', data: labels }, yAxis:{ type:'value' }, series:[{ type:'bar', data: arr }] });
+          c.setOption({
+            tooltip:{ trigger:'axis' },
+            xAxis:{ type:'category', data: labels, axisLabel:{ rotate:45 } },
+            yAxis:{ type:'value' },
+            series:[{ type:'bar', data: vals }]
+          });
         }else{
-          dwEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>';
+          const arr = Array.isArray(data.activity_dow) ? data.activity_dow : [];
+          if(arr.length === 7){
+            const labels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+            const c = echarts.init(dwEl);
+            c.setOption({ tooltip:{}, xAxis:{ type:'category', data: labels }, yAxis:{ type:'value' }, series:[{ type:'bar', data: arr }] });
+          }else{
+            dwEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>';
+          }
         }
       }
     }catch{}

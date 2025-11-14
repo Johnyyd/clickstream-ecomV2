@@ -22,6 +22,15 @@ def _clean_doc(d: dict) -> dict:
             out[k] = v
     return out
 
+def _clean_mongo_value(v):
+    if isinstance(v, ObjectId):
+        return str(v)
+    if isinstance(v, list):
+        return [_clean_mongo_value(x) for x in v]
+    if isinstance(v, dict):
+        return {k: _clean_mongo_value(x) for k, x in v.items()}
+    return v
+
 @router.post("/", response_model=EventResponse)
 async def ingest_single_event(
     event: Event,
@@ -136,43 +145,51 @@ async def get_activity_histograms(
         pipeline = [
             # Compute tsDate field for consistent matching and bucketing
             {"$addFields": {
+                # tsRaw giữ giá trị thời gian gốc để debug
                 "tsRaw": {"$ifNull": [
-                    "$timestamp",
+                    "$occurred_at",
                     {"$ifNull": [
-                        "$occurred_at",
+                        "$processed_at",
                         {"$ifNull": [
-                            "$processed_at",
-                            "$occurred_at_iso"
+                            "$occurred_at_iso",
+                            "$timestamp"
                         ]}
                     ]}
                 ]},
+                # tsDate: chuyển mọi kiểu (date/number/string) sang Date an toàn
                 "tsDate": {
-                    "$let": {"vars": {"ts": "$tsRaw"}, "in": {
-                        "$switch": {
-                            "branches": [
-                                {"case": {"$eq": [{"$type": "$$ts"}, "date"]}, "then": "$$ts"},
-                                {"case": {"$in": [{"$type": "$$ts"}, ["long","int","double"]]}, "then": {"$toDate": {"$cond": [{"$gt": ["$$ts", 1000000000000]}, "$$ts", {"$multiply": ["$$ts", 1000]}]}}},
-                                {"case": {"$eq": [{"$type": "$$ts"}, "string"]}, "then": {"$toDate": "$$ts"}}
-                            ],
-                            "default": None
-                        }
-                    }}
+                    "$convert": {
+                        "input": {"$ifNull": [
+                            "$occurred_at",
+                            {"$ifNull": [
+                                "$processed_at",
+                                {"$ifNull": [
+                                    "$occurred_at_iso",
+                                    "$timestamp"
+                                ]}
+                            ]}
+                        ]},
+                        "to": "date",
+                        "onError": None,
+                        "onNull": None
+                    }
                 }
             }},
-            {"$match": {"tsDate": {"$gte": start_date, "$lte": end_date}}},
             {"$facet": {
                 "hourly": [
-                    # Shift timestamp to local time using millisecond arithmetic, then extract hour
+                    {"$match": {"tsDate": {"$gte": start_date, "$lte": end_date}}},
                     {"$addFields": {"_ts_local": {"$add": ["$tsDate", {"$multiply": [-1, tz_offset_minutes, 60000]}]}}},
                     {"$group": {"_id": {"$hour": "$_ts_local"}, "count": {"$sum": 1}}},
                     {"$sort": {"_id": 1}}
                 ],
                 "dow": [
+                    {"$match": {"tsDate": {"$gte": start_date, "$lte": end_date}}},
                     {"$addFields": {"_ts_local": {"$add": ["$tsDate", {"$multiply": [-1, tz_offset_minutes, 60000]}]}}},
                     {"$group": {"_id": {"$dayOfWeek": "$_ts_local"}, "count": {"$sum": 1}}},
                     {"$sort": {"_id": 1}}
                 ],
                 "by_date": [
+                    {"$match": {"tsDate": {"$gte": start_date, "$lte": end_date}}},
                     {"$addFields": {"_ts_local": {"$add": ["$tsDate", {"$multiply": [-1, tz_offset_minutes, 60000]}]}}},
                     {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$_ts_local"}}, "count": {"$sum": 1}}},
                     {"$sort": {"_id": 1}}
@@ -207,5 +224,12 @@ async def get_activity_histograms(
                 m = max(by_date, key=lambda x: x.get("count", 0) or 0)
                 peak_day_label = m.get("date")
     except Exception:
-        pass
-    return {"hourly": hourly, "dow": dow, "by_date": by_date, "peak_day": peak_day_label, "start_date": start_date, "end_date": end_date, "debug_sample": (res[0].get("debug_sample") if 'res' in locals() and res else [])}
+        res = []
+    debug_sample_raw = []
+    if 'res' in locals() and res:
+        try:
+            debug_sample_raw = res[0].get("debug_sample") or []
+        except Exception:
+            debug_sample_raw = []
+    debug_sample = _clean_mongo_value(debug_sample_raw)
+    return {"hourly": hourly, "dow": dow, "by_date": by_date, "peak_day": peak_day_label, "start_date": start_date, "end_date": end_date, "debug_sample": debug_sample}

@@ -890,39 +890,44 @@ async function loadOverview(){
       }
     }catch{}
 
-    // Build activity histograms from recent sessions (fallback)
+    // Build activity histograms from recent sessions (fallback-only when API histograms missing)
     try{
-      const items = Array.isArray(recent?.items) ? recent.items : (Array.isArray(recent?.sessions) ? recent.sessions : []);
-      if(items && items.length){
-        console.debug('Building activity histograms from recent sessions', { sample: items[0] });
-        const hourly = Array(24).fill(0);
-        const dow = Array(7).fill(0);
-        for(const s of items){
-          const raw = s.first_event_at || s.last_event_at || s.last_event || s.start_time || s.end_time || s.ts || null;
-          if(raw == null) continue;
-          let d;
-          if(typeof raw === 'number'){
-            const ms = raw > 1e12 ? raw : raw*1000;
-            d = new Date(ms);
-          }else if(typeof raw === 'string' && /^\d+$/.test(raw)){
-            const num = Number(raw);
-            const ms = num > 1e12 ? num : num*1000;
-            d = new Date(ms);
-          }else{
-            d = new Date(raw);
+      // Chỉ dùng fallback nếu API không trả về histogram đầy đủ
+      const hasApiHourly = Array.isArray(data.activity_hourly) && data.activity_hourly.length === 24;
+      const hasApiDow = Array.isArray(data.activity_dow) && data.activity_dow.length === 7;
+      if(!hasApiHourly || !hasApiDow){
+        const items = Array.isArray(recent?.items) ? recent.items : (Array.isArray(recent?.sessions) ? recent.sessions : []);
+        if(items && items.length){
+          console.debug('Building activity histograms from recent sessions (fallback)', { sample: items[0] });
+          const hourly = Array(24).fill(0);
+          const dow = Array(7).fill(0);
+          for(const s of items){
+            const raw = s.first_event_at || s.last_event_at || s.last_event || s.start_time || s.end_time || s.ts || null;
+            if(raw == null) continue;
+            let d;
+            if(typeof raw === 'number'){
+              const ms = raw > 1e12 ? raw : raw*1000;
+              d = new Date(ms);
+            }else if(typeof raw === 'string' && /^\d+$/.test(raw)){
+              const num = Number(raw);
+              const ms = num > 1e12 ? num : num*1000;
+              d = new Date(ms);
+            }else{
+              d = new Date(raw);
+            }
+            if(isFinite(d.getTime())){
+              hourly[d.getHours()] += 1;
+              dow[d.getDay()] += 1;
+            }
           }
-          if(isFinite(d.getTime())){
-            hourly[d.getHours()] += 1;
-            dow[d.getDay()] += 1;
+          if(!hasApiHourly && hourly.some(v=>v>0)) data.activity_hourly = hourly;
+          if(!hasApiDow && dow.some(v=>v>0)) data.activity_dow = dow;
+          console.debug('Histogram fallback built', { hourlyNonZero: hourly.filter(v=>v>0).length, dow, peakHour: data.peak_hour_users_label });
+          // Nếu đang dùng fallback (không có peak từ API) thì tính peak hour từ histogram fallback
+          if(!data.peak_hour_users_label && hourly.some(v=>v>0)){
+            let idx = 0; let best=-1; for(let i=0;i<24;i++){ if(hourly[i]>best){ best=hourly[i]; idx=i; } }
+            data.peak_hour_users_label = String(idx).padStart(2,'0')+':00';
           }
-        }
-        if(hourly.some(v=>v>0)) data.activity_hourly = hourly;
-        if(dow.some(v=>v>0)) data.activity_dow = dow;
-        console.debug('Histogram built', { hourlyNonZero: hourly.filter(v=>v>0).length, dow, peakHour: data.peak_hour_users_label });
-        // Fill peak hour if still missing
-        if(!data.peak_hour_users_label && hourly.some(v=>v>0)){
-          let idx = 0; let best=-1; for(let i=0;i<24;i++){ if(hourly[i]>best){ best=hourly[i]; idx=i; } }
-          data.peak_hour_users_label = String(idx).padStart(2,'0')+':00';
         }
       }
     }catch{}

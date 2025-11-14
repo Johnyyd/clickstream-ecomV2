@@ -648,23 +648,45 @@ async function loadOverview(){
     }
     el('#ov-rev') && (el('#ov-rev').textContent = fmtCurrency(Number.isFinite(kpiRev) ? kpiRev : 0));
 
-    // Peak labels
+    // Peak labels & lists (ưu tiên dữ liệu từ activity API)
     try{
-      const pd = data.peak_day_label || data.peak_day || '';
-      const ph = data.peak_hour_users_label || data.peak_hour || '';
+      const pd = data.peak_day || data.peak_day_label || '';
+      const ph = data.peak_hour || data.peak_hour_users_label || '';
       const elPd = el('#ov-peak-day'); if(elPd) elPd.textContent = pd || '—';
       const elPh = el('#ov-peak-hour'); if(elPh) elPh.textContent = ph || '—';
-      // Top-3 hours and days lists for better overview
-      const hours = Array.isArray(data.activity_hourly) ? data.activity_hourly : [];
-      const hTotal = hours.reduce((a,b)=>a+(Number(b)||0),0) || 1;
-      const hTop = hours.map((v,i)=>({label: String(i).padStart(2,'0')+':00', v:Number(v)||0, pct: ((Number(v)||0)*100)/hTotal}))
-        .sort((a,b)=> b.v - a.v).slice(0,3);
+
+      // Top Hours: ưu tiên server-side top_hours, fallback sang tự tính từ activity_hourly
+      let hTop = [];
+      if(Array.isArray(data.top_hours) && data.top_hours.length){
+        hTop = data.top_hours.map(h=>({
+          label: String(h.label ?? (typeof h.hour==='number'? String(h.hour).padStart(2,'0')+':00' : '')),
+          v: Number(h.count||0),
+          pct: Number(h.pct||0)
+        }));
+      }else{
+        const hours = Array.isArray(data.activity_hourly) ? data.activity_hourly : [];
+        const hTotal = hours.reduce((a,b)=>a+(Number(b)||0),0) || 1;
+        hTop = hours.map((v,i)=>({label: String(i).padStart(2,'0')+':00', v:Number(v)||0, pct: ((Number(v)||0)*100)/hTotal}))
+          .sort((a,b)=> b.v - a.v).slice(0,3);
+      }
       const hEl = el('#ov-peak-hours-list');
       if(hEl){ hEl.innerHTML = hTop.length ? hTop.map(x=> `<li>${x.label}: ${fmt(x.v)} (${x.pct.toFixed(1)}%)</li>`).join('') : '<li class="muted">—</li>'; }
-      const byDate = Array.isArray(data.by_date) ? data.by_date : [];
-      const dTotal = byDate.reduce((a,b)=> a + (Number(b?.count)||0), 0) || 1;
-      const dTop = byDate.map(r=>({label: String(r.date||''), v:Number(r.count)||0, pct: ((Number(r.count)||0)*100)/dTotal}))
-        .sort((a,b)=> b.v - a.v).slice(0,3);
+
+      // Top Days: ưu tiên server-side top_days, fallback sang tự tính từ by_date
+      let dTop = [];
+      if(Array.isArray(data.top_days) && data.top_days.length){
+        const dTotal = data.top_days.reduce((a,b)=> a + (Number(b?.count)||0), 0) || 1;
+        dTop = data.top_days.map(r=>({
+          label: String(r.date||''),
+          v: Number(r.count)||0,
+          pct: ((Number(r.count)||0)*100)/dTotal
+        }));
+      }else{
+        const byDate = Array.isArray(data.by_date) ? data.by_date : [];
+        const dTotal = byDate.reduce((a,b)=> a + (Number(b?.count)||0), 0) || 1;
+        dTop = byDate.map(r=>({label: String(r.date||''), v:Number(r.count)||0, pct: ((Number(r.count)||0)*100)/dTotal}))
+          .sort((a,b)=> b.v - a.v).slice(0,3);
+      }
       const dEl = el('#ov-peak-days-list');
       if(dEl){ dEl.innerHTML = dTop.length ? dTop.map(x=> `<li>${x.label}: ${fmt(x.v)} (${x.pct.toFixed(1)}%)</li>`).join('') : '<li class="muted">—</li>'; }
     }catch{}
@@ -932,23 +954,25 @@ async function loadOverview(){
       }
     }catch{}
 
-    // Compute peaks from available trend
+    // Compute peaks from traffic trend chỉ khi chưa có dữ liệu từ activity API
     try{
-      const tt = data.traffic_trend;
-      const cats = Array.isArray(tt?.categories) ? tt.categories : [];
-      const series = Array.isArray(tt?.series) ? tt.series : [];
-      if(cats.length && series.length){
-        const sums = cats.map((_,i)=> series.reduce((acc,s)=> acc + (Number(s?.data?.[i] ?? 0) || 0), 0));
-        // Peak Day (by sessions)
-        let peakDayIdx = -1, peakDayVal = -1;
-        for(let i=0;i<sums.length;i++){ if(sums[i] > peakDayVal){ peakDayVal = sums[i]; peakDayIdx = i; } }
-        if(peakDayIdx >= 0){ data.peak_day_label = String(cats[peakDayIdx]); }
-        // Peak Hour (Users proxy): only if category includes hour info (e.g., contains ':')
-        const hasHour = cats.some(c=>/\d{1,2}:\d{2}/.test(String(c)) || /T\d{2}:\d{2}/.test(String(c)));
-        if(hasHour){
-          let peakHourIdx = -1, peakHourVal = -1;
-          for(let i=0;i<sums.length;i++){ if(sums[i] > peakHourVal){ peakHourVal = sums[i]; peakHourIdx = i; } }
-          if(peakHourIdx >= 0){ data.peak_hour_users_label = String(cats[peakHourIdx]); }
+      if(!data.peak_day && !data.peak_day_label && !data.peak_hour && !data.peak_hour_users_label){
+        const tt = data.traffic_trend;
+        const cats = Array.isArray(tt?.categories) ? tt.categories : [];
+        const series = Array.isArray(tt?.series) ? tt.series : [];
+        if(cats.length && series.length){
+          const sums = cats.map((_,i)=> series.reduce((acc,s)=> acc + (Number(s?.data?.[i] ?? 0) || 0), 0));
+          // Peak Day (by sessions)
+          let peakDayIdx = -1, peakDayVal = -1;
+          for(let i=0;i<sums.length;i++){ if(sums[i] > peakDayVal){ peakDayVal = sums[i]; peakDayIdx = i; } }
+          if(peakDayIdx >= 0){ data.peak_day_label = String(cats[peakDayIdx]); }
+          // Peak Hour (Users proxy): only if category includes hour info (e.g., contains ':')
+          const hasHour = cats.some(c=>/\d{1,2}:\d{2}/.test(String(c)) || /T\d{2}:\d{2}/.test(String(c)));
+          if(hasHour){
+            let peakHourIdx = -1, peakHourVal = -1;
+            for(let i=0;i<sums.length;i++){ if(sums[i] > peakHourVal){ peakHourVal = sums[i]; peakHourIdx = i; } }
+            if(peakHourIdx >= 0){ data.peak_hour_users_label = String(cats[peakHourIdx]); }
+          }
         }
       }
     }catch{}

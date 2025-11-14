@@ -118,9 +118,14 @@ async def get_activity_histograms(
     db = Depends(get_db)
 ):
     """
-    Return activity histograms within the specified date range.
-    - hourly: array of 24 counts for hours 0..23 (UTC)
+    Return activity histograms and peak metrics within the specified date range.
+    - hourly: array of 24 counts for hours 0..23 (local adjusted)
     - dow: array of 7 counts for Sun..Sat (Mongo $dayOfWeek: 1=Sun..7=Sat)
+    - by_date: list of {date, count}
+    - peak_day: day with the highest event count (by_date)
+    - peak_hour: hour with the highest event count inside peak_day
+    - top_hours: top-3 hours (overall in range) by total events
+    - top_days: top-3 days after peak_day by total events
     """
     events_col = db.db["events"]
     # Defaults to last 30 days if not provided
@@ -141,6 +146,10 @@ async def get_activity_histograms(
     dow = [0]*7
     by_date: list[dict] = []
     peak_day_label: str | None = None
+    peak_hour_label: str | None = None
+    top_hours: list[dict] = []
+    top_days: list[dict] = []
+
     try:
         pipeline = [
             # Compute tsDate field for consistent matching and bucketing
@@ -194,6 +203,12 @@ async def get_activity_histograms(
                     {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$_ts_local"}}, "count": {"$sum": 1}}},
                     {"$sort": {"_id": 1}}
                 ],
+                "by_date_hourly": [
+                    {"$match": {"tsDate": {"$gte": start_date, "$lte": end_date}}},
+                    {"$addFields": {"_ts_local": {"$add": ["$tsDate", {"$multiply": [-1, tz_offset_minutes, 60000]}]}}},
+                    {"$group": {"_id": {"date": {"$dateToString": {"format": "%Y-%m-%d", "date": "$_ts_local"}}, "hour": {"$hour": "$_ts_local"}}, "count": {"$sum": 1}}},
+                    {"$sort": {"_id.date": 1, "_id.hour": 1}}
+                ],
                 "debug_sample": [
                     {"$project": {"tsRaw": 1, "tsDate": 1, "timestamp": 1, "occurred_at": 1, "processed_at": 1, "occurred_at_iso": 1}},
                     {"$limit": 5}
@@ -203,6 +218,7 @@ async def get_activity_histograms(
         res = list(events_col.aggregate(pipeline))
         if res:
             fac = res[0]
+
             for r in (fac.get("hourly") or []):
                 try:
                     h = int(r.get("_id", 0))
@@ -223,8 +239,54 @@ async def get_activity_histograms(
             if by_date:
                 m = max(by_date, key=lambda x: x.get("count", 0) or 0)
                 peak_day_label = m.get("date")
+
+            # Build per-day hourly map from by_date_hourly facet
+            by_date_hours: dict[str, list[int]] = {}
+            for r in (fac.get("by_date_hourly") or []):
+                try:
+                    _id = r.get("_id") or {}
+                    d = str(_id.get("date"))
+                    h = int(_id.get("hour", 0))
+                    c = int(r.get("count", 0) or 0)
+                    if not d:
+                        continue
+                    if d not in by_date_hours:
+                        by_date_hours[d] = [0] * 24
+                    if 0 <= h <= 23:
+                        by_date_hours[d][h] = c
+                except Exception:
+                    continue
+
+            # Peak hour: hour có nhiều event nhất trong peak_day
+            if peak_day_label and peak_day_label in by_date_hours:
+                hours_arr = by_date_hours[peak_day_label]
+                best = -1
+                idx = 0
+                for i, v in enumerate(hours_arr):
+                    v_int = int(v or 0)
+                    if v_int > best:
+                        best = v_int
+                        idx = i
+                peak_hour_label = f"{idx:02d}:00"
+
+            # Top hours: top-3 giờ có tổng event cao nhất trong toàn range
+            total_events = sum(int(v or 0) for v in hourly) or 1
+            hours_stats: list[dict] = []
+            for i, v in enumerate(hourly):
+                cnt = int(v or 0)
+                pct = (cnt * 100.0) / total_events if total_events else 0.0
+                hours_stats.append({"hour": i, "label": f"{i:02d}:00", "count": cnt, "pct": pct})
+            hours_stats.sort(key=lambda x: x["count"], reverse=True)
+            top_hours = hours_stats[:3]
+
+            # Top days: các ngày nhiều event nhất sau peak_day
+            if by_date and peak_day_label:
+                days_sorted = sorted(by_date, key=lambda x: x.get("count", 0), reverse=True)
+                top_days = [d for d in days_sorted if d.get("date") != peak_day_label][:3]
+
     except Exception:
         res = []
+
     debug_sample_raw = []
     if 'res' in locals() and res:
         try:
@@ -232,4 +294,15 @@ async def get_activity_histograms(
         except Exception:
             debug_sample_raw = []
     debug_sample = _clean_mongo_value(debug_sample_raw)
-    return {"hourly": hourly, "dow": dow, "by_date": by_date, "peak_day": peak_day_label, "start_date": start_date, "end_date": end_date, "debug_sample": debug_sample}
+    return {
+        "hourly": hourly,
+        "dow": dow,
+        "by_date": by_date,
+        "peak_day": peak_day_label,
+        "peak_hour": peak_hour_label,
+        "top_hours": top_hours,
+        "top_days": top_days,
+        "start_date": start_date,
+        "end_date": end_date,
+        "debug_sample": debug_sample,
+    }

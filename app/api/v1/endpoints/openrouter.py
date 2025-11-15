@@ -12,6 +12,8 @@ from app.services.openrouter import (
     analyze_ml_results
 )
 from ..deps import get_db, get_current_user, verify_api_key
+from app.core.db_sync import api_keys_col
+from bson import ObjectId
 
 from ..models import (
     BehaviorAnalysis,
@@ -196,7 +198,42 @@ async def generate_llm_report(
             "data_quality": dq,
         }
 
-        report = await analyze_ml_results(ml_results)
+        # Resolve OpenRouter API key: ưu tiên key lưu trong Mongo cho admin, fallback sang settings
+        api_key_override = None
+        try:
+            role = getattr(current_user, "role", None)
+            if not role and isinstance(current_user, dict):
+                role = current_user.get("role")
+            if role == "admin":
+                # Lấy user_id theo nhiều dạng (model hoặc dict)
+                uid = None
+                for attr in ("id", "_id"):
+                    if hasattr(current_user, attr):
+                        uid = getattr(current_user, attr)
+                        if uid is not None:
+                            break
+                if uid is None and isinstance(current_user, dict):
+                    uid = current_user.get("_id")
+                if uid is not None:
+                    # user_id trong collection api_keys được lưu dạng ObjectId
+                    query_uid = uid
+                    try:
+                        if isinstance(query_uid, str):
+                            query_uid = ObjectId(query_uid)
+                    except Exception:
+                        # Nếu không convert được thì vẫn thử với giá trị gốc
+                        query_uid = uid
+
+                    doc = api_keys_col().find_one({"user_id": query_uid, "provider": "openrouter"})
+                    if doc:
+                        # Hỗ trợ cả schema mới (key_encrypted) lẫn cũ (key)
+                        key_val = doc.get("key_encrypted") or doc.get("key")
+                        if key_val:
+                            api_key_override = key_val
+        except Exception:
+            api_key_override = None
+
+        report = await analyze_ml_results(ml_results, api_key=api_key_override)
         # Attach meta for troubleshooting source of LLM (openrouter|fallback)
         meta = {"llm_source": report.get("source")} if isinstance(report, dict) else {}
         # Fallback for users: if zero, try SEO unique_visitors

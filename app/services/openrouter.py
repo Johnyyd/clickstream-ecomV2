@@ -4,6 +4,7 @@ OpenRouter AI service
 import httpx
 from typing import Dict, Optional
 from app.core.config import settings
+import logging
 
 async def analyze_user_behavior(user_id: str, api_key: str, db) -> Dict:
     """
@@ -13,7 +14,7 @@ async def analyze_user_behavior(user_id: str, api_key: str, db) -> Dict:
     
     async with httpx.AsyncClient() as client:
         response = await client.post(
-            f"{settings.OPENROUTER_API_URL}/analyze",
+            f"{settings.OPENROUTER_API_URL}",
             headers={"Authorization": f"Bearer {api_key}"},
             json={"user_data": user_data}
         )
@@ -34,8 +35,22 @@ async def analyze_ml_results(ml_results: Dict, api_key: Optional[str] = None) ->
         Dict containing a 'insights' narrative and optional 'highlights' bullets
     """
     try:
-        base_url = getattr(settings, "OPENROUTER_API_URL", None)
-        key = api_key or getattr(settings, "OPENROUTER_API_KEY", None)
+        base_url = getattr(settings, "OPENROUTER_API_URL", None) or "https://openrouter.ai/api/v1"
+
+        raw_key = api_key
+        if not raw_key:
+            s_key = getattr(settings, "OPENROUTER_API_KEY", None)
+            if s_key is not None and not isinstance(s_key, str):
+                try:
+                    s_key = s_key.get_secret_value()
+                except Exception:
+                    pass
+            raw_key = s_key
+
+        key = raw_key
+
+        logger = logging.getLogger(__name__)
+        logger.info("analyze_ml_results: base_url=%s, key_present=%s, api_key_arg=%s", base_url, bool(key), bool(api_key))
 
         if base_url and key:
             # System-style prompt: phân tích chi tiết dữ liệu analytics cho quản trị viên (tiếng Việt)
@@ -91,25 +106,62 @@ async def analyze_ml_results(ml_results: Dict, api_key: Optional[str] = None) ->
                 "- 'insights' là danh sách bullet chi tiết nhưng ngắn gọn; mỗi phần (business/journey/seo/retention) nên có 3–8 bullet.\n"
                 "- 'recommendations' là danh sách hành động cụ thể, có thể thực thi (không nói chung chung). Ưu tiên hành động impact cao.\n"
                 "- ƯU TIÊN DÙNG SỐ LIỆU THỰC TỪ JSON (tỉ lệ %, top‑N, so sánh). KHÔNG được bịa số. Nếu thiếu dữ liệu cho một phần, hãy bỏ qua phần đó hoặc ghi rõ là không đủ dữ liệu.\n"
-                "- Chỉ trả về JSON đúng schema trên, KHÔNG kèm thêm text ngoài JSON."
-            )
-            async with httpx.AsyncClient(timeout=60) as client:
-                # Assume the backend exposes a generic insights endpoint for ML summaries
-                resp = await client.post(
-                    f"{base_url}/insights-ml",
-                    headers={"Authorization": f"Bearer {key}"},
-                    json={
-                        "prompt": prompt,
-                        "results": ml_results,
-                        "format": "json"
-                    },
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                # Normalize to expected shape for llmDisplay.js when possible
-                if isinstance(data, dict) and ("parsed" in data or "status" in data):
-                    return data
-                return {"status": "ok", "parsed": data}
+                "- Chỉ trả về JSON đúng schema trên, KHÔNG kèm thêm text ngoài JSON.")
+            try:
+                import json as _json
+
+                async with httpx.AsyncClient(timeout=60) as client:
+                    resp = await client.post(
+                        f"{base_url}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {key}",
+                            "HTTP-Referer": "http://localhost:8000",
+                            "X-Title": "Clickstream Dashboard",
+                        },
+                        json={
+                            "model": "meta-llama/llama-3-70b-instruct",
+                            "messages": [
+                                {"role": "system", "content": prompt},
+                                {
+                                    "role": "user",
+                                    "content": _json.dumps(ml_results or {}, ensure_ascii=False),
+                                },
+                            ],
+                            "response_format": {"type": "json_object"},
+                        },
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+
+                    content = None
+                    try:
+                        choices = data.get("choices") or []
+                        if choices:
+                            msg = choices[0].get("message") or {}
+                            content = msg.get("content")
+                    except Exception:
+                        content = None
+
+                    parsed = None
+                    if isinstance(content, str):
+                        try:
+                            parsed = _json.loads(content)
+                        except Exception:
+                            parsed = None
+
+                    if isinstance(parsed, dict):
+                        parsed.setdefault("source", "openrouter")
+                        return {"status": "ok", "parsed": parsed, "source": "openrouter"}
+
+                    if isinstance(data, dict):
+                        data.setdefault("source", "openrouter")
+                        if "parsed" in data or "status" in data:
+                            return data
+                        return {"status": "ok", "parsed": data, "source": "openrouter"}
+            except Exception as e:
+                logger.exception("OpenRouter insights-ml call failed: %s", e)
+        else:
+            logger.info("analyze_ml_results: skipping OpenRouter, missing config (base_url=%s, key_is_none=%s)", base_url, key is None)
 
         # Fallback: compute concrete insights locally (no OpenRouter)
         def _num(x):
@@ -216,7 +268,7 @@ async def analyze_ml_results(ml_results: Dict, api_key: Optional[str] = None) ->
             "key_insights": insights or ["Insufficient data"],
             "recommendations": recs or ["Collect more data to generate actionable recommendations"],
         }
-        return {"status": "ok", "parsed": parsed}
+        return {"status": "ok", "parsed": parsed, "source": "local_fallback"}
     except Exception as e:
         return {"error": str(e), "insights": "Failed to generate LLM insights"}
 

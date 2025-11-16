@@ -1,7 +1,7 @@
 """Cart service module."""
 from typing import Dict, Any, List, Optional
 from datetime import datetime
-
+from app.core.db_sync import events_col
 class CartService:
     @staticmethod
     def create_cart(user_id: str) -> Dict[str, Any]:
@@ -46,18 +46,19 @@ class CartService:
 # Minimal DB-backed implementations returning safe defaults to satisfy API models
 
 async def get_active_carts(db, limit: Optional[int] = 10, skip: Optional[int] = 0) -> List[Dict[str, Any]]:
-    col = db.db["events"]
+    col = events_col()
     try:
         # Placeholder: return recent add_to_cart events as items
         cur = col.find({"event_type": "add_to_cart"}).sort([("timestamp", -1)]).skip(int(skip or 0)).limit(int(limit or 10))
         items: List[Dict[str, Any]] = []
         for e in cur:
+            props = e.get("properties") or {}
             items.append({
-                "product_id": str(e.get("product_id", "")),
-                "product_name": e.get("product_name", ""),
-                "quantity": int(e.get("quantity", 1) or 1),
-                "price": float(e.get("price", 0.0) or 0.0),
-                "category": e.get("category", ""),
+                "product_id": str(props.get("product_id") or props.get("sku") or ""),
+                "product_name": props.get("product_name") or props.get("name") or "",
+                "quantity": int((props.get("quantity") or 1) or 1),
+                "price": float((props.get("price") or props.get("unit_price") or 0.0) or 0.0),
+                "category": props.get("category") or props.get("category_name") or "",
                 "abandoned": False,
                 "time_in_cart": None,
             })

@@ -2,10 +2,11 @@
 from typing import List, Dict, Any, Optional, Tuple
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
+from app.core.db_sync import events_col
 
 
-def _events_col(db):
-    return db.db["events"]
+def _events_col(db):  # db kept for backward-compat signature, ignored internally
+    return events_col()
 
 
 def _time_window_bounds(timeframe: Optional[str]) -> Tuple[int, int]:

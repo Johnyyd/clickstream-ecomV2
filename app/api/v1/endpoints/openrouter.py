@@ -13,6 +13,7 @@ from app.services.openrouter import (
 )
 from ..deps import get_db, get_current_user, verify_api_key
 from app.core.db_sync import api_keys_col
+from app.core.db_sync import events_col, sessions_col, products_col, users_col, carts_col
 from bson import ObjectId
 
 from ..models import (
@@ -77,6 +78,7 @@ async def generate_llm_report(
             "seo": seo,
             "retention": retention,
         }
+
         # Build chart-ready data
         def _num(x):
             try:
@@ -85,10 +87,68 @@ async def generate_llm_report(
                 return 0.0
 
         # KPIs
+        # Chuẩn hoá lại số session: ưu tiên đếm trực tiếp từ collection sessions
         total_sessions = _num(metrics.get("total_sessions") or metrics.get("sessions") or 0)
+        try:
+            col_sess = sessions_col()
+            # Sử dụng first_event_at trong khoảng window; nếu không có thì fallback last_event_at
+            sess_count = col_sess.count_documents({
+                "first_event_at": {"$gte": start_date, "$lte": end_date}
+            })
+            if sess_count == 0:
+                sess_count = col_sess.count_documents({
+                    "last_event_at": {"$gte": start_date, "$lte": end_date}
+                })
+            if sess_count:
+                total_sessions = float(sess_count)
+        except Exception:
+            # Nếu có lỗi, giữ nguyên total_sessions từ metrics
+            pass
+
         total_users = _num(metrics.get("total_users") or metrics.get("users") or 0)
         conversion_rate = _num(metrics.get("conversion_rate") or 0)
         revenue = _num(metrics.get("revenue") or 0)
+        orders_backend = _num(metrics.get("orders") or 0)
+
+        # Luôn cố gắng suy ra số orders từ funnel (bước Purchase)
+        orders_from_funnel = 0.0
+        try:
+            jf_orders = (journey or {}).get("funnel")
+            if isinstance(jf_orders, dict) and isinstance(jf_orders.get("steps"), list):
+                steps = jf_orders["steps"]
+                purch = next(
+                    (
+                        s
+                        for s in steps
+                        if str(s.get("name") or s.get("step") or "").lower().find("purchase") >= 0
+                    ),
+                    None,
+                )
+                if purch:
+                    orders_from_funnel = _num(purch.get("value") or purch.get("count") or 0)
+        except Exception:
+            orders_from_funnel = orders_from_funnel or 0.0
+
+        # Tính AOV từ nhiều nguồn, chọn giá trị dương đầu tiên
+        aov = 0.0
+        aov_candidates = [
+            _num(metrics.get("average_order_value") or 0),
+            _num(metrics.get("aov") or 0),
+        ]
+        if revenue > 0 and orders_backend > 0:
+            try:
+                aov_candidates.append(revenue / orders_backend)
+            except Exception:
+                pass
+        if revenue > 0 and orders_from_funnel > 0:
+            try:
+                aov_candidates.append(revenue / orders_from_funnel)
+            except Exception:
+                pass
+        for cand in aov_candidates:
+            if cand and cand > 0:
+                aov = cand
+                break
         if total_sessions <= 0:
             tv = _num(((seo or {}).get("site_metrics") or {}).get("total_views") or 0)
             if tv > 0:
@@ -123,6 +183,105 @@ async def generate_llm_report(
             elif isinstance(jf, dict):
                 for k, v in jf.items():
                     funnel.append({"name": str(k), "value": _num(v)})
+
+        # Nếu AOV vẫn chưa dương nhưng funnel local đã có bước Purchase, dùng funnel để tính lại
+        if (not aov or aov <= 0) and revenue > 0 and funnel:
+            try:
+                purch_step = next(
+                    (
+                        s
+                        for s in funnel
+                        if str(s.get("name") or "").lower().find("purchase") >= 0
+                    ),
+                    None,
+                )
+                if purch_step:
+                    purch_cnt = _num(purch_step.get("value") or 0)
+                    if purch_cnt > 0:
+                        aov = revenue / purch_cnt
+            except Exception:
+                pass
+
+        # Bước cuối: tính trực tiếp AOV từ collection events để đảm bảo khớp dữ liệu Mongo
+        # Dựa trên schema event purchase: properties.total_amount, hoặc price * cart_items
+        if not aov or aov <= 0:
+            try:
+                col_events = events_col()
+                # Window theo timestamp epoch seconds
+                start_ts_ev = int(start_date.timestamp())
+                end_ts_ev = int(end_date.timestamp())
+                purchase_match_ev = {
+                    "$and": [
+                        {
+                            "$or": [
+                                {"event_type": "purchase"},
+                                {
+                                    "$expr": {
+                                        "$eq": [
+                                            {"$toLower": {"$trim": {"input": "$event_type"}}},
+                                            "purchase",
+                                        ]
+                                    }
+                                },
+                            ]
+                        },
+                        {
+                            "timestamp": {
+                                "$gte": start_ts_ev,
+                                "$lte": end_ts_ev,
+                            }
+                        },
+                    ]
+                }
+
+                docs = list(
+                    col_events.find(
+                        purchase_match_ev,
+                        {
+                            "properties.total_amount": 1,
+                            "properties.total": 1,
+                            "properties.amount": 1,
+                            "properties.value": 1,
+                            "properties.cart_total": 1,
+                            "properties.product_details.price": 1,
+                            "properties.cart_items": 1,
+                        },
+                    )
+                )
+
+                def _to_float_ev(x) -> float:
+                    try:
+                        return float(x)
+                    except Exception:
+                        try:
+                            return float(str(x).replace(",", ""))
+                        except Exception:
+                            return 0.0
+
+                def _to_amount_ev(doc) -> float:
+                    props = (doc.get("properties") or {})
+                    for k in ("total_amount", "total", "amount", "value", "cart_total"):
+                        if k in props and props.get(k) not in (None, ""):
+                            return _to_float_ev(props.get(k))
+                    price = None
+                    try:
+                        pd = props.get("product_details") or {}
+                        if isinstance(pd, dict):
+                            price = pd.get("price")
+                    except Exception:
+                        price = None
+                    items = props.get("cart_items") or 1
+                    price_f = _to_float_ev(price) if price is not None else 0.0
+                    items_f = _to_float_ev(items) if items is not None else 1.0
+                    return price_f * items_f
+
+                orders_ev = len(docs)
+                revenue_ev = sum(_to_amount_ev(d) for d in docs)
+                if revenue_ev > 0 and orders_ev > 0:
+                    aov = revenue_ev / orders_ev
+            except Exception:
+                # Nếu có lỗi truy vấn trực tiếp events, giữ nguyên aov hiện tại
+                pass
 
         # Top paths
         links = []
@@ -163,14 +322,46 @@ async def generate_llm_report(
         dq = {}
         try:
             dq_src = metrics.get("data_quality") if isinstance(metrics, dict) else None
-            events_count = _num(metrics.get("total_events") or 0)
+
+            events_count = 0.0
+            last_event_ts = None
+            col = events_col()
+
+            try:
+                start_ts = int(start_date.timestamp())
+                end_ts = int(end_date.timestamp())
+                time_filter = {"timestamp": {"$gte": start_ts, "$lte": end_ts}}
+
+                events_count = float(col.count_documents(time_filter))
+
+                doc_last_cur = col.find(
+                    time_filter,
+                    {"timestamp": 1, "occurred_at": 1, "occurred_at_iso": 1},
+                ).sort([("timestamp", -1)]).limit(1)
+                docs = list(doc_last_cur)
+                if docs:
+                    d = docs[0]
+                    if d.get("occurred_at") is not None:
+                        try:
+                            last_event_ts = d["occurred_at"].isoformat()
+                        except Exception:
+                            last_event_ts = str(d["occurred_at"])
+                    elif d.get("occurred_at_iso"):
+                        last_event_ts = str(d["occurred_at_iso"])
+                    elif d.get("timestamp") is not None:
+                        import datetime as _dt
+                        ts = int(d["timestamp"])
+                        last_event_ts = _dt.datetime.utcfromtimestamp(ts).isoformat()
+            except Exception:
+                pass
+
             sessions_count = total_sessions
             dq = {
                 "events_count": events_count,
                 "sessions_count": sessions_count,
                 "missing_values_pct": _num((dq_src or {}).get("missing_values_pct") or 0),
                 "duplicate_events_pct": _num((dq_src or {}).get("duplicate_events_pct") or 0),
-                "last_event_ts": (metrics.get("last_event_ts") if isinstance(metrics, dict) else None),
+                "last_event_ts": last_event_ts,
             }
         except Exception:
             dq = {"events_count": 0, "sessions_count": total_sessions, "missing_values_pct": 0, "duplicate_events_pct": 0, "last_event_ts": None}
@@ -190,6 +381,7 @@ async def generate_llm_report(
                 "users": total_users,
                 "cr": conversion_rate,
                 "revenue": revenue,
+                "aov": aov,
             },
             "funnel": funnel,
             "top_paths": links,
@@ -197,6 +389,22 @@ async def generate_llm_report(
             "retention_timeseries": retention_ts,
             "data_quality": dq,
         }
+
+        # Đồng bộ lại ml_results.business cho LLM: đảm bảo thấy đúng KPI & data_quality backend
+        try:
+            biz = dict(metrics or {}) if isinstance(metrics, dict) else {}
+            biz["total_sessions"] = total_sessions
+            biz["sessions"] = total_sessions
+            biz["total_users"] = total_users
+            biz["users"] = total_users
+            biz["conversion_rate"] = conversion_rate
+            biz["revenue"] = revenue
+            biz["average_order_value"] = aov
+            biz["aov"] = aov
+            biz["data_quality"] = dq
+            ml_results["business"] = biz
+        except Exception:
+            ml_results["business"] = metrics
 
         # Resolve OpenRouter API key: ưu tiên key lưu trong Mongo cho admin, fallback sang settings
         api_key_override = None
@@ -234,6 +442,27 @@ async def generate_llm_report(
             api_key_override = None
 
         report = await analyze_ml_results(ml_results, api_key=api_key_override)
+
+        # Đảm bảo phần data_quality trong parsed.charts luôn dùng số liệu backend (dq)
+        if isinstance(report, dict):
+            parsed = report.get("parsed") or {}
+            charts_parsed = parsed.get("charts") or {}
+            charts_parsed["data_quality"] = dq
+            parsed["charts"] = charts_parsed
+            # Đồng bộ KPIs trong parsed.kpis theo backend charts.kpis (bao gồm aov)
+            kpis_backend = charts.get("kpis") or {}
+            # Giữ lại các field khác của LLM nếu có nhưng ghi đè 4 KPI chính và aov
+            kpis_llm = parsed.get("kpis") or {}
+            kpis_llm.update({
+                "sessions": kpis_backend.get("sessions"),
+                "users": kpis_backend.get("users"),
+                "cr": kpis_backend.get("cr"),
+                "revenue": kpis_backend.get("revenue"),
+                "aov": kpis_backend.get("aov"),
+            })
+            parsed["kpis"] = kpis_llm
+            report["parsed"] = parsed
+
         # Attach meta for troubleshooting source of LLM (openrouter|fallback)
         meta = {"llm_source": report.get("source")} if isinstance(report, dict) else {}
         # Fallback for users: if zero, try SEO unique_visitors

@@ -3,7 +3,7 @@ Products API endpoints
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
-
+from app.core.db_sync import events_col, sessions_col, products_col, users_col, carts_col
 from app.models.product import Product, ProductCreate, ProductUpdate
 from ..deps import get_db, get_current_user
 from ..models import ProductResponse

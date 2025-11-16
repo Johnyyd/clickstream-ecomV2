@@ -64,6 +64,7 @@ async function renderLLM(){
           <div><div class="muted">Users</div><div id="llm-kpi-users" class="kpi-value">—</div></div>
           <div><div class="muted">CR</div><div id="llm-kpi-cr" class="kpi-value">—</div></div>
           <div><div class="muted">Revenue</div><div id="llm-kpi-rev" class="kpi-value">—</div></div>
+          <div><div class="muted">AOV</div><div id="llm-kpi-aov" class="kpi-value">—</div></div>
         </div>
       </div>
       <div class="card"><h3>Funnel (LLM view)</h3><div class="chart" id="llm-chart-funnel"></div></div>
@@ -116,11 +117,12 @@ async function renderLLM(){
     if(!charts || typeof charts !== 'object') return;
     try{
       const k = charts.kpis || {};
-      const s = Number(k.sessions||0), u = Number(k.users||0), cr = Number(k.cr||0), rev = Number(k.revenue||0);
+      const s = Number(k.sessions||0), u = Number(k.users||0), cr = Number(k.cr||0), rev = Number(k.revenue||0), aov = Number(k.aov||0);
       const ks = el('#llm-kpi-sessions'); if(ks) ks.textContent = fmt(s);
       const ku = el('#llm-kpi-users'); if(ku) ku.textContent = fmt(u);
       const kc = el('#llm-kpi-cr'); if(kc) kc.textContent = `${fmt((cr||0)*100,2)}%`;
       const kr = el('#llm-kpi-rev'); if(kr) kr.textContent = fmtCurrency(rev);
+      const ka = el('#llm-kpi-aov'); if(ka) ka.textContent = aov > 0 ? fmtCurrency(aov) : '—';
     }catch{}
     // Funnel
     try{

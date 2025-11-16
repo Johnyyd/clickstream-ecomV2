@@ -10,6 +10,7 @@ from app.models.event import Event, EventBatch
 from app.services.ingest import ingest_event, ingest_batch
 from ..deps import get_db, get_optional_user
 from ..models import EventResponse
+from app.core.db_sync import events_col, sessions_col, products_col, users_col, carts_col
 
 router = APIRouter()
 
@@ -63,9 +64,11 @@ async def get_session_summary(
     """
     Get session event summary
     """
-    events_col = db.db["events"]
+    col = events_col()
+
     try:
-        events = list(events_col.find({"session_id": session_id}).sort([("timestamp", 1)]))
+        events = list(col.find({"session_id": session_id}).sort([("timestamp", 1)]))
+
         events = [_clean_doc(e) for e in events]
     except Exception:
         events = []
@@ -84,7 +87,8 @@ async def get_recent_sessions(
     """
     Get recent sessions
     """
-    events_col = db.db["events"]
+    col = events_col()
+
     sessions: list[dict] = []
     try:
         pipeline = [{"$sort": {"timestamp": -1}}]
@@ -99,7 +103,8 @@ async def get_recent_sessions(
             {"$sort": {"last_event": -1}},
             {"$limit": int(limit)}
         ]
-        agg = list(events_col.aggregate(pipeline))
+        agg = list(col.aggregate(pipeline))
+
         for d in agg:
             sessions.append({
                 "session_id": d.get("_id"),

@@ -5,7 +5,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from bson import ObjectId
-
+from app.core.db_sync import events_col, sessions_col, products_col, users_col, carts_col
 from app.core.database import db_manager
 from app.core.spark import spark_manager
 from app.models.user import User

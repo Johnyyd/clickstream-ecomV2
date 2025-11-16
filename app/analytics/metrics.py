@@ -1,7 +1,7 @@
 """Metrics analytics module."""
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta, timezone
-
+from app.core.db_sync import events_col, sessions_col, products_col, users_col, carts_col
 def get_user_metrics(user_id: str) -> Dict[str, Any]:
     """Get metrics for a specific user."""
     return {
@@ -66,6 +66,8 @@ async def get_business_metrics(db, start_date: datetime, end_date: datetime, deb
     conversion_rate = 0.0
     visitors = 0
     total_sessions = 0
+    total_events = 0
+    last_event_ts = None
     # Normalize to UTC epoch seconds to avoid tz/localtime mismatches
     def to_epoch_s(dt: datetime) -> int:
         if dt.tzinfo is None:
@@ -165,32 +167,87 @@ async def get_business_metrics(db, start_date: datetime, end_date: datetime, deb
                 except Exception:
                     visitors = visitors or 0
 
+            # Dù sessions lấy từ sessions_col, ta vẫn có thể dùng events_col để thống kê total_events & last_event_ts
+            if events_col:
+                # Schema seed/ingest: mọi event đều có timestamp là epoch seconds (int)
+                time_filter_events = {"timestamp": {"$gte": start_ts, "$lte": end_ts}}
+
+                try:
+                    total_events = events_col.count_documents(time_filter_events)
+                except Exception:
+                    total_events = total_events or 0
+
+                # Lấy last_event_ts: dùng timestamp, fallback occurred_at/occurred_at_iso nếu có
+                try:
+                    doc_last = events_col.find(
+                        time_filter_events,
+                        {"timestamp": 1, "occurred_at": 1, "occurred_at_iso": 1},
+                    ).sort([("timestamp", -1)]).limit(1)
+                    docs = list(doc_last)
+                    if docs:
+                        d = docs[0]
+                        if d.get("occurred_at") is not None:
+                            dt = d.get("occurred_at")
+                            try:
+                                last_event_ts = dt.isoformat()
+                            except Exception:
+                                last_event_ts = str(dt)
+                        elif d.get("occurred_at_iso"):
+                            last_event_ts = str(d.get("occurred_at_iso"))
+                        elif d.get("timestamp") is not None:
+                            try:
+                                import datetime as _dt
+                                ts_val = d.get("timestamp")
+                                ts = int(ts_val)
+                                if ts > 1000000000000:
+                                    ts = ts // 1000
+                                last_event_ts = _dt.datetime.utcfromtimestamp(ts).isoformat()
+                            except Exception:
+                                last_event_ts = None
+                except Exception:
+                    last_event_ts = last_event_ts or None
+
         elif events_col:
             # Visitors and sessions estimated from events when sessions collection not available
-            # Support multiple timestamp schemas similar to purchase_match
-            time_filter = {
-                "$or": [
-                    {"timestamp": {"$gte": start_ts, "$lte": end_ts}},
-                    {"timestamp": {"$gte": start_ts * 1000, "$lte": end_ts * 1000}},
-                    {"occurred_at": {"$gte": start_date, "$lte": end_date}},
-                    {"$expr": {"$and": [
-                        {"$gte": [ {"$toLong": "$timestamp"}, start_ts ]},
-                        {"$lte": [ {"$toLong": "$timestamp"}, end_ts ]}
-                    ]}},
-                    {"$expr": {"$and": [
-                        {"$gte": [ {"$toLong": "$timestamp"}, start_ts * 1000 ]},
-                        {"$lte": [ {"$toLong": "$timestamp"}, end_ts * 1000 ]}
-                    ]}},
-                    {"$expr": {"$and": [
-                        {"$gte": [ {"$dateFromString": {"dateString": "$occurred_at_iso", "onError": None, "onNull": None}}, start_date ]},
-                        {"$lte": [ {"$dateFromString": {"dateString": "$occurred_at_iso", "onError": None, "onNull": None}}, end_date ]}
-                    ]}},
-                ]
-            }
+            # Schema seed/ingest: timestamp epoch seconds
+            time_filter = {"timestamp": {"$gte": start_ts, "$lte": end_ts}}
             user_ids = events_col.distinct("user_id", time_filter)
             visitors = len([u for u in user_ids if u])
             sess_ids = events_col.distinct("session_id", time_filter)
             total_sessions = len([s for s in sess_ids if s])
+            # Tổng số events và last_event_ts khi không có sessions_col
+            try:
+                total_events = events_col.count_documents(time_filter)
+            except Exception:
+                total_events = total_events or 0
+            try:
+                doc_last = events_col.find(time_filter, {"timestamp": 1, "occurred_at": 1, "occurred_at_iso": 1}).sort([
+                    ("occurred_at", -1),
+                    ("timestamp", -1),
+                ]).limit(1)
+                docs = list(doc_last)
+                if docs:
+                    d = docs[0]
+                    if d.get("occurred_at") is not None:
+                        dt = d.get("occurred_at")
+                        try:
+                            last_event_ts = dt.isoformat()
+                        except Exception:
+                            last_event_ts = str(dt)
+                    elif d.get("occurred_at_iso"):
+                        last_event_ts = str(d.get("occurred_at_iso"))
+                    elif d.get("timestamp") is not None:
+                        try:
+                            import datetime as _dt
+                            ts_val = d.get("timestamp")
+                            ts = int(ts_val)
+                            if ts > 1000000000000:
+                                ts = ts // 1000
+                            last_event_ts = _dt.datetime.utcfromtimestamp(ts).isoformat()
+                        except Exception:
+                            last_event_ts = None
+            except Exception:
+                last_event_ts = last_event_ts or None
 
         # Conversions and revenue from purchase events (from events)
         if events_col:
@@ -378,6 +435,8 @@ async def get_business_metrics(db, start_date: datetime, end_date: datetime, deb
         "conversion_rate": conversion_rate,
         "total_users": visitors,
         "total_sessions": total_sessions,
+        "total_events": total_events,
+        "last_event_ts": last_event_ts,
     }
     if debug:
         result["_debug"] = dbg

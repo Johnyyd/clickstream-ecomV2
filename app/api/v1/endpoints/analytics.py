@@ -4,7 +4,7 @@ Analytics API endpoints
 from fastapi import APIRouter, Depends, Query
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
-
+from app.core.db_sync import events_col, sessions_col, products_col, users_col, carts_col
 from app.services.analytics import (
     get_user_journey_analysis,
     get_cart_analysis,

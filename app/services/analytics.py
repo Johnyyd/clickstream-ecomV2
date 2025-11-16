@@ -3,6 +3,7 @@ Analytics service functions
 """
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
+from app.core.db_sync import events_col
 
 async def get_user_journey_analysis(db, start_date: datetime, end_date: datetime, user_id: Optional[str] = None):
     """
@@ -19,9 +20,9 @@ async def get_user_journey_analysis(db, start_date: datetime, end_date: datetime
     }
     if user_id:
         query["user_id"] = user_id
-        
-    events_col = db.db["events"]
-    events = list(events_col.find(query))
+
+    col = events_col()
+    events = list(col.find(query))
 
     # Safe defaults for JourneyAnalysis (latest model version)
     session_metrics = {
@@ -148,10 +149,10 @@ async def get_cart_analysis(db, start_date: datetime, end_date: datetime):
     """
     Analyze cart behavior
     """
-    events_col = db.db["events"]
+    col = events_col()
     start_ts = int(start_date.timestamp())
     end_ts = int(end_date.timestamp())
-    cart_events = list(events_col.find({
+    cart_events = list(col.find({
         "event_type": {"$in": ["add_to_cart", "remove_from_cart", "checkout"]},
         "timestamp": {"$gte": start_ts, "$lte": end_ts}
     }))
@@ -189,14 +190,14 @@ async def get_cart_analysis(db, start_date: datetime, end_date: datetime):
         end_ts = int(end_date.timestamp())
         sess_checkout: Dict[str, int] = {}
         sess_purchase: Dict[str, int] = {}
-        cur = db.db["events"].find({"timestamp": {"$gte": start_ts, "$lte": end_ts}})
+        cur = col.find({"timestamp": {"$gte": start_ts, "$lte": end_ts}})
         first_ref_by_session: Dict[str, str] = {}
         for e in cur:
             sid = e.get("session_id")
             ref = (e.get("properties", {}) or {}).get("referrer") or ""
             if sid and sid not in first_ref_by_session:
                 first_ref_by_session[sid] = to_channel(ref)
-        cur2 = db.db["events"].find({"event_type": {"$in": ["checkout", "purchase"]}, "timestamp": {"$gte": start_ts, "$lte": end_ts}})
+        cur2 = col.find({"event_type": {"$in": ["checkout", "purchase"]}, "timestamp": {"$gte": start_ts, "$lte": end_ts}})
         for e in cur2:
             sid = e.get("session_id")
             ch = to_channel((e.get("properties", {}) or {}).get("referrer") or first_ref_by_session.get(sid, "direct"))
@@ -217,7 +218,7 @@ async def get_cart_analysis(db, start_date: datetime, end_date: datetime):
     size_counter: Dict[str, int] = {"1":0,"2":0,"3":0,"4":0,"5+":0}
     try:
         add_counts: Dict[str, int] = {}
-        for e in db.db["events"].find({"event_type": "add_to_cart", "timestamp": {"$gte": start_ts, "$lte": end_ts}}):
+        for e in col.find({"event_type": "add_to_cart", "timestamp": {"$gte": start_ts, "$lte": end_ts}}):
             sid = e.get("session_id")
             if not sid:
                 continue
@@ -255,9 +256,9 @@ async def get_retention_analysis(db, start_date: datetime, cohort_size: int = 7)
     """
     Analyze user retention
     """
-    events_col = db.db["events"]
+    col = events_col()
     start_ts = int(start_date.timestamp())
-    events = list(events_col.find({
+    events = list(col.find({
         "timestamp": {"$gte": start_ts}
     }, {"user_id":1, "timestamp":1}))
 
@@ -373,10 +374,10 @@ async def get_seo_analysis(db, start_date: datetime, end_date: datetime):
     """
     Analyze SEO performance
     """
-    events_col = db.db["events"]
+    col = events_col()
     start_ts = int(start_date.timestamp())
     end_ts = int(end_date.timestamp())
-    events = list(events_col.find({
+    events = list(col.find({
         "timestamp": {"$gte": start_ts, "$lte": end_ts}
     }))
 
@@ -453,7 +454,7 @@ async def get_seo_analysis(db, start_date: datetime, end_date: datetime):
     # If revenue still 0, run an internal aggregation directly on events as a fallback
     if not revenue_value:
         try:
-            events_col = db.db["events"]
+            col = events_col()
             # Normalize window bounds
             start_ts = int(start_date.timestamp())
             end_ts = int(end_date.timestamp())
@@ -497,7 +498,7 @@ async def get_seo_analysis(db, start_date: datetime, end_date: datetime):
                 {"$addFields": {"final": {"$cond": [ {"$gt": ["$picked", 0]}, "$picked", "$priceItems" ]}}},
                 {"$group": {"_id": None, "rev": {"$sum": "$final"}}}
             ]
-            agg = list(events_col.aggregate(pipeline))
+            agg = list(col.aggregate(pipeline))
             if agg:
                 revenue_value = float(agg[0].get("rev") or 0.0)
         except Exception:

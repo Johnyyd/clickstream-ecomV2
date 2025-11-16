@@ -157,7 +157,25 @@ async function renderLLM(){
   }
 
   // Restore
-  (function(){ const snap = snapGet('llm'); if(snap){ renderReport(snap); renderCharts(snap.charts); statusEl.textContent='Restored from cache'; } })();
+  (function(){
+    const snap = snapGet('llm');
+    if(snap){
+      renderReport(snap);
+      try{
+        const chartsTop = snap?.charts || {};
+        const chartsParsed = snap?.report?.parsed?.charts || {};
+        const mergedCharts = {
+          ...chartsTop,
+          // ưu tiên retention_timeseries từ parsed nếu có
+          retention_timeseries: chartsParsed.retention_timeseries || chartsTop.retention_timeseries,
+        };
+        renderCharts(mergedCharts);
+      }catch{
+        renderCharts(snap?.charts);
+      }
+      statusEl.textContent='Restored from cache';
+    }
+  })();
 
   async function run(fetchFresh=false){
     const q = buildQuery();
@@ -168,7 +186,17 @@ async function renderLLM(){
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
     snapUpdate('llm', data);
     renderReport(data);
-    renderCharts(data?.charts);
+    try{
+      const chartsTop = data?.charts || {};
+      const chartsParsed = data?.report?.parsed?.charts || {};
+      const mergedCharts = {
+        ...chartsTop,
+        retention_timeseries: chartsParsed.retention_timeseries || chartsTop.retention_timeseries,
+      };
+      renderCharts(mergedCharts);
+    }catch{
+      renderCharts(data?.charts);
+    }
   }
 
   el('#llm-load').addEventListener('click', ()=>{ clearSnapshotForTabCurrentFilter('llm'); run(true); });

@@ -9,6 +9,8 @@ __pycache__/
 .env.*
 .venv/
 venv/
+app/__pycache__/
+app/core/__pycache__/
 
 # Node / Frontend
 node_modules/
@@ -38,3 +40,7 @@ exported_*.json
 
 # Docker
 *.pid
+
+
+# Spark
+tmp_spark

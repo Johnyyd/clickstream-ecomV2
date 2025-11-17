@@ -106,6 +106,15 @@ async def generate_llm_report(
             pass
 
         total_users = _num(metrics.get("total_users") or metrics.get("users") or 0)
+        # Nếu total_users bằng 0, fallback sang unique_visitors từ SEO (nếu có)
+        if total_users <= 0:
+            try:
+                uv = _num(((seo or {}).get("site_metrics") or {}).get("unique_visitors") or 0)
+                if uv > 0:
+                    total_users = uv
+            except Exception:
+                pass
+
         conversion_rate = _num(metrics.get("conversion_rate") or 0)
         revenue = _num(metrics.get("revenue") or 0)
         orders_backend = _num(metrics.get("orders") or 0)
@@ -465,11 +474,6 @@ async def generate_llm_report(
 
         # Attach meta for troubleshooting source of LLM (openrouter|fallback)
         meta = {"llm_source": report.get("source")} if isinstance(report, dict) else {}
-        # Fallback for users: if zero, try SEO unique_visitors
-        if charts["kpis"]["users"] <= 0:
-            uv = _num(((seo or {}).get("site_metrics") or {}).get("unique_visitors") or 0)
-            if uv > 0:
-                charts["kpis"]["users"] = uv
         return {"window": {"start": start_date.isoformat(), "end": end_date.isoformat()}, "report": report, "charts": charts, "meta": meta}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

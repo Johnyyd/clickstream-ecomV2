@@ -81,28 +81,44 @@ async function renderLLM(){
     const rep = payload?.report?.parsed || payload?.report || {};
     const summary = rep.executive_summary || rep.summary || rep.insights || '';
     el('#llm-summary').innerHTML = summary ? `<div style="white-space:pre-wrap">${summary}</div>` : '<div class="muted">No summary.</div>';
-    // Build grouped insights if structured schema is present
-    let ins = [];
+    // Build grouped insights per module if structured schema is present
+    const recEl = el('#llm-recs');
+    const insEl = el('#llm-insights');
+    let insightsHtml = '';
     try{
       if(rep.insights && typeof rep.insights==='object'){
-        const groups = ['business','journey','seo','retention'];
-        for(const g of groups){
-          const v = rep.insights[g];
+        const groups = [
+          { key: 'business',      label: 'Business' },
+          { key: 'journey',       label: 'Journey / Funnel' },
+          { key: 'seo',           label: 'SEO & Traffic' },
+          { key: 'retention',     label: 'Retention & Churn' },
+          { key: 'cart',          label: 'Cart & Abandonment' },
+          { key: 'ml_prediction', label: 'ML Prediction' },
+        ];
+        for(const {key,label} of groups){
+          const v = rep.insights[key];
           if(!v) continue;
-          const bullets = Array.isArray(v) ? v : (Array.isArray(v.bullets)? v.bullets : []);
-          if(bullets.length){
-            ins.push(`${g.toUpperCase()}:`);
-            bullets.forEach(b=> ins.push(`• ${b}`));
-          }
+          const bullets = Array.isArray(v) ? v : (Array.isArray(v?.bullets) ? v.bullets : []);
+          if(!bullets.length) continue;
+          const items = bullets.map(b => {
+            if (b == null) return '';
+            if (typeof b === 'string' || typeof b === 'number') return String(b);
+            // Support object shape from LLM like { text, module, ... }
+            if (typeof b === 'object' && b.text) return String(b.text);
+            try { return JSON.stringify(b); } catch { return String(b); }
+          }).filter(Boolean);
+          if(!items.length) continue;
+          insightsHtml += `<li><b>${label}</b><ul>` + items.map(t=>`<li>${t}</li>`).join('') + '</ul></li>';
         }
       }
     }catch{}
 
-    if(!ins.length){
-      ins = Array.isArray(rep.key_insights) ? rep.key_insights : (Array.isArray(rep.highlights) ? rep.highlights : []);
+    // Fallback: flat list from key_insights/highlights if no structured insights
+    if(!insightsHtml){
+      let ins = Array.isArray(rep.key_insights) ? rep.key_insights : (Array.isArray(rep.highlights) ? rep.highlights : []);
+      insightsHtml = ins.length ? ins.map(i=>`<li>${i}</li>`).join('') : '<li class="muted">—</li>';
     }
-    const recEl = el('#llm-recs');
-    const insEl = el('#llm-insights'); insEl.innerHTML = ins.length ? ins.map(i=>`<li>${i}</li>`).join('') : '<li class="muted">—</li>';
+    if(insEl){ insEl.innerHTML = insightsHtml || '<li class="muted">—</li>'; }
     // Recommendations: combine recommendations + next_best_actions + risk_alerts
     const recs = [];
     try{

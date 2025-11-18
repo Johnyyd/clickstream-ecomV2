@@ -31,7 +31,8 @@ class MongoConfig:
         "sessions": "sessions",
         "api_keys": "api_keys",
         "products": "products",
-        "carts": "carts"
+        "carts": "carts",
+        "orders": "orders"
     }
 
 class DatabaseManager:
@@ -127,3 +128,7 @@ def products_col() -> collection.Collection:
 @lru_cache(maxsize=1)
 def carts_col() -> collection.Collection:
     return _db_manager.get_collection(MongoConfig.COLLECTIONS["carts"])
+
+@lru_cache(maxsize=1)
+def orders_col() -> collection.Collection:
+    return _db_manager.get_collection(MongoConfig.COLLECTIONS["orders"])

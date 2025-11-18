@@ -28,7 +28,7 @@ from typing import List, Optional
 
 from bson import ObjectId
 
-from app.core.db_sync import users_col, products_col, sessions_col, carts_col
+from app.core.db_sync import users_col, products_col, sessions_col, carts_col, orders_col
 from seed_products import slugify
 from ingest import ingest_event
 from app.services.auth import create_user
@@ -99,6 +99,44 @@ def emit_event(user_id, session_id, ts, page, event_type, props=None):
         "properties": {"source": "realistic_seed", **(props or {})},
     }
     ingest_event(ev)
+
+
+def _create_order_from_purchase(user_id, session_id, ts, props: dict | None = None):
+    """Insert a simple order document mirroring purchase events.
+
+    This keeps orders collection in sync with purchase events so business metrics
+    will see non-zero orders when there is revenue.
+    """
+    try:
+        if props is None:
+            props = {}
+        total = props.get("total_amount") or props.get("total") or props.get("amount") or props.get("value") or props.get("cart_total")
+        # Fallback to price * quantity when explicit totals are missing
+        if total is None:
+            price = props.get("product_price") or props.get("price")
+            qty = props.get("cart_items") or props.get("quantity") or 1
+            try:
+                total = float(price) * float(qty)
+            except Exception:
+                total = 0.0
+        else:
+            try:
+                total = float(total)
+            except Exception:
+                total = 0.0
+
+        dt = datetime.fromtimestamp(int(ts), tz=pytz.UTC)
+        doc = {
+            "user_id": str(user_id),
+            "session_id": session_id,
+            "total": total,
+            "created_at": dt,
+            "source": "realistic_seed",
+        }
+        orders_col().insert_one(doc)
+    except Exception:
+        # Do not break seeding if orders insert fails
+        pass
 
 
 def realistic_product(products):
@@ -325,9 +363,6 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                     # Small delay then purchase with high probability
                     if random.random() < min(0.98, 0.85 * (0.9 + 0.2 * conv_mult)):
                         current_ts += random.randint(2, 10)
-                        if current_ts > now_utc_ts:
-                            current_ts = now_utc_ts
-                        # Choose a primary product_id for the purchase event to ensure ALS can use it
                         primary_product = max(cart, key=lambda x: x.get("price", 0)) if cart else None
                         primary_product_id = str(primary_product["_id"]) if primary_product else None
                         emit_event(
@@ -346,6 +381,15 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                                 "referrer": session_referrer,
                             },
                         )
+                        _create_order_from_purchase(user_id, sid, current_ts, {
+                            "cart_items": len(cart),
+                            "total_amount": round(total, 2),
+                            "payment_method": random.choice(["credit_card","paypal","apple_pay"]),
+                            "order_id": f"order_{random.randint(1000,9999)}",
+                            # Primary product for collaborative filtering
+                            **({"product_id": primary_product_id} if primary_product_id else {}),
+                            "referrer": session_referrer,
+                        })
                         # Clear persistent cart upon purchase
                         try:
                             carts_col().update_one({"user_id": user_id}, {"$set": {"items": []}}, upsert=True)
@@ -416,10 +460,20 @@ def generate_session_for_user(user_id: ObjectId, start_ts: int, avg_events: int,
                     "total_amount": round(total, 2),
                     "payment_method": random.choice(["credit_card","paypal","apple_pay"]),
                     "order_id": f"order_{random.randint(1000,9999)}",
+                    # Primary product for collaborative filtering
                     **({"product_id": primary_product_id} if primary_product_id else {}),
                     "referrer": session_referrer,
                 },
             )
+            _create_order_from_purchase(user_id, sid, current_ts, {
+                "cart_items": len(cart),
+                "total_amount": round(total, 2),
+                "payment_method": random.choice(["credit_card","paypal","apple_pay"]),
+                "order_id": f"order_{random.randint(1000,9999)}",
+                # Primary product for collaborative filtering
+                **({"product_id": primary_product_id} if primary_product_id else {}),
+                "referrer": session_referrer,
+            })
             try:
                 carts_col().update_one({"user_id": user_id}, {"$set": {"items": []}}, upsert=True)
             except Exception:
@@ -463,14 +517,35 @@ def seed_event_for_users(user_ids: List[ObjectId], days: int, sessions_per_user:
     for uid in user_ids:
         # Assign persona to user with weighted probability
         persona = random.choices(PERSONAS, weights=[p["weight"] for p in PERSONAS], k=1)[0]
-        print(f"User {str(uid)[-6:]}: {persona['name']}")
+
+        # --- User lifecycle: signup time & optional churn time ---
+        # d = 0 is today, d = days-1 is "oldest" day.
+        # signup_days_ago: when the user first appears in the dataset
+        signup_days_ago = random.randint(max(5, int(days * 0.3)), days - 1)
+
+        # Some users churn before "today" so they have no recent activity
+        churn_days_ago: Optional[int]
+        if random.random() < 0.55:  # ~55% users churn at some point
+            # Churn happens after signup but at least a few days before now
+            churn_days_ago = random.randint(0, max(0, signup_days_ago - 3))
+        else:
+            churn_days_ago = None  # still active
+
+        print(f"User {str(uid)[-6:]}: {persona['name']} (signup {signup_days_ago}d ago, churn={churn_days_ago})")
 
         for d in range(days):
+            # Skip days before signup (no activity yet)
+            if d > signup_days_ago:
+                continue
+            # Skip days more recent than churn (user already churned)
+            if churn_days_ago is not None and d < churn_days_ago:
+                continue
+
             base_day = now - timedelta(days=d)
             # Vary sessions per day
             daily_sessions = sessions_per_user + persona["extra_sessions"] + random.randint(-1, 1)
             daily_sessions = max(1, daily_sessions)
-            
+
             for s in range(daily_sessions):
                 # More realistic hour distribution with peaks
                 hour_weights = [
@@ -608,8 +683,8 @@ def main():
     parser = argparse.ArgumentParser(description="Seed realistic customer-like data")
     parser.add_argument("--username", type=str, default=None, help="Seed only for this username (create if missing)")
     # [TINH CHỈNH] Tăng User Count mặc định để giảm tỷ lệ Sessions/Users
-    parser.add_argument("--user-count", type=int, default=2500, help="Number of users when --username not provided")
-    parser.add_argument("--days", type=int, default=62, help="Days back to generate")
+    parser.add_argument("--user-count", type=int, default=1000, help="Number of users when --username not provided")
+    parser.add_argument("--days", type=int, default=93, help="Days back to generate")
     # [TINH CHỈNH] Giảm Sessions/User/Day mặc định (thực tế 1-3 là hợp lý)
     parser.add_argument("--sessions-per-user", type=int, default=random.randint(1, 3), help="Sessions per user per day")
     # [TINH CHỈNH] Giảm Average Events mặc định để phản ánh độ sâu phiên thực tế hơn

@@ -13,7 +13,7 @@ from app.services.openrouter import (
 )
 from ..deps import get_db, get_current_user, verify_api_key
 from app.core.db_sync import api_keys_col
-from app.core.db_sync import events_col, sessions_col, products_col, users_col, carts_col
+from app.core.db_sync import events_col, sessions_col, products_col, users_col, carts_col, orders_col
 from bson import ObjectId
 
 from ..models import (
@@ -61,22 +61,28 @@ async def generate_llm_report(
         from app.analytics.metrics import get_business_metrics
         from app.services.analytics import (
             get_user_journey_analysis,
+            get_cart_analysis,
             get_seo_analysis,
             get_retention_analysis,
+            get_comprehensive_analysis
         )
 
         # Collect modules in parallel-ish (sequential await due to simple DB)
         metrics = await get_business_metrics(db=db, start_date=start_date, end_date=end_date)
         journey = await get_user_journey_analysis(db=db, start_date=start_date, end_date=end_date)
+        cart = await get_cart_analysis(db=db, start_date=start_date, end_date=end_date)
         seo = await get_seo_analysis(db=db, start_date=start_date, end_date=end_date)
         # get_retention_analysis signature: (db, start_date: datetime, cohort_size: int = 7)
         retention = await get_retention_analysis(db=db, start_date=start_date)
-
+        ml_prediction = await get_comprehensive_analysis(db=db, start_date=start_date, end_date=end_date)
+        
         ml_results = {
             "business": metrics,
             "journey": journey,
+            "cart": cart,
             "seo": seo,
             "retention": retention,
+            "ml_prediction": ml_prediction
         }
 
         # Build chart-ready data
@@ -410,6 +416,14 @@ async def generate_llm_report(
             biz["revenue"] = revenue
             biz["average_order_value"] = aov
             biz["aov"] = aov
+            # Đảm bảo số lượng orders backend không bằng 0 khi funnel đã có bước Purchase
+            try:
+                best_orders = orders_backend
+                if orders_from_funnel and orders_from_funnel > best_orders:
+                    best_orders = orders_from_funnel
+                biz["orders"] = best_orders
+            except Exception:
+                pass
             biz["data_quality"] = dq
             ml_results["business"] = biz
         except Exception:
@@ -470,6 +484,67 @@ async def generate_llm_report(
                 "aov": kpis_backend.get("aov"),
             })
             parsed["kpis"] = kpis_llm
+
+            # Tự động trích các bullet liên quan đến cart và ml_prediction từ insights/recommendations của LLM
+            try:
+                ins_obj = parsed.get("insights") or {}
+                if isinstance(ins_obj, dict):
+                    cart_bullets: list[str] = []
+                    mlp_bullets: list[str] = []
+
+                    def _collect(val):
+                        out = []
+                        if isinstance(val, list):
+                            out = [str(x) for x in val if isinstance(x, (str, int, float))]
+                        elif isinstance(val, dict):
+                            bs = val.get("bullets")
+                            if isinstance(bs, list):
+                                out = [str(x) for x in bs if isinstance(x, (str, int, float))]
+                        return out
+
+                    # từ các nhóm insights hiện có (business/journey/seo/retention/...)
+                    for _k, _v in ins_obj.items():
+                        for b in _collect(_v):
+                            lb = b.lower()
+                            if "module cart" in lb:
+                                cart_bullets.append(b)
+                            if "module ml_prediction" in lb or "module ml prediction" in lb:
+                                mlp_bullets.append(b)
+
+                    # thêm cả từ recommendations (nhiều khi LLM gắn tag module ở đây)
+                    rec_list = parsed.get("recommendations")
+                    if isinstance(rec_list, list):
+                        for r in rec_list:
+                            if not isinstance(r, (str, int, float)):
+                                continue
+                            s = str(r)
+                            ls = s.lower()
+                            if "module cart" in ls:
+                                cart_bullets.append(s)
+                            if "module ml_prediction" in ls or "module ml prediction" in ls:
+                                mlp_bullets.append(s)
+
+                    # Ghi vào insights.cart và insights.ml_prediction nếu có dữ liệu
+                    if cart_bullets and not ins_obj.get("cart"):
+                        ins_obj["cart"] = cart_bullets
+                    if mlp_bullets and not ins_obj.get("ml_prediction"):
+                        ins_obj["ml_prediction"] = mlp_bullets
+
+                    parsed["insights"] = ins_obj
+            except Exception:
+                pass
+
+            # Chuẩn hóa recommendations: nếu LLM trả nhầm vào insights.recommendations thì copy ra parsed.recommendations
+            try:
+                recs = parsed.get("recommendations")
+                if not recs:
+                    ins_obj = parsed.get("insights") or {}
+                    cand = ins_obj.get("recommendations")
+                    if isinstance(cand, list) and cand:
+                        parsed["recommendations"] = cand
+            except Exception:
+                pass
+
             report["parsed"] = parsed
 
         # Attach meta for troubleshooting source of LLM (openrouter|fallback)

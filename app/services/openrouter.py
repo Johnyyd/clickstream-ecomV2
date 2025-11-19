@@ -56,7 +56,7 @@ async def analyze_ml_results(ml_results: Dict, api_key: Optional[str] = None) ->
             # System-style prompt: phân tích chuyên sâu dữ liệu analytics cho quản trị viên e‑commerce (tiếng Việt)
             prompt = (
                 "Bạn là chuyên gia analytics & growth cho sản phẩm e‑commerce. \n"
-                "Nhiệm vụ: đọc JSON analytics (ml_results) là TỔNG HỢP KẾT QUẢ từ nhiều API/backend module khác nhau và tạo một BÁO CÁO CHUYÊN SÂU giúp quản trị viên hiểu nhanh tình hình dữ liệu và ra quyết định.\n\n"
+                "Nhiệm vụ: đọc JSON analytics (ml_results) là TỔNG HỢP KẾT QUẢ từ nhiều API/backend module khác nhau và tạo một BÁO CÁO CHUYÊN SÂU bằng tiếng Việt giúp quản trị viên hiểu nhanh tình hình dữ liệu và ra quyết định.\n\n"
                 "DỮ LIỆU ĐẦU VÀO (ml_results):\n"
                 "- Là một object gồm nhiều module con, ví dụ: business, overview, journey, cart, seo, activity, retention, experiments, recommendations, ml_prediction (tổng hợp từ nhiều phân tích), v.v.\n"
                 "- Mỗi module tương ứng với một API hoặc job phân tích trong backend, có thể chứa KPI, timeseries, phân phối, danh sách top‑N, v.v.\n"

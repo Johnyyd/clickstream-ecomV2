@@ -176,6 +176,13 @@ try:
     app.include_router(ml_api.router, prefix="/api/v1/ml")
     app.include_router(auth_api.router, prefix="/api/v1/auth")
     app.include_router(events_api.router, prefix="/api/v1/events")
+
+    # Also expose shop-facing APIs under non-versioned /api prefix for static frontend (home.html + shop.js)
+    # products_api.router defines routes like /products, /product/{pid}, /product/slug/{slug}, /search, /categories
+    # cart_api.router defines routes like /cart, /cart/add, /cart/remove
+    # Mounting them under /api makes /api/products, /api/product/{...}, /api/search, /api/categories, /api/cart, ... work.
+    app.include_router(products_api.router, prefix="/api")
+    app.include_router(cart_api.router, prefix="/api")
 except Exception:
     # Best-effort: if any alias import missing, skip
     pass

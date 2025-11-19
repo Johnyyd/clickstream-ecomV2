@@ -162,12 +162,9 @@ async def get_cart_analysis(db, start_date: datetime, end_date: datetime):
     active_carts = 0
     abandoned_carts = 0
     total_cart_value = 0.0
-    items_per_cart: list[int] = []
-    # Note: Without a cart grouping, we can't aggregate accurately; keep zeros
-
-    avg_items_per_cart = (sum(items_per_cart) / len(items_per_cart)) if items_per_cart else 0.0
-    avg_cart_value = (total_cart_value / total_carts) if total_carts else 0.0
-    abandonment_rate = (abandoned_carts / total_carts) if total_carts else 0.0
+    avg_items_per_cart = 0.0
+    avg_cart_value = 0.0
+    abandonment_rate = 0.0
 
     # Minimal channels aggregation using referrer mapping similar to SEO
     def to_channel(ref: str) -> str:
@@ -222,13 +219,36 @@ async def get_cart_analysis(db, start_date: datetime, end_date: datetime):
             sid = e.get("session_id")
             if not sid:
                 continue
-            add_counts[sid] = add_counts.get(sid, 0) + int((e.get("properties") or {}).get("quantity", 1) or 1)
+            qty = int((e.get("properties") or {}).get("quantity", 1) or 1)
+            add_counts[sid] = add_counts.get(sid, 0) + qty
+
+        # Derive total_carts and avg_items_per_cart from add_counts
+        total_carts = len(add_counts)
+        if total_carts > 0:
+            total_items = sum(add_counts.values())
+            avg_items_per_cart = total_items / float(total_carts)
+
+        # Mark size buckets
         for cnt in add_counts.values():
             if cnt <= 1: size_counter["1"] += 1
             elif cnt == 2: size_counter["2"] += 1
             elif cnt == 3: size_counter["3"] += 1
             elif cnt == 4: size_counter["4"] += 1
             else: size_counter["5+"] += 1
+
+        # Derive abandoned_carts and abandonment_rate from sessions with add_to_cart but no purchase
+        try:
+            purchase_sids: Dict[str, int] = {}
+            for e in col.find({"event_type": "purchase", "timestamp": {"$gte": start_ts, "$lte": end_ts}}):
+                sid = e.get("session_id")
+                if not sid:
+                    continue
+                purchase_sids[sid] = purchase_sids.get(sid, 0) + 1
+            abandoned_carts = len([sid for sid in add_counts.keys() if sid not in purchase_sids])
+            abandonment_rate = (abandoned_carts / float(total_carts)) if total_carts > 0 else 0.0
+        except Exception:
+            abandoned_carts = abandoned_carts or 0
+            abandonment_rate = abandonment_rate or 0.0
     except Exception:
         pass
     size_distribution = [{"size": k, "count": v} for k, v in size_counter.items()]

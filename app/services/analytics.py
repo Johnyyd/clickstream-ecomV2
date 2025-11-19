@@ -253,6 +253,53 @@ async def get_cart_analysis(db, start_date: datetime, end_date: datetime):
         pass
     size_distribution = [{"size": k, "count": v} for k, v in size_counter.items()]
 
+    # Derive simple abandonment reasons & opportunities from existing metrics
+    abandonment_reasons: list[str] = []
+    high_abandonment_categories: list[dict] = []
+    recommendations: list[str] = []
+    recovery_opportunities: list[str] = []
+
+    try:
+        # Top channels by abandonment_rate
+        if isinstance(channels, dict):
+            ch_list = [
+                {
+                    "channel": name,
+                    "abandonment_rate": float((info or {}).get("abandonment_rate") or 0.0),
+                }
+                for name, info in channels.items()
+            ]
+            ch_list = [c for c in ch_list if c["abandonment_rate"] > 0]
+            ch_list.sort(key=lambda x: x["abandonment_rate"], reverse=True)
+
+            for ch in ch_list[:3]:
+                pct = round(ch["abandonment_rate"] * 100, 2)
+                abandonment_reasons.append(
+                    f"Channel '{ch['channel']}' has high cart abandonment rate ≈ {pct}% (module cart.channels)"
+                )
+                high_abandonment_categories.append(
+                    {"channel": ch["channel"], "abandonment_rate": ch["abandonment_rate"]}
+                )
+
+            if ch_list:
+                recommendations.append(
+                    "Focus optimization and messaging on channels with highest cart abandonment (module cart.channels)"
+                )
+                recovery_opportunities.append(
+                    "Run targeted recovery campaigns (email/remarketing) for users from high-abandonment channels (module cart.channels)"
+                )
+
+        # Cart size pattern
+        if total_carts > 0 and size_distribution:
+            # find most common cart size bucket
+            most_common = max(size_distribution, key=lambda x: x.get("count", 0))
+            recommendations.append(
+                f"Most carts have size '{most_common.get('size')}', consider bundles or cross-sell to increase cart value (module cart.size_distribution)"
+            )
+    except Exception:
+        # keep defaults if anything goes wrong
+        pass
+
     return {
         "metrics": {
             "total_carts": total_carts,
@@ -264,10 +311,10 @@ async def get_cart_analysis(db, start_date: datetime, end_date: datetime):
             "total_cart_value": total_cart_value,
         },
         "items": [],
-        "abandonment_reasons": [],
-        "high_abandonment_categories": [],
-        "recommendations": [],
-        "recovery_opportunities": [],
+        "abandonment_reasons": abandonment_reasons,
+        "high_abandonment_categories": high_abandonment_categories,
+        "recommendations": recommendations,
+        "recovery_opportunities": recovery_opportunities,
         "channels": channels,
         "size_distribution": size_distribution,
     }

@@ -14,7 +14,7 @@ from bson import ObjectId
 
 from app.core.config import settings
 from app.repositories.users_repo import UsersRepository
-from app.core.db_sync import sessions_col
+from app.core.db_sync import auth_sessions_col
 
 # Settings
 SESSION_TTL_SECONDS = int(os.environ.get("SESSION_TTL", 3600*24))  # 24h
@@ -76,7 +76,7 @@ def login_user(username: str, password: str) -> Optional[Dict[str, Any]]:
     # Ensure user_id is stored correctly (handle both string and ObjectId)
     user_id = user["_id"] if isinstance(user["_id"], ObjectId) else ObjectId(user["_id"])
     
-    sessions_col().insert_one({
+    auth_sessions_col().insert_one({
         "token": session_token,
         "user_id": user_id,
         "created_at": datetime.utcnow(),
@@ -100,7 +100,7 @@ def get_user_by_token(token: str) -> Optional[Dict[str, Any]]:
         if raw.lower().startswith("bearer "):
             raw = raw[7:].strip()
 
-        session = sessions_col().find_one({
+        session = auth_sessions_col().find_one({
             "token": raw,
             "expires_at": {"$gt": datetime.utcnow()}
         })

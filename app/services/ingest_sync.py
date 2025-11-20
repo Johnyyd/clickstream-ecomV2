@@ -95,12 +95,20 @@ class SessionManager:
         try:
             session_id = event["session_id"]
             timestamp = datetime.fromtimestamp(event["timestamp"])
+            # Normalize user_id to ObjectId when possible so sessions.user_id
+            # matches the users collection _id type
+            user_id_value = event.get("user_id")
+            user_oid: Optional[ObjectId]
+            try:
+                user_oid = ObjectId(user_id_value) if user_id_value else None
+            except Exception:
+                user_oid = None
             result = sessions_col().find_one_and_update(
                 {"session_id": session_id},
                 {
                     "$setOnInsert": {
                         "session_id": session_id,
-                        "user_id": event["user_id"],
+                        "user_id": user_oid if user_oid is not None else event.get("user_id"),
                         "created_at": timestamp
                     },
                     "$min": {"first_event_at": timestamp},
@@ -169,9 +177,18 @@ class EventStorage:
         self.batch_size = batch_size
         self.current_batch: List[Dict] = []
     def store_event(self, event: Dict) -> None:
-        self.current_batch.append(event)
-        if len(self.current_batch) >= self.batch_size:
-            self.flush()
+        """Persist a single event immediately.
+
+        For the analytics demo / low-volume environments, it's more important that
+        each event is visible in MongoDB right away than to batch aggressively.
+        We therefore insert each event individually instead of buffering in
+        memory and waiting until batch_size is reached.
+        """
+        try:
+            events_col().insert_one(event)
+        except Exception as e:
+            logger.error(f"Failed to store event: {str(e)}")
+            raise
     def flush(self) -> None:
         if not self.current_batch:
             return

@@ -9,10 +9,38 @@
     try{
       const UID_KEY='ecomv2_user_id';
       const SID_KEY='ecomv2_session_id';
-      let uid=localStorage.getItem(UID_KEY)||'';
-      if(!uid){uid=crypto.randomUUID(); localStorage.setItem(UID_KEY,uid)}
+
+      // Nếu đã đăng nhập, ưu tiên dùng user.id từ backend để khớp với _id trong Mongo
+      let uid = '';
+      try{
+        const userStr = localStorage.getItem('user');
+        if (userStr) {
+          const user = JSON.parse(userStr);
+          if (user && user.id) {
+            uid = String(user.id);
+          }
+        }
+      }catch(e){ /* ignore parse errors, sẽ fallback UUID */ }
+
+      // Nếu chưa có uid (chưa login), dùng UUID local như trước
+      if(!uid){
+        uid = localStorage.getItem(UID_KEY)||'';
+        if(!uid){uid=crypto.randomUUID(); localStorage.setItem(UID_KEY,uid)}
+      }
+
+      // Generate session_id as a 24-hex-character string (ObjectId-like).
+      // If there is a legacy SID starting with "session_", regenerate.
       let sid=sessionStorage.getItem(SID_KEY)||'';
-      if(!sid)return;
+      if(!sid || (typeof sid === 'string' && sid.indexOf('session_') === 0)){
+        try{
+          const bytes = crypto.getRandomValues(new Uint8Array(12));
+          sid = Array.from(bytes).map(b => b.toString(16).padStart(2,'0')).join('');
+        }catch(e){
+          // Fallback: timestamp-based hex
+          sid = Date.now().toString(16) + Math.floor(Math.random()*1e6).toString(16).padStart(6,'0');
+        }
+        sessionStorage.setItem(SID_KEY,sid)
+      }
       return {user_id:uid, session_id:sid};
     }catch{ return {user_id:'', session_id:''}; }
   }

@@ -27,8 +27,11 @@ class MongoConfig:
     COLLECTIONS = {
         "users": "users",
         "events": "events",
-        "analyses": "analyses",
+        # Analytics browsing sessions (session_id, event_count, pages, ...)
         "sessions": "sessions",
+        # Auth/login sessions (token, user_id, expires_at, ...)
+        "auth_sessions": "auth_sessions",
+        "analyses": "analyses",
         "api_keys": "api_keys",
         "products": "products",
         "carts": "carts",
@@ -116,6 +119,10 @@ def analyses_col() -> collection.Collection:
 @lru_cache(maxsize=1)
 def sessions_col() -> collection.Collection:
     return _db_manager.get_collection(MongoConfig.COLLECTIONS["sessions"])
+
+@lru_cache(maxsize=1)
+def auth_sessions_col() -> collection.Collection:
+    return _db_manager.get_collection(MongoConfig.COLLECTIONS["auth_sessions"])
 
 @lru_cache(maxsize=1)
 def api_keys_col() -> collection.Collection:

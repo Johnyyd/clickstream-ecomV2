@@ -13,7 +13,7 @@ from functools import lru_cache
 from bson import ObjectId
 from fastapi import HTTPException
 from pymongo import ReturnDocument
-from app.core.db_sync import events_col, sessions_col, products_col, users_col
+from app.core.db_sync import events_col, sessions_col, products_col, users_col, orders_col
 
 if TYPE_CHECKING:
     # Only imported for type hints; avoids runtime dependency
@@ -202,6 +202,37 @@ def ingest_event(event_json: Dict) -> Dict[str, Any]:
     try:
         processed_event = _processor.process_event(event_json)
         _storage.store_event(processed_event)
+        # If this is a purchase event from the shop, also persist a corresponding order document
+        try:
+            if str(processed_event.get("event_type")) == "purchase":
+                props = processed_event.get("properties") or {}
+                total = props.get("total_amount")
+                try:
+                    total = float(total) if total is not None else None
+                except Exception:
+                    total = None
+                created_at = processed_event.get("occurred_at") or processed_event.get("processed_at")
+                # user_id: store as string of ObjectId when possible (align with seeded orders)
+                uid_raw = processed_event.get("user_id")
+                try:
+                    uid_str = str(ObjectId(uid_raw))
+                except Exception:
+                    uid_str = str(uid_raw) if uid_raw is not None else None
+                order_doc: Dict[str, Any] = {
+                    "user_id": uid_str,
+                    "session_id": processed_event.get("session_id"),
+                    "total": total,
+                    "created_at": created_at,
+                    "source": "shop",
+                    "event_id": processed_event.get("_id"),
+                }
+                try:
+                    orders_col().insert_one(order_doc)
+                except Exception:
+                    # avoid failing the ingest pipeline if order write fails
+                    logger.warning("Order insert failed; continuing ingest pipeline", exc_info=True)
+        except Exception:
+            logger.warning("Order side-effect failed; continuing ingest pipeline", exc_info=True)
         # Maintain legacy nested payload structure: {event, metadata}
         producer = _get_kafka_producer()
         payload = {

@@ -1373,16 +1373,60 @@ async function renderReco(){
     grid.innerHTML = Array.from({length: 6}, ()=>`<div class="card skel" style="height:120px"></div>`).join('');
   }
 
-  function renderItems(items){
+  const productCache = new Map(); // pid -> product doc
+
+  async function renderItems(items){
     if(!Array.isArray(items) || !items.length){
       grid.innerHTML = `<div class="muted" style="padding:8px">Không có gợi ý.</div>`;
       return;
     }
+
+    // Thu thập danh sách product_id duy nhất để enrich tên, category, giá
+    const ids = new Set();
+    for(const it of items){
+      const pid = it.product_id || it.productId || it.id;
+      if(pid) ids.add(String(pid));
+    }
+
+    try{
+      const fetches = [];
+      for(const pid of ids){
+        if(productCache.has(pid)) continue;
+        fetches.push((async ()=>{
+          try{
+            const prod = await safeGet(`/api/product/${encodeURIComponent(pid)}`);
+            if(prod && prod._id){ productCache.set(pid, prod); }
+          }catch{
+            // best-effort: nếu fail thì cứ để cache trống, UI sẽ fallback sang id
+          }
+        })());
+      }
+      if(fetches.length){ await Promise.all(fetches); }
+    }catch{}
+
     grid.innerHTML = items.map(it=>{
-      const title = it.title || it.name || it.product_name || `#${it.product_id || ''}`;
-      const score = typeof it.score === 'number' ? `Score: ${it.score.toFixed(3)}` : '';
-      const price = it.price ? `$${it.price}` : '';
-      return `<div class="card"><h3>${title}</h3><div class="muted">${score}</div><div>${price}</div></div>`;
+      const pid = String(it.product_id || it.productId || it.id || '');
+      const prod = productCache.get(pid) || null;
+      const title = prod?.name || it.title || it.name || it.product_name || pid;
+      const category = prod?.category || it.category || '';
+      // Ưu tiên hiện relevance/confidence nếu có, fallback sang score
+      let scoreText = '';
+      if(typeof it.relevance_score === 'number'){
+        scoreText = `Relevance: ${it.relevance_score.toFixed(1)}`;
+      }else if(typeof it.confidence_score === 'number'){
+        scoreText = `Confidence: ${it.confidence_score.toFixed(2)}`;
+      }else if(typeof it.score === 'number'){
+        scoreText = `Score: ${it.score.toFixed(3)}`;
+      }
+      const priceVal = prod?.price ?? it.price;
+      const price = priceVal != null ? fmtCurrency(Number(priceVal)) : '';
+      const reason = it.reason || '';
+      return `<div class="card">
+        <h3>${title}</h3>
+        <div class="muted">${category || (reason || '')}</div>
+        <div class="muted">${scoreText}</div>
+        <div>${price}</div>
+      </div>`;
     }).join('');
   }
 
@@ -1399,7 +1443,7 @@ async function renderReco(){
         // Save snapshot for personalized: only store recommendations array from first entry
         const recs = Array.isArray(data) && data[0]?.recommendations ? data[0].recommendations : [];
         snapMaybe('reco:personalized', { user_id: uid || null, items: recs });
-        renderItems(recs);
+        await renderItems(recs);
         return;
       }else{
         const tf = timeSel.value;
@@ -1409,7 +1453,7 @@ async function renderReco(){
         // Save snapshot for trending keyed by timeframe
         snapMaybe(`reco:trending:${tf}`, { items: data });
       }
-      renderItems(data);
+      await renderItems(data);
     }catch(e){
       showToast('Recommendation load failed', 'error');
     }
@@ -1430,15 +1474,15 @@ async function renderReco(){
   // initial state
   timeSel.style.display = 'none';
   // Restore snapshot without network
-  (function(){
+  (async function(){
     const mode = 'personalized';
     const snapP = snapGet('reco:personalized');
     if(snapP && Array.isArray(snapP.items) && snapP.items.length){
-      renderItems(snapP.items);
+      await renderItems(snapP.items);
       return;
     }
     const snapT = snapGet('reco:trending:day');
-    if(snapT && Array.isArray(snapT.items)) renderItems(snapT.items);
+    if(snapT && Array.isArray(snapT.items)) await renderItems(snapT.items);
   })();
   // Auto-fetch on first visit if there is no snapshot for either mode
   if(!(snapGet('reco:personalized')?.items?.length) && !(snapGet('reco:trending:day')?.items?.length)){

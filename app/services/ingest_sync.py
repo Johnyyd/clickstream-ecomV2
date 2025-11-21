@@ -13,7 +13,7 @@ from functools import lru_cache
 from bson import ObjectId
 from fastapi import HTTPException
 from pymongo import ReturnDocument
-from app.core.db_sync import events_col, sessions_col, products_col, users_col, orders_col
+from app.core.db_sync import events_col, sessions_col, products_col, users_col, orders_col, carts_col
 
 if TYPE_CHECKING:
     # Only imported for type hints; avoids runtime dependency
@@ -229,8 +229,17 @@ def ingest_event(event_json: Dict) -> Dict[str, Any]:
                 try:
                     orders_col().insert_one(order_doc)
                 except Exception:
-                    # avoid failing the ingest pipeline if order write fails
                     logger.warning("Order insert failed; continuing ingest pipeline", exc_info=True)
+                try:
+                    uid_obj = None
+                    try:
+                        uid_obj = ObjectId(uid_raw) if uid_raw else None
+                    except Exception:
+                        uid_obj = None
+                    if uid_obj is not None:
+                        carts_col().update_one({"user_id": uid_obj}, {"$set": {"items": []}}, upsert=True)
+                except Exception:
+                    logger.warning("Cart clear failed after purchase; continuing ingest pipeline", exc_info=True)
         except Exception:
             logger.warning("Order side-effect failed; continuing ingest pipeline", exc_info=True)
         # Maintain legacy nested payload structure: {event, metadata}

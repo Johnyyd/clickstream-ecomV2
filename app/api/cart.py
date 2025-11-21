@@ -2,8 +2,9 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from app.services.auth import get_user_by_token
-from app.core.db_sync import carts_col, products_col
+from app.core.db_sync import carts_col, products_col, orders_col
 from bson import ObjectId
+from datetime import datetime
 
 router = APIRouter(tags=["cart"])  # Prefix được set ở main.py
 
@@ -128,6 +129,64 @@ def add_item(body: CartAddBody, Authorization: Optional[str] = Header(default=No
         items.append({"product_id": pid, "quantity": qty})
     col.update_one({"_id": doc["_id"]}, {"$set": {"items": items}})
     return {"ok": True}
+
+
+class CheckoutBody(BaseModel):
+    session_id: Optional[str] = None
+
+
+@router.post("/cart/checkout")
+def checkout(body: CheckoutBody, Authorization: Optional[str] = Header(default=None)):
+    """Create an order from the current cart and clear the cart.
+    Returns order_id and computed total. This endpoint is idempotent per current cart state.
+    """
+    user = _require_user(Authorization)
+    try:
+        uid = ObjectId(str(user.get("_id")))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid user id")
+
+    # Load cart and products to compute total
+    doc = carts_col().find_one({"user_id": uid}) or {"items": []}
+    items = doc.get("items", []) or []
+    if not items:
+        return {"ok": True, "order_id": None, "total": 0.0}
+
+    # Map product prices
+    pid_strs = [str(it.get("product_id")) for it in items if it.get("product_id")]
+    obj_ids = []
+    for pid in pid_strs:
+        try:
+            obj_ids.append(ObjectId(pid))
+        except Exception:
+            pass
+    price_map = {}
+    if obj_ids:
+        for p in products_col().find({"_id": {"$in": obj_ids}}):
+            price_map[str(p["_id"])] = float(p.get("price") or 0)
+
+    # Compute total
+    total = 0.0
+    for it in items:
+        pid = str(it.get("product_id"))
+        qty = int(it.get("quantity") or 1)
+        price = float(price_map.get(pid, 0.0))
+        total += price * max(1, qty)
+
+    # Insert order
+    now = datetime.utcnow()
+    order_doc = {
+        "user_id": str(uid),
+        "session_id": body.session_id or None,
+        "total": round(total, 2),
+        "created_at": now,
+        "source": "shop",
+    }
+    ins = orders_col().insert_one(order_doc)
+
+    # Clear cart
+    carts_col().update_one({"user_id": uid}, {"$set": {"items": []}}, upsert=True)
+    return {"ok": True, "order_id": str(ins.inserted_id), "total": round(total, 2)}
 
 
 class CartRemoveBody(BaseModel):

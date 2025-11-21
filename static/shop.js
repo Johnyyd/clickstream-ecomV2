@@ -543,7 +543,7 @@ const Shop = (() => {
     set('checkoutTax', tax);
     set('checkoutShipping', shipping);
     set('checkoutTotal', total);
-    form.addEventListener('submit', (e) => {
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const items = getCart();
       if (!items.length) {
@@ -552,9 +552,45 @@ const Shop = (() => {
       }
       // For demo purposes only – accept checkout and clear cart
       const total = items.reduce((s, x) => s + x.price * x.quantity, 0);
-      track('/checkout', 'purchase', { cart_items: items.length, total_amount: total, payment_method: document.getElementById('payment').value || 'credit_card' });
+      // 1) Send purchase event immediately to backend before redirect (do not rely only on batched SDK)
+      try {
+        const userObj = (()=>{ try{ return JSON.parse(localStorage.getItem('user')||'null')||null; }catch{ return null; } })();
+        const user_id = (userObj && userObj.id) || localStorage.getItem('ecomv2_user_id') || '';
+        const session_id = sessionStorage.getItem('ecomv2_session_id') || '';
+        const payment_method = document.getElementById('payment')?.value || 'credit_card';
+        const evt = {
+          user_id,
+          session_id,
+          page: '/checkout',
+          event_type: 'purchase',
+          properties: { cart_items: items.length, total_amount: total, payment_method },
+          timestamp: Math.floor(Date.now()/1000)
+        };
+        await fetch('/api/ingest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(evt) });
+        // also enqueue into SDK for consistency (non-blocking)
+        try{ if(window.analytics && typeof window.analytics.track==='function'){ window.analytics.track('/checkout', 'purchase', { cart_items: items.length, total_amount: total, payment_method }); } }catch{}
+        // 2) Force-create order and clear server-side cart via backend endpoint (idempotent per cart)
+        try{
+          const token = getToken();
+          if(token){
+            await fetch('/api/cart/checkout', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+              body: JSON.stringify({ session_id })
+            });
+          }
+        }catch{}
+      } catch {}
+      // 3) Clear local cart and (again) ensure server cart is cleared
       localStorage.removeItem(CART_KEY);
       updateCartCount();
+      // Best-effort: clear server-side cart if logged in (await to avoid being cancelled by redirect)
+      try {
+        const token = getToken();
+        if (token) {
+          await fetch('/api/cart', { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } });
+        }
+      } catch {}
       status.textContent = 'Order placed successfully!';
       setTimeout(() => { window.location.href = '/static/confirmation.html'; }, 600);
     });

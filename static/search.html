@@ -1,44 +1,110 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Shop – Search</title>
+  <title>EcomV2 – Search</title>
   <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
+
 <body>
   <header class="site-header">
     <a class="logo" href="/home">EcomV2</a>
     <nav>
       <a href="/home">Home</a>
-      <a href="/cart">Cart <span id="cartCount"></span></a>
+      <a href="/category?category=computer">Computers</a>
+      <a href="/category?category=phone">Phones</a>
+      <a href="/category?category=accessories">Accessories</a>
     </nav>
+    <div class="header-actions">
+      <a href="/search" class="icon-btn" aria-label="Search">
+        <i class="fa-solid fa-magnifying-glass"></i>
+      </a>
+      <a href="/cart" class="icon-btn" aria-label="Cart">
+        <i class="fa-solid fa-cart-shopping"></i>
+        <span id="cartCount" style="font-size: 12px; margin-left: 4px; font-weight: 700;"></span>
+      </a>
+      <a href="#" id="userMenuBtn" class="icon-btn" aria-label="User">
+        <i class="fa-regular fa-user"></i>
+      </a>
+    </div>
   </header>
+
   <main class="container">
-    <nav class="breadcrumbs"><a href="/home">Home</a> <span>/</span> <span>Search</span></nav>
-    <h1>Search Products</h1>
-    <form id="searchForm" class="search-bar">
-      <input id="q" type="text" placeholder="Search by name, category, or tag..." />
-      <button type="submit">Search</button>
-    </form>
-    <div id="searchSort" class="category-filters"></div>
-    <div id="searchFilterBar" class="category-filters"></div>
+    <nav class="breadcrumbs" style="margin-top: 24px;">
+      <a href="/home">Home</a> <span style="margin:0 8px; color:var(--muted)">/</span> <span
+        style="color:var(--text)">Search</span>
+    </nav>
+
+    <div style="max-width: 600px; margin: 32px auto; text-align: center;">
+      <h1 style="font-size: 32px; font-weight: 800; margin-bottom: 24px;">Search Products</h1>
+      <form id="searchForm" class="search-bar" style="box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+        <input id="q" type="text" placeholder="Search by name, category, or tag..."
+          style="padding: 14px 16px; font-size: 16px;" />
+        <button type="submit" class="btn-primary" style="padding: 0 24px; font-size: 16px;">Search</button>
+      </form>
+    </div>
+
+    <div id="searchSort" class="category-filters" style="justify-content: center; display: flex; margin-bottom: 16px;">
+    </div>
+    <div id="searchFilterBar" class="category-filters"
+      style="justify-content: center; display: flex; margin-bottom: 32px;"></div>
+
     <div id="searchResults" class="grid"></div>
-    <div class="toolbar-row">
-      <button id="searchLoadMore" class="btn">Load more</button>
-      <span id="searchInfo" class="text-muted"></span>
+
+    <div class="toolbar-row" style="justify-content: center; margin-top: 32px;">
+      <button id="searchLoadMore" class="hero-btn" style="font-size: 16px; padding: 10px 24px;">Load more</button>
+      <span id="searchInfo" class="text-muted" style="display:none;"></span>
     </div>
   </main>
+
   <footer class="site-footer">
     <div class="container">
-      <div class="footer-links">
-        <a href="/home">Home</a>
-        <a href="/search">Search</a>
-        <a href="/cart">Cart</a>
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <h3>EcomV2</h3>
+          <p>Your one-stop destination for premium electronics and gadgets. Quality guaranteed.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Shop</h4>
+          <div class="footer-links">
+            <a href="/home">All Products</a>
+            <a href="/category?category=computer">Computers</a>
+            <a href="/category?category=phone">Phones</a>
+            <a href="/search">Search</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <h4>Support</h4>
+          <div class="footer-links">
+            <a href="#">Help Center</a>
+            <a href="#">Order Status</a>
+            <a href="#">Returns</a>
+            <a href="#">Contact Us</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <h4>Legal</h4>
+          <div class="footer-links">
+            <a href="#">Privacy Policy</a>
+            <a href="#">Terms of Service</a>
+            <a href="#">Cookie Policy</a>
+          </div>
+        </div>
       </div>
-      <div class="text-muted">© EcomV2</div>
+      <div class="footer-bottom">
+        <div>© 2023 EcomV2. All rights reserved.</div>
+        <div style="display:flex; gap:16px;">
+          <a href="#" style="color:var(--muted)"><i class="fa-brands fa-twitter"></i></a>
+          <a href="#" style="color:var(--muted)"><i class="fa-brands fa-instagram"></i></a>
+          <a href="#" style="color:var(--muted)"><i class="fa-brands fa-github"></i></a>
+        </div>
+      </div>
     </div>
   </footer>
+
   <script src="/static/analytics.js"></script>
   <script src="/static/shop.js"></script>
   <script>
@@ -46,4 +112,5 @@
     Shop.initSearchPage();
   </script>
 </body>
+
 </html>

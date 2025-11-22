@@ -1,11 +1,14 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Shop – Checkout</title>
+  <title>EcomV2 – Checkout</title>
   <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
+
 <body>
   <header class="site-header">
     <a class="logo" href="/home">EcomV2</a>
@@ -13,36 +16,68 @@
       <a href="/home">Home</a>
       <a href="/cart">Cart</a>
     </nav>
+    <div class="header-actions">
+      <span style="color: var(--muted); font-size: 14px; font-weight: 500;">Secure Checkout</span>
+    </div>
   </header>
+
   <main class="container">
-    <h1>Checkout</h1>
-    <form id="checkoutForm" class="checkout-form">
-      <div class="form-row">
-        <label>Full Name</label>
-        <input label="Full Name" id="fullName" placeholder="Enter your full name" required />
+    <div style="max-width: 600px; margin: 48px auto;">
+      <h1 style="margin-bottom: 32px; font-size: 32px; font-weight: 800; text-align: center;">Checkout</h1>
+
+      <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 32px;">
+        <form id="checkoutForm" class="checkout-form">
+          <h3 style="margin-top: 0; margin-bottom: 24px; color: var(--primary);">Shipping Information</h3>
+
+          <div class="form-row">
+            <label style="font-weight: 600; margin-bottom: 8px; display: block;">Full Name</label>
+            <input label="Full Name" id="fullName" placeholder="Enter your full name" required
+              style="width: 100%; padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text);" />
+          </div>
+
+          <div class="form-row">
+            <label style="font-weight: 600; margin-bottom: 8px; display: block;">Email</label>
+            <input label="Email" id="email" placeholder="Enter your email" type="email" required
+              style="width: 100%; padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text);" />
+          </div>
+
+          <div class="form-row">
+            <label style="font-weight: 600; margin-bottom: 8px; display: block;">Shipping Address</label>
+            <textarea label="Shipping Address" id="address" placeholder="Enter your shipping address" rows="3" required
+              style="width: 100%; padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); resize: vertical;"></textarea>
+          </div>
+
+          <h3 style="margin-top: 32px; margin-bottom: 24px; color: var(--primary);">Payment Details</h3>
+
+          <div class="form-row">
+            <label style="font-weight: 600; margin-bottom: 8px; display: block;">Payment Method</label>
+            <select label="Payment Method" aria-label="Payment Method" id="payment"
+              style="width: 100%; padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text);">
+              <option value="credit_card">Credit Card</option>
+              <option value="paypal">PayPal</option>
+              <option value="apple_pay">Apple Pay</option>
+            </select>
+          </div>
+
+          <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--border);">
+            <div class="row" style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+              <span>Total</span>
+              <span id="checkoutTotal" style="font-weight: 700; font-size: 18px;">$0.00</span>
+            </div>
+            <button type="submit" class="btn-primary"
+              style="width: 100%; padding: 14px; font-size: 16px; margin-top: 16px;">Place Order</button>
+          </div>
+
+          <div id="checkoutStatus" class="status" style="margin-top: 16px; text-align: center;"></div>
+        </form>
       </div>
-      <div class="form-row">
-        <label>Email</label>
-        <input label="Email" id="email" placeholder="Enter your email" type="email" required />
+
+      <div style="text-align: center; margin-top: 24px;">
+        <a href="/cart" style="color: var(--muted); text-decoration: none; font-size: 14px;">&larr; Return to Cart</a>
       </div>
-      <div class="form-row">
-        <label>Shipping Address</label>
-        <textarea label="Shipping Address" id="address" placeholder="Enter your shipping address" rows="3" required></textarea>
-      </div>
-      <div class="form-row">
-        <label>Payment Method</label>
-        <select label="Payment Method" aria-label="Payment Method" id="payment">
-          <option value="credit_card">Credit Card</option>
-          <option value="paypal">PayPal</option>
-          <option value="apple_pay">Apple Pay</option>
-        </select>
-      </div>
-      <div class="form-row">
-        <button type="submit" class="btn-primary">Place Order</button>
-      </div>
-      <div id="checkoutStatus" class="status"></div>
-    </form>
+    </div>
   </main>
+
   <script src="/static/analytics.js"></script>
   <script src="/static/shop.js"></script>
   <script>
@@ -50,4 +85,5 @@
     Shop.initCheckoutPage();
   </script>
 </body>
+
 </html>

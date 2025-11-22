@@ -1,4 +1,4 @@
-// shop.js - simple storefront client
+﻿// shop.js - simple storefront client
 const Shop = (() => {
   const api = {
     async products(params = {}) {
@@ -35,6 +35,31 @@ const Shop = (() => {
       const res = await fetch('/api/categories');
       if (!res.ok) throw new Error('Failed to load categories');
       return res.json();
+    },
+    async recommendations({ limit = 12, offset = 0, sessionContext = null } = {}) {
+      const token = getToken();
+      if (!token) return { items: [] };
+
+      if (sessionContext) {
+        // Use POST to send session context
+        const res = await fetch(`/api/recommendations?limit=${limit}&offset=${offset}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token
+          },
+          body: JSON.stringify(sessionContext)
+        });
+        if (!res.ok) return { items: [] };
+        return res.json();
+      }
+
+      // Fallback to GET for backward compatibility
+      const res = await fetch(`/api/recommendations?limit=${limit}&offset=${offset}`, {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (!res.ok) return { items: [] };
+      return res.json();
     }
   };
 
@@ -45,10 +70,16 @@ const Shop = (() => {
 
   // Simple in-memory UI state per page
   const state = {
-    home: { limit: 12, offset: 0, sort: 'created_desc' },
-    category: { category: '', limit: 12, offset: 0, sort: 'created_desc', min_price: '', max_price: '', tags: '' },
-    search: { q: '', limit: 12, offset: 0, sort: 'created_desc', min_price: '', max_price: '', tags: '' },
+    home: { limit: 8, offset: 0, sort: 'created_desc' },
+    category: { limit: 8, offset: 0, sort: 'created_desc', category: '' },
+    search: { limit: 8, offset: 0, query: '', filters: {} },
+    reco: { limit: 4, offset: 0 },
+    session: {
+      viewedProducts: [],  // [{id, category, tags}, ...]
+      maxViewed: 20  // Keep last 20 viewed products
+    }
   };
+
   function getCart() {
     try {
       return JSON.parse(localStorage.getItem(CART_KEY)) || [];
@@ -56,9 +87,11 @@ const Shop = (() => {
       return [];
     }
   }
+
   function getToken() {
     try { return localStorage.getItem('token') || ''; } catch { return ''; }
   }
+
   async function syncServerCartFromLocal() {
     const token = getToken();
     if (!token) return;
@@ -71,6 +104,7 @@ const Shop = (() => {
       });
     } catch (e) { /* swallow */ }
   }
+
   function saveCart(items) {
     localStorage.setItem(CART_KEY, JSON.stringify(items));
     updateCartCount();
@@ -96,6 +130,7 @@ const Shop = (() => {
           body: JSON.stringify({ product_id: item.product_id, quantity: item.quantity || 1 })
         }).then(async () => {
           try {
+            loadRecommendations();
             const resp = await fetch('/api/cart', { headers: { 'Authorization': 'Bearer ' + token } });
             if (resp.ok) {
               const data = await resp.json();
@@ -105,14 +140,16 @@ const Shop = (() => {
                 name: x.name,
                 price: x.price,
                 image_url: x.image_url,
+                category: x.category,
+                tags: x.tags || [],
                 quantity: x.quantity || 1,
               }))));
               updateCartCount();
             }
-          } catch {}
-        }).catch(() => {});
+          } catch { }
+        }).catch(() => { });
       }
-    } catch {}
+    } catch { }
   }
   function removeFromCart(product_id) {
     const items = getCart().filter(x => x.product_id !== product_id);
@@ -136,14 +173,16 @@ const Shop = (() => {
                 name: x.name,
                 price: x.price,
                 image_url: x.image_url,
+                category: x.category,
+                tags: x.tags || [],
                 quantity: x.quantity || 1,
               }))));
               updateCartCount();
             }
-          } catch {}
-        }).catch(() => {});
+          } catch { }
+        }).catch(() => { });
       }
-    } catch {}
+    } catch { }
   }
   function setCartQuantity(product_id, qty) {
     const items = getCart();
@@ -167,7 +206,7 @@ const Shop = (() => {
 
   // --- Clickstream tracking ---
   function uuid() {
-    return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+    return ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, c =>
       (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
     );
   }
@@ -189,7 +228,7 @@ const Shop = (() => {
       await fetch('/api/ingest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id, session_id, page, event_type, properties, timestamp: Math.floor(Date.now()/1000) })
+        body: JSON.stringify({ user_id, session_id, page, event_type, properties, timestamp: Math.floor(Date.now() / 1000) })
       });
     } catch (e) { /* swallow */ }
   }
@@ -197,27 +236,47 @@ const Shop = (() => {
   function productCard(p) {
     const img = p.image_url || '/static/images/placeholder.svg';
     return `
-      <div class="card">
-        <img src="${img}" alt="${p.name}" onerror="this.onerror=null;this.src='/static/images/placeholder.svg'" />
-        <div class="card-body">
-          <div class="card-title">${p.name}</div>
-          <div class="card-meta">${p.category} • ${fmtPrice(p.price)}</div>
-          <div class="card-actions">
-            <a class="btn" href="/p/${encodeURIComponent(p.slug || p._id)}?id=${encodeURIComponent(p._id)}">View</a>
-            <button class="btn-primary" data-add="${encodeURIComponent(p._id)}">Add to Cart</button>
-          </div>
-        </div>
+  <div class="card">
+    <a href="/p/${encodeURIComponent(p.slug || (p._id || p.product_id))}?id=${encodeURIComponent(p._id || p.product_id)}" class="card-image-wrapper">
+      <img src="${img}" alt="${p.name}" onerror="this.onerror=null;this.src='/static/images/placeholder.svg'" />
+    </a>
+    <div class="card-body">
+      <div class="card-category">${p.category}</div>
+      <div class="card-title" title="${p.name}">${p.name}</div>
+      <div class="card-price">${fmtPrice(p.price)}</div>
+      <div class="card-actions">
+        <button class="btn-add-cart" data-add="${encodeURIComponent(p._id || p.product_id)}">
+          Add to Cart
+        </button>
+        <a class="btn-view" href="/p/${encodeURIComponent(p.slug || (p._id || p.product_id))}?id=${encodeURIComponent(p._id || p.product_id)}">
+          View
+        </a>
       </div>
-    `;
+    </div>
+  </div>
+`;
   }
 
   function bindAddButtons(container, items) {
     container.querySelectorAll('[data-add]').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.getAttribute('data-add');
-        const p = items.find(x => x._id === id);
+        const p = items.find(x => (x._id || x.product_id) === id);
         if (!p) return;
-        addToCart({ product_id: p._id, name: p.name, price: p.price, image_url: p.image_url, quantity: 1 });
+        addToCart({ product_id: (p._id || p.product_id), name: p.name, price: p.price, image_url: p.image_url, category: p.category, tags: p.tags || [], quantity: 1 });
+        track('/cart', 'add_to_cart', { product_id: p._id || p.product_id, product_name: p.name, product_price: p.price });
+      });
+    });
+    // Track view button clicks for session-based recommendations
+    container.querySelectorAll('.btn-view').forEach(link => {
+      link.addEventListener('click', () => {
+        const href = link.getAttribute('href');
+        const match = href.match(/[?&]id=([^&]+)/);
+        if (match) {
+          const id = decodeURIComponent(match[1]);
+          const p = items.find(x => (x._id || x.product_id) === id);
+          if (p) trackProductView(p);
+        }
       });
     });
   }
@@ -226,17 +285,71 @@ const Shop = (() => {
     const el = document.getElementById(containerId);
     if (!el) return;
     el.innerHTML = `
-      <label>Sort</label>
-      <select id="sortSelect">
-        <option value="created_desc">Newest</option>
-        <option value="price_asc">Price: Low to High</option>
-        <option value="price_desc">Price: High to Low</option>
-        <option value="name_asc">Name: A → Z</option>
-        <option value="name_desc">Name: Z → A</option>
-      </select>`;
+  <label>Sort</label>
+  <select id="sortSelect">
+    <option value="created_desc">Newest</option>
+    <option value="price_asc">Price: Low to High</option>
+    <option value="price_desc">Price: High to Low</option>
+    <option value="name_asc">Name: A â†’ Z</option>
+    <option value="name_desc">Name: Z â†’ A</option>
+  </select>`;
     const select = el.querySelector('#sortSelect');
     select.value = currentSort || 'created_desc';
     select.addEventListener('change', () => onChange(select.value));
+  }
+
+  // Session tracking for recommendations
+  function trackProductView(product) {
+    if (!product) return;
+
+    const viewed = {
+      id: product._id || product.product_id,
+      category: product.category,
+      tags: product.tags || []
+    };
+
+    // Add to front of array (most recent first)
+    state.session.viewedProducts.unshift(viewed);
+
+    // Keep only last N items
+    if (state.session.viewedProducts.length > state.session.maxViewed) {
+      state.session.viewedProducts = state.session.viewedProducts.slice(0, state.session.maxViewed);
+    }
+  }
+
+  function buildSessionContext() {
+    const cart = getCart();
+    const cartIds = cart.map(item => item.product_id);
+
+    // Extract categories and tags from viewed products and cart
+    const categories = [];
+    const tags = [];
+
+    // From viewed products
+    state.session.viewedProducts.forEach(p => {
+      if (p.category) categories.push(p.category);
+      if (p.tags && Array.isArray(p.tags)) tags.push(...p.tags);
+    });
+
+    // From cart items (they have more weight)
+    cart.forEach(item => {
+      if (item.category) {
+        categories.push(item.category);
+        categories.push(item.category); // Add twice for more weight
+      }
+      if (item.tags && Array.isArray(item.tags)) {
+        tags.push(...item.tags);
+      }
+    });
+
+    const viewedIds = state.session.viewedProducts.map(p => p.id);
+
+    return {
+      cart_product_ids: cartIds,
+      viewed_product_ids: viewedIds,
+      categories: categories,
+      tags: tags
+    };
   }
 
   async function loadFeaturedProducts() {
@@ -262,6 +375,68 @@ const Shop = (() => {
     }
   }
 
+  async function loadRecommendations() {
+    try {
+      const wrap = document.getElementById('recoWrap');
+      const grid = document.getElementById('recoGrid');
+      const moreBtn = document.getElementById('recoLoadMore');
+      if (!wrap || !grid) return;
+
+      // Reset if offset is 0 (new load or refresh)
+      if (state.reco.offset === 0) {
+        grid.innerHTML = '';
+      }
+
+      let items = [];
+      let total = 0;
+
+      try {
+        // Build session context from current state
+        const sessionContext = buildSessionContext();
+        const res = await api.recommendations({
+          limit: state.reco.limit,
+          offset: state.reco.offset,
+          sessionContext: sessionContext
+        });
+        items = res.items || [];
+        total = res.total || 0;
+      } catch (e) {
+        console.error('Error loading recommendations:', e);
+      }
+
+      // Fallback: If no personal recommendations AND it's the first load, show latest products
+      if (!items.length && state.reco.offset === 0) {
+        try {
+          const res = await api.products({ limit: 4, sort: 'created_desc' });
+          items = res.items || [];
+          // For fallback, we might not want pagination or we treat it differently. 
+          // Let's assume fallback is just a static set for now or disable load more.
+          if (moreBtn) moreBtn.style.display = 'none';
+        } catch { }
+      }
+
+      if (!items.length && state.reco.offset === 0) {
+        wrap.style.display = 'none';
+        return;
+      }
+
+      wrap.style.display = 'block';
+      grid.insertAdjacentHTML('beforeend', items.map(productCard).join(''));
+      bindAddButtons(grid, items);
+
+      if (moreBtn) {
+        // Simple check: if we got fewer items than limit, we are probably at the end
+        const hasMore = items.length === state.reco.limit;
+        moreBtn.style.display = hasMore ? 'inline-block' : 'none';
+        moreBtn.onclick = () => {
+          state.reco.offset += state.reco.limit;
+          loadRecommendations();
+        };
+      }
+
+    } catch (e) { console.error(e); }
+  }
+
   async function renderCategories(containerId = 'categoryFilters') {
     const el = document.getElementById(containerId);
     if (!el) return;
@@ -281,12 +456,12 @@ const Shop = (() => {
     const el = document.getElementById(containerId);
     if (!el) return;
     el.innerHTML = `
-      <div class="search-bar" style="flex-wrap:wrap;gap:8px">
-        <input id="minPrice" type="number" step="0.01" placeholder="Min price" style="max-width:140px"/>
-        <input id="maxPrice" type="number" step="0.01" placeholder="Max price" style="max-width:140px"/>
-        <input id="tags" placeholder="Tags (comma separated)" style="min-width:220px"/>
-        <button id="applyFilters" class="btn">Apply</button>
-      </div>`;
+  <div class="search-bar" style="flex-wrap:wrap;gap:8px">
+    <input id="minPrice" type="number" step="0.01" placeholder="Min price" style="max-width:140px"/>
+    <input id="maxPrice" type="number" step="0.01" placeholder="Max price" style="max-width:140px"/>
+    <input id="tags" placeholder="Tags (comma separated)" style="min-width:220px"/>
+    <button id="applyFilters" class="btn">Apply</button>
+  </div>`;
     el.querySelector('#minPrice').value = current.min_price || '';
     el.querySelector('#maxPrice').value = current.max_price || '';
     el.querySelector('#tags').value = current.tags || '';
@@ -389,7 +564,7 @@ const Shop = (() => {
         if (res.ok) {
           p = await res.json();
         }
-      } catch {}
+      } catch { }
     } else if (location.pathname.startsWith('/product/')) {
       const pid = location.pathname.split('/product/')[1];
       if (pid) {
@@ -398,7 +573,7 @@ const Shop = (() => {
           if (res.ok) {
             p = await res.json();
           }
-        } catch {}
+        } catch { }
       }
     }
     if (!p) {
@@ -409,29 +584,31 @@ const Shop = (() => {
     const el = document.getElementById('productDetail');
     const img = p.image_url || '/static/images/placeholder.svg';
     el.innerHTML = `
-      <nav class="breadcrumbs"><a href="/home">Home</a> <span>/</span> <a href="/category?category=${encodeURIComponent(p.category || '')}">${p.category || 'All'}</a> <span>/</span> <span>${p.name}</span></nav>
-      <div class="product">
-        <img src="${img}" alt="${p.name}" onerror="this.onerror=null;this.src='/static/images/placeholder.svg'" />
-        <div class="product-info">
-          <h1>${p.name}</h1>
-          <div class="price">${fmtPrice(p.price)}</div>
-          <div class="meta">Category: ${p.category}</div>
-          <div class="tags">${(p.tags || []).map(t => `<span class="tag">${t}</span>`).join(' ')}</div>
-          <div class="actions">
-            <button id="addToCart" class="btn-primary">Add to Cart</button>
-          </div>
-        </div>
+  <nav class="breadcrumbs"><a href="/home">Home</a> <span>/</span> <a href="/category?category=${encodeURIComponent(p.category || '')}">${p.category || 'All'}</a> <span>/</span> <span>${p.name}</span></nav>
+  <div class="product">
+    <img src="${img}" alt="${p.name}" onerror="this.onerror=null;this.src='/static/images/placeholder.svg'" />
+    <div class="product-info">
+      <h1>${p.name}</h1>
+      <div class="price">${fmtPrice(p.price)}</div>
+      <div class="meta">Category: ${p.category}</div>
+      <div class="tags">${(p.tags || []).map(t => `<span class="tag">${t}</span>`).join(' ')}</div>
+      <div class="actions">
+        <button id="addToCart" class="btn-primary">Add to Cart</button>
       </div>
-      <h2>Related products</h2>
-      <div id="relatedGrid" class="grid"></div>
-    `;
+    </div>
+  </div>
+  <h2>Related products</h2>
+  <div id="relatedGrid" class="grid"></div>
+`;
     // Track product pageview with product id in the page path
     try {
       const pagePath = `/product/${encodeURIComponent(p._id)}`;
       track(pagePath, 'pageview', { product_id: p._id, product_name: p.name, product_category: p.category, product_price: p.price });
-    } catch {}
+      // Track for session-based recommendations
+      trackProductView(p);
+    } catch { }
     document.getElementById('addToCart').addEventListener('click', () => {
-      addToCart({ product_id: p._id, name: p.name, price: p.price, image_url: p.image_url, quantity: 1 });
+      addToCart({ product_id: p._id, name: p.name, price: p.price, image_url: p.image_url, category: p.category, tags: p.tags || [], quantity: 1 });
       track('/cart', 'add_to_cart', { product_id: p._id, product_name: p.name, product_price: p.price });
     });
     // load related
@@ -472,25 +649,25 @@ const Shop = (() => {
     const list = document.getElementById('cartItems');
     if (!items.length) {
       list.innerHTML = '<p>Your cart is empty.</p>';
-      ['cartSubtotal','cartTax','cartShipping','cartTotal'].forEach(id => {
+      ['cartSubtotal', 'cartTax', 'cartShipping', 'cartTotal'].forEach(id => {
         const el = document.getElementById(id); if (el) el.textContent = '$0.00';
       });
       track('/cart', 'pageview', { items: 0 });
       return;
     }
     list.innerHTML = items.map(item => `
-      <div class="cart-item">
-        <img src="${item.image_url || '/static/images/placeholder.svg'}" alt="${item.name}">
-        <div class="info">
-          <div class="name">${item.name}</div>
-          <div class="price">${fmtPrice(item.price)}</div>
-        </div>
-        <div>
-          <input class="qty-input" type="number" min="1" step="1" value="${item.quantity}" data-qty="${item.product_id}" />
-        </div>
-        <button class="btn" data-remove="${item.product_id}">Remove</button>
-      </div>
-    `).join('');
+  <div class="cart-item">
+    <img src="${item.image_url || '/static/images/placeholder.svg'}" alt="${item.name}">
+    <div class="info">
+      <div class="name">${item.name}</div>
+      <div class="price">${fmtPrice(item.price)}</div>
+    </div>
+    <div>
+      <input class="qty-input" type="number" min="1" step="1" value="${item.quantity}" data-qty="${item.product_id}" />
+    </div>
+    <button class="btn" data-remove="${item.product_id}">Remove</button>
+  </div>
+`).join('');
     list.querySelectorAll('[data-remove]').forEach(btn => {
       btn.addEventListener('click', () => {
         removeFromCart(btn.getAttribute('data-remove'));
@@ -513,7 +690,7 @@ const Shop = (() => {
         try {
           const token = getToken();
           if (token) await fetch('/api/cart', { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } });
-        } catch (e) {}
+        } catch (e) { }
         renderCartPage();
       };
     }
@@ -550,11 +727,11 @@ const Shop = (() => {
         status.textContent = 'Your cart is empty.';
         return;
       }
-      // For demo purposes only – accept checkout and clear cart
+      // For demo purposes only â€“ accept checkout and clear cart
       const total = items.reduce((s, x) => s + x.price * x.quantity, 0);
       // 1) Send purchase event immediately to backend before redirect (do not rely only on batched SDK)
       try {
-        const userObj = (()=>{ try{ return JSON.parse(localStorage.getItem('user')||'null')||null; }catch{ return null; } })();
+        const userObj = (() => { try { return JSON.parse(localStorage.getItem('user') || 'null') || null; } catch { return null; } })();
         const user_id = (userObj && userObj.id) || localStorage.getItem('ecomv2_user_id') || '';
         const session_id = sessionStorage.getItem('ecomv2_session_id') || '';
         const payment_method = document.getElementById('payment')?.value || 'credit_card';
@@ -564,23 +741,23 @@ const Shop = (() => {
           page: '/checkout',
           event_type: 'purchase',
           properties: { cart_items: items.length, total_amount: total, payment_method },
-          timestamp: Math.floor(Date.now()/1000)
+          timestamp: Math.floor(Date.now() / 1000)
         };
         await fetch('/api/ingest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(evt) });
         // also enqueue into SDK for consistency (non-blocking)
-        try{ if(window.analytics && typeof window.analytics.track==='function'){ window.analytics.track('/checkout', 'purchase', { cart_items: items.length, total_amount: total, payment_method }); } }catch{}
+        try { if (window.analytics && typeof window.analytics.track === 'function') { window.analytics.track('/checkout', 'purchase', { cart_items: items.length, total_amount: total, payment_method }); } } catch { }
         // 2) Force-create order and clear server-side cart via backend endpoint (idempotent per cart)
-        try{
+        try {
           const token = getToken();
-          if(token){
+          if (token) {
             await fetch('/api/cart/checkout', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
               body: JSON.stringify({ session_id })
             });
           }
-        }catch{}
-      } catch {}
+        } catch { }
+      } catch { }
       // 3) Clear local cart and (again) ensure server cart is cleared
       localStorage.removeItem(CART_KEY);
       updateCartCount();
@@ -590,7 +767,7 @@ const Shop = (() => {
         if (token) {
           await fetch('/api/cart', { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } });
         }
-      } catch {}
+      } catch { }
       status.textContent = 'Order placed successfully!';
       setTimeout(() => { window.location.href = '/static/confirmation.html'; }, 600);
     });
@@ -600,7 +777,7 @@ const Shop = (() => {
     updateCartCount();
     // track bare pageview if not already tracked in specific page loaders
     const path = location.pathname;
-    if ([ '/home', '/category', '/search', '/product', '/cart', '/checkout' ].indexOf(path) === -1) {
+    if (['/home', '/category', '/search', '/product', '/cart', '/checkout'].indexOf(path) === -1) {
       track(path || '/', 'pageview');
     }
     // Active nav highlighting
@@ -629,15 +806,15 @@ const Shop = (() => {
           e.preventDefault();
           try {
             track('/auth', 'logout');
-          } catch {}
-          try { localStorage.removeItem('token'); } catch {}
-          try { sessionStorage.removeItem('ecomv2_session_id'); } catch {}
+          } catch { }
+          try { localStorage.removeItem('token'); } catch { }
+          try { sessionStorage.removeItem('ecomv2_session_id'); } catch { }
           setTimeout(() => { window.location.replace('/auth'); }, 50);
         });
         nav.appendChild(sep);
         nav.appendChild(btn);
       }
-    } catch {}
+    } catch { }
   }
 
   return {
@@ -649,5 +826,6 @@ const Shop = (() => {
     loadProductFromQuery,
     renderCartPage,
     initCheckoutPage,
+    loadRecommendations,
   };
 })();

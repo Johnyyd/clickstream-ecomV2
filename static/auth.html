@@ -1,43 +1,158 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Auth - Clickstream Ecom V2</title>
+  <title>Auth - EcomV2</title>
   <link rel="stylesheet" href="/static/styles.css" />
-</head>
-<body>
-  <!-- <div class="site-header">
-    <nav>
-      <a href="/home">Home</a>
-      <a href="/category">Category</a>
-      <a href="/search">Search</a>
-      <a href="/cart">Cart</a>
-      <a href="/checkout">Checkout</a>
-    </nav>
-  </div> -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    body {
+      background: linear-gradient(rgba(11, 15, 20, 0.8), rgba(11, 15, 20, 0.8)), url('https://images.unsplash.com/photo-1550745165-9bc0b252726f?ixlib=rb-1.2.1&auto=format&fit=crop&w=1950&q=80');
+      background-size: cover;
+      background-position: center;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0;
+    }
 
-  <div class="auth-container">
-    <h1 id="title">Login</h1>
+    .auth-card {
+      background: rgba(15, 23, 34, 0.95);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    }
+
+    .auth-logo {
+      text-align: center;
+      font-size: 32px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: block;
+      text-decoration: none;
+    }
+
+    .auth-subtitle {
+      text-align: center;
+      color: var(--muted);
+      margin-bottom: 32px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 12px 16px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 15px;
+      transition: all 0.2s;
+    }
+
+    .form-input:focus {
+      border-color: var(--primary);
+      background: rgba(255, 255, 255, 0.1);
+      outline: none;
+    }
+
+    .auth-btn {
+      width: 100%;
+      padding: 12px;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-top: 8px;
+    }
+
+    .auth-btn:hover {
+      background: var(--primary-hover);
+      transform: translateY(-1px);
+    }
+
+    .auth-switch {
+      text-align: center;
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+    }
+
+    .switch-btn {
+      background: none;
+      border: none;
+      color: var(--primary);
+      font-weight: 500;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .switch-btn:hover {
+      text-decoration: underline;
+    }
+
+    .status-msg {
+      margin-top: 16px;
+      text-align: center;
+      font-size: 14px;
+      min-height: 20px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="auth-card">
+    <a href="/home" class="auth-logo">EcomV2</a>
+    <p class="auth-subtitle" id="subtitle">Welcome back! Please login to continue.</p>
 
     <form id="loginForm" aria-label="Login form">
-      <input id="username" name="username" placeholder="Username" autocomplete="username" required />
-      <input id="password" name="password" type="password" placeholder="Password" autocomplete="current-password" required />
-      <button id="loginBtn" type="submit">Login</button>
+      <div class="form-group">
+        <input id="username" class="form-input" name="username" placeholder="Username" autocomplete="username"
+          required />
+      </div>
+      <div class="form-group">
+        <input id="password" class="form-input" name="password" type="password" placeholder="Password"
+          autocomplete="current-password" required />
+      </div>
+      <button id="loginBtn" type="submit" class="auth-btn">Login</button>
     </form>
 
     <form id="signupForm" aria-label="Signup form" style="display:none">
-      <input id="su_username" name="username" placeholder="Username" required />
-      <input id="su_email" name="email" type="email" placeholder="Email" required />
-      <input id="su_password" name="password" type="password" placeholder="Password" required />
-      <button id="signupBtn" type="submit">Create account</button>
+      <div class="form-group">
+        <input id="su_username" class="form-input" name="username" placeholder="Username" required />
+      </div>
+      <div class="form-group">
+        <input id="su_email" class="form-input" name="email" type="email" placeholder="Email" required />
+      </div>
+      <div class="form-group">
+        <input id="su_password" class="form-input" name="password" type="password" placeholder="Password" required />
+      </div>
+      <button id="signupBtn" type="submit" class="auth-btn">Create Account</button>
     </form>
 
     <div class="auth-switch">
-      <button id="switchBtn" type="button" aria-live="polite">Need an account? Sign up</button>
+      <button id="switchBtn" class="switch-btn" type="button">Don't have an account? Sign up</button>
     </div>
 
-    <div class="status" id="status" role="status" aria-live="polite"></div>
+    <div class="status-msg" id="status" role="status" aria-live="polite"></div>
   </div>
 
   <script>
@@ -45,22 +160,22 @@
     const switchBtn = document.getElementById('switchBtn');
     const loginForm = document.getElementById('loginForm');
     const signupForm = document.getElementById('signupForm');
-    const titleEl = document.getElementById('title');
+    const subtitleEl = document.getElementById('subtitle');
 
-    function setStatus(msg) { statusEl.textContent = msg || ''; }
+    function setStatus(msg) { statusEl.textContent = msg || ''; statusEl.style.color = msg.startsWith('❌') ? '#ef4444' : '#10b981'; }
 
     switchBtn.onclick = () => {
       const loginVisible = loginForm.style.display !== 'none';
       if (loginVisible) {
         loginForm.style.display = 'none';
-        signupForm.style.display = 'grid';
-        titleEl.textContent = 'Sign up';
-        switchBtn.textContent = 'Have an account? Login';
+        signupForm.style.display = 'block';
+        subtitleEl.textContent = 'Create an account to get started.';
+        switchBtn.textContent = 'Already have an account? Login';
       } else {
-        loginForm.style.display = 'grid';
+        loginForm.style.display = 'block';
         signupForm.style.display = 'none';
-        titleEl.textContent = 'Login';
-        switchBtn.textContent = 'Need an account? Sign up';
+        subtitleEl.textContent = 'Welcome back! Please login to continue.';
+        switchBtn.textContent = "Don't have an account? Sign up";
       }
       setStatus('');
     };
@@ -70,46 +185,27 @@
       setStatus('Logging in...');
       const body = { username: document.getElementById('username').value, password: document.getElementById('password').value };
       try {
-        const resp = await fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        const resp = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         const j = await resp.json();
-        console.log('Login response:', j); // DEBUG: Log response
         if (j.token) {
-          setStatus('✅ Logged in');
-          
-          // Đọc role từ j.user.role (backend trả về trong object user)
+          setStatus('✅ Logged in successfully');
           const role = (j.user && j.user.role) || 'user';
-          console.log('Login response:', j); // DEBUG: Log full response
-          console.log('User role:', role); // DEBUG: Log role
-          
-          // LƯU TOKEN VÀ USER - ƯU TIÊN SỐ 1
           localStorage.setItem('token', j.token);
-          if (j.user) {
-            localStorage.setItem('user', JSON.stringify(j.user));
-            console.log('✅ User saved to localStorage:', j.user); // DEBUG
-          }
-          
-          // Verify ngay sau khi lưu
-          const savedUser = localStorage.getItem('user');
-          console.log('✅ Verification - User in localStorage:', savedUser);
-          
-          // Reset analytics session on login to avoid appending to previous session
+          if (j.user) localStorage.setItem('user', JSON.stringify(j.user));
+
           try {
             const SID_KEY = 'ecomv2_session_id';
-            const existingSid = sessionStorage.getItem(SID_KEY);
-            // Preserve current SID for continuity; only set backend SID if none exists
-            if (!existingSid && j.session_id) {
+            if (!sessionStorage.getItem(SID_KEY) && j.session_id) {
               sessionStorage.setItem(SID_KEY, j.session_id);
             }
-          } catch (e) {}
-          
-          // Sync server cart to localStorage before redirect (chỉ cho non-admin)
+          } catch (e) { }
+
           try {
             if (role !== 'admin') {
               const resp2 = await fetch('/api/cart', { headers: { 'Authorization': j.token } });
               if (resp2.ok) {
                 const data = await resp2.json();
                 const items = Array.isArray(data.items) ? data.items : [];
-                // Persist to the same key used by storefront
                 localStorage.setItem('ecomv2_cart', JSON.stringify(items.map(x => ({
                   product_id: x.product_id,
                   name: x.name,
@@ -119,19 +215,10 @@
                 }))));
               }
             }
-          } catch (e) {
-            console.log('Cart sync error (không ảnh hưởng):', e);
-          }
-          
-          // Redirect dựa trên role: admin -> dashboard SPA, user -> home
+          } catch (e) { }
+
           const redirectUrl = role === 'admin' ? '/dashboard-spa' : '/home';
-          console.log('🔄 Redirecting to:', redirectUrl, '(role:', role, ')');
-          
-          // Tăng delay để đảm bảo localStorage đã lưu
-          setTimeout(() => { 
-            console.log('🚀 Now redirecting...');
-            window.location.href = redirectUrl; 
-          }, 600);
+          setTimeout(() => { window.location.href = redirectUrl; }, 600);
         } else {
           setStatus('❌ ' + (j.error || 'Login failed'));
         }
@@ -141,17 +228,17 @@
     signupForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       setStatus('Creating account...');
-      const body = { 
+      const body = {
         username: document.getElementById('su_username').value,
         email: document.getElementById('su_email').value,
         password: document.getElementById('su_password').value
       };
       try {
-        const resp = await fetch('/api/signup', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        const resp = await fetch('/api/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         const j = await resp.json();
         if (j.user_id) {
           setStatus('✅ Account created. Please login.');
-          switchBtn.click();
+          setTimeout(() => { switchBtn.click(); }, 1000);
         } else {
           setStatus('❌ ' + (j.error || 'Signup failed'));
         }
@@ -159,4 +246,5 @@
     });
   </script>
 </body>
+
 </html>

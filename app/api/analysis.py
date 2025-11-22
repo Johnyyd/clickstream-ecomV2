@@ -84,9 +84,9 @@ def _run_spark_analytics_async(analysis_id: ObjectId, username: Optional[str]) -
         try:
             from app.spark.recommendation_als import ml_product_recommendations_als
             if username:
-                results["recommendations"] = ml_product_recommendations_als(username=username, top_n=5)
+                results["recommendations"] = ml_product_recommendations_als(username=username, top_n=50)
             else:
-                results["recommendations"] = ml_product_recommendations_als(username=None, top_n=5)
+                results["recommendations"] = ml_product_recommendations_als(username=None, top_n=50)
             print("[Analysis][recommendations] done")
         except Exception as e:
             results["recommendations"] = {"error": str(e)}

@@ -8,71 +8,227 @@
     <link rel="stylesheet" href="/static/styles.css?v=2.3">
     <link rel="stylesheet" href="/static/llmDisplay.css?v=2.3">
     <link rel="stylesheet" href="/static/comprehensiveAnalytics.css?v=1.2">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Chart.js for ML visualizations -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
     <script>
-        (function(){
-          try {
-            const token = localStorage.getItem('token');
-            console.log('Dashboard auth check - Token:', token ? 'exists' : 'missing');
-            
-            if (!token) { 
-              console.log('No token found, redirecting to auth');
-              window.location.replace('/auth'); 
-              return; 
+        (function () {
+            try {
+                const token = localStorage.getItem('token');
+                console.log('Dashboard auth check - Token:', token ? 'exists' : 'missing');
+
+                if (!token) {
+                    console.log('No token found, redirecting to auth');
+                    window.location.replace('/auth');
+                    return;
+                }
+
+                // Kiểm tra role từ localStorage
+                const userStr = localStorage.getItem('user');
+                console.log('Dashboard auth check - User string:', userStr);
+
+                if (!userStr) {
+                    console.log('No user data found, redirecting to auth');
+                    window.location.replace('/auth');
+                    return;
+                }
+
+                const user = JSON.parse(userStr);
+                console.log('Dashboard auth check - User object:', user);
+                console.log('Dashboard auth check - User role:', user.role);
+
+                if ((user.role || 'user') !== 'admin') {
+                    console.log('User is not admin, role:', user.role);
+                    alert('Bạn không có quyền truy cập trang này. Chỉ dành cho Admin.');
+                    window.location.replace('/home');
+                    return;
+                }
+
+                console.log('✅ Admin access granted');
+            } catch (e) {
+                console.error('Auth check error:', e);
+                window.location.replace('/auth');
             }
-            
-            // Kiểm tra role từ localStorage
-            const userStr = localStorage.getItem('user');
-            console.log('Dashboard auth check - User string:', userStr);
-            
-            if (!userStr) {
-              console.log('No user data found, redirecting to auth');
-              window.location.replace('/auth');
-              return;
-            }
-            
-            const user = JSON.parse(userStr);
-            console.log('Dashboard auth check - User object:', user);
-            console.log('Dashboard auth check - User role:', user.role);
-            
-            if ((user.role || 'user') !== 'admin') {
-              console.log('User is not admin, role:', user.role);
-              alert('Bạn không có quyền truy cập trang này. Chỉ dành cho Admin.');
-              window.location.replace('/home');
-              return;
-            }
-            
-            console.log('✅ Admin access granted');
-          } catch (e) {
-            console.error('Auth check error:', e);
-            window.location.replace('/auth');
-          }
         })();
     </script>
+    <style>
+        /* Dashboard specific overrides */
+        .dashboard-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 32px 24px;
+        }
+
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 32px;
+        }
+
+        .dashboard-title {
+            font-size: 32px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin: 0;
+        }
+
+        .control-panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 32px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .control-section {
+            margin-bottom: 24px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .control-section:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
+        .control-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .analytics-buttons,
+        .ml-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .analytics-btn,
+        .ml-btn {
+            padding: 10px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text);
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .analytics-btn:hover,
+        .ml-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-1px);
+        }
+
+        .analytics-btn.primary {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: white;
+        }
+
+        .analytics-btn.primary:hover {
+            background: var(--primary-hover);
+        }
+
+        .input-group {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-top: 12px;
+        }
+
+        .dashboard-input {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px 12px;
+            color: var(--text);
+            width: 300px;
+        }
+
+        /* Tab Navigation Styling */
+        .tab-nav {
+            display: flex;
+            gap: 2px;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 4px;
+            border-radius: 10px;
+            margin-bottom: 24px;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 10px;
+            background: transparent;
+            border: none;
+            color: var(--muted);
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .tab-btn.active {
+            background: var(--surface);
+            color: var(--primary);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Override comprehensive analytics styles for dark theme compatibility */
+        .metric-card {
+            background: rgba(255, 255, 255, 0.03) !important;
+            border: 1px solid var(--border) !important;
+            color: var(--text) !important;
+        }
+    </style>
 </head>
 
 <body>
-    <div id="app">
-        <h1>Clickstream Dashboard</h1>
-        <div id="controls">
-            <button id="simulateBtn" hidden>Simulate Events (100)</button>
-            <div class="analysis-controls" hidden>
-                <button id="analyzeBtn" hidden>Run Spark Analysis</button>
-                <div class="toggle-container" role="group" aria-labelledby="analysisModeLabel" hidden>
-                    <span id="analysisModeLabel" class="sr-only" hidden>Analysis Engine</span>
-                    <label class="switch" hidden>
-                        <input type="checkbox" id="useSparkToggle" checked 
-                               aria-checked="true" 
-                               role="switch" 
-                               aria-labelledby="analysisModeLabel">
-                        <span class="slider round"></span>
-                    </label>
-                    <span id="analysisModeText" aria-live="polite">Spark Analysis</span>
+    <header class="site-header">
+        <div class="logo">EcomV2 <span
+                style="font-size: 14px; font-weight: 400; color: var(--muted); margin-left: 8px;">Admin</span></div>
+        <nav>
+            <a href="/home"><i class="fa-solid fa-store"></i> Back to Shop</a>
+            <a href="#"
+                onclick="localStorage.removeItem('token'); localStorage.removeItem('user'); window.location.href='/auth'; return false;"><i
+                    class="fa-solid fa-right-from-bracket"></i> Logout</a>
+        </nav>
+    </header>
+
+    <div id="app" class="dashboard-container">
+        <div class="dashboard-header">
+            <h1 class="dashboard-title">Analytics Dashboard</h1>
+            <div id="controls">
+                <button id="simulateBtn" hidden>Simulate Events (100)</button>
+                <div class="analysis-controls" hidden>
+                    <button id="analyzeBtn" hidden>Run Spark Analysis</button>
+                    <div class="toggle-container" role="group" aria-labelledby="analysisModeLabel" hidden>
+                        <span id="analysisModeLabel" class="sr-only" hidden>Analysis Engine</span>
+                        <label class="switch" hidden>
+                            <input type="checkbox" id="useSparkToggle" checked aria-checked="true" role="switch"
+                                aria-labelledby="analysisModeLabel">
+                            <span class="slider round"></span>
+                        </label>
+                        <span id="analysisModeText" aria-live="polite">Spark Analysis</span>
+                    </div>
                 </div>
             </div>
-            <div class="comprehensive-analytics-controls">
-                <h3>📊 Comprehensive Analytics</h3>
+        </div>
+
+        <div class="control-panel">
+            <div class="comprehensive-analytics-controls control-section">
+                <div class="control-title">📊 Comprehensive Analytics</div>
                 <div class="analytics-buttons">
                     <button id="runAllAnalyticsBtn" class="analytics-btn primary">🚀 Run All Analytics</button>
                     <button id="seoAnalyticsBtn" class="analytics-btn">🔍 SEO & Traffic</button>
@@ -81,14 +237,15 @@
                     <button id="journeyAnalyticsBtn" class="analytics-btn">🗺️ Customer Journey</button>
                     <button id="recommendationsBtn" class="analytics-btn">⭐ Recommendations</button>
                 </div>
-                <div class="analytics-filter" style="margin-top:10px;">
-                    <label for="analyticsUsername" style="display:block; font-weight:600; margin-bottom:6px;">Username (Optional)</label>
-                    <input id="analyticsUsername" placeholder="Enter username to analyze specific user..." style="width:320px; padding:8px; border-radius:6px; border:1px solid #444; background:#111; color:#eee;" />
-                    <div style="font-size:12px; color:#888; margin-top:4px;">Leave empty to analyze all users</div>
+                <div class="input-group">
+                    <input id="analyticsUsername" class="dashboard-input"
+                        placeholder="Enter username to analyze specific user..." />
+                    <div style="font-size:12px; color:var(--muted);">Leave empty to analyze all users</div>
                 </div>
             </div>
-            <div class="ml-controls">
-                <h3>🤖 Machine Learning Algorithms</h3>
+
+            <div class="ml-controls control-section">
+                <div class="control-title">🤖 Machine Learning Algorithms</div>
                 <div class="ml-buttons">
                     <button id="mlKmeansBtn" class="ml-btn">K-Means Clustering</button>
                     <button id="mlTreeBtn" class="ml-btn">Decision Tree</button>
@@ -96,7 +253,8 @@
                     <button id="mlLogisticBtn" class="ml-btn">Logistic Regression</button>
                 </div>
             </div>
-            <div class="key-controls" hidden>
+
+            <div class="key-controls control-section" hidden>
                 <h2>API Key (Auto-managed)</h2>
                 <p class="info-text">✅ API keys are automatically managed. No manual input needed!</p>
                 <details>
@@ -107,106 +265,109 @@
                     <pre id="keyStatus"></pre>
                 </details>
             </div>
-            <pre id="output" class="status-output"></pre>
-            
-            <!-- Comprehensive Analytics Results -->
-            <div id="comprehensiveResults" class="comprehensive-results hidden">
-                <h2>📊 Comprehensive Analytics Results</h2>
-                
-                <!-- Tab Navigation -->
-                <div class="tab-nav">
-                    <button class="tab-btn active" data-tab="seoResults">🔍 SEO & Traffic</button>
-                    <button class="tab-btn" data-tab="cartResults">🛒 Cart Abandonment</button>
-                    <button class="tab-btn" data-tab="retentionResults">📈 Retention</button>
-                    <button class="tab-btn" data-tab="journeyResults">🗺️ Customer Journey</button>
-                    <button class="tab-btn" data-tab="recommendationsResults">⭐ Recommendations</button>
+
+            <pre id="output" class="status-output"
+                style="background: #000; padding: 12px; border-radius: 8px; margin-top: 16px; max-height: 200px; overflow-y: auto;"></pre>
+        </div>
+
+        <!-- Comprehensive Analytics Results -->
+        <div id="comprehensiveResults" class="comprehensive-results hidden">
+            <h2 style="margin-bottom: 24px;">📊 Analysis Results</h2>
+
+            <!-- Tab Navigation -->
+            <div class="tab-nav">
+                <button class="tab-btn active" data-tab="seoResults">🔍 SEO & Traffic</button>
+                <button class="tab-btn" data-tab="cartResults">🛒 Cart Abandonment</button>
+                <button class="tab-btn" data-tab="retentionResults">📈 Retention</button>
+                <button class="tab-btn" data-tab="journeyResults">🗺️ Customer Journey</button>
+                <button class="tab-btn" data-tab="recommendationsResults">⭐ Recommendations</button>
+            </div>
+
+            <!-- SEO & Traffic Analysis -->
+            <div id="seoResults" class="analytics-section tab-content active">
+                <h3>🔍 SEO & Traffic Source Analysis</h3>
+
+                <!-- SEO Subtabs -->
+                <div class="subtab-nav">
+                    <button class="subtab-btn active" data-subtab="trafficBySource">📊 Traffic by Source</button>
+                    <button class="subtab-btn" data-subtab="landingPages">🎯 Top Landing Pages</button>
+                    <button class="subtab-btn" data-subtab="conversionBySource">💰 Conversion by Source</button>
+                    <button class="subtab-btn" data-subtab="hourlyTraffic">⏰ Peak Traffic Hours</button>
                 </div>
-                
-                <!-- SEO & Traffic Analysis -->
-                <div id="seoResults" class="analytics-section tab-content active">
-                    <h3>🔍 SEO & Traffic Source Analysis</h3>
-                    
-                    <!-- SEO Subtabs -->
-                    <div class="subtab-nav">
-                        <button class="subtab-btn active" data-subtab="trafficBySource">📊 Traffic by Source</button>
-                        <button class="subtab-btn" data-subtab="landingPages">🎯 Top Landing Pages</button>
-                        <button class="subtab-btn" data-subtab="conversionBySource">💰 Conversion by Source</button>
-                        <button class="subtab-btn" data-subtab="hourlyTraffic">⏰ Peak Traffic Hours</button>
-                    </div>
-                    
-                    <div class="metrics-grid">
-                        <div id="trafficBySource" class="metric-card subtab-content active"></div>
-                        <div id="landingPages" class="metric-card subtab-content"></div>
-                        <div id="conversionBySource" class="metric-card subtab-content"></div>
-                        <div id="hourlyTraffic" class="metric-card subtab-content"></div>
-                    </div>
-                </div>
-                
-                <!-- Cart Abandonment -->
-                <div id="cartResults" class="analytics-section tab-content">
-                    <h3>🛒 Cart Abandonment Analysis</h3>
-                    <div class="metrics-grid">
-                        <div id="abandonmentRate" class="metric-card"></div>
-                        <div id="abandonedProducts" class="metric-card"></div>
-                        <div id="cartValueComparison" class="metric-card"></div>
-                    </div>
-                </div>
-                
-                <!-- Retention Analysis -->
-                <div id="retentionResults" class="analytics-section tab-content">
-                    <h3>📈 Cohort & Retention Analysis</h3>
-                    <div class="metrics-grid">
-                        <div id="cohortTable" class="metric-card"></div>
-                        <div id="retentionMetrics" class="metric-card"></div>
-                        <div id="userSegments" class="metric-card"></div>
-                    </div>
-                </div>
-                
-                <!-- Customer Journey -->
-                <div id="journeyResults" class="analytics-section tab-content">
-                    <h3>🗺️ Customer Journey Path Analysis</h3>
-                    <div class="metrics-grid">
-                        <div id="conversionPaths" class="metric-card"></div>
-                        <div id="dropoffPoints" class="metric-card"></div>
-                        <div id="pathStatistics" class="metric-card"></div>
-                        <div id="commonSequences" class="metric-card"></div>
-                    </div>
-                </div>
-                
-                <!-- Product Recommendations -->
-                <div id="recommendationsResults" class="analytics-section tab-content">
-                    <h3>⭐ Product Recommendations (ALS)</h3>
-                    <div id="alsRecommendations" class="metric-card"></div>
-                </div>
-                
-                <!-- ML Results -->
-                <div id="mlResults" class="analytics-section hidden">
-                    <h3>🤖 Machine Learning Results</h3>
-                    <div id="mlContent" class="metric-card"></div>
+
+                <div class="metrics-grid">
+                    <div id="trafficBySource" class="metric-card subtab-content active"></div>
+                    <div id="landingPages" class="metric-card subtab-content"></div>
+                    <div id="conversionBySource" class="metric-card subtab-content"></div>
+                    <div id="hourlyTraffic" class="metric-card subtab-content"></div>
                 </div>
             </div>
-            
-            <!-- Original Results Section -->
-            <div id="results" class="results">
-                <h2>Summary</h2>
-                <pre id="summary"></pre>
 
-                <h2>Analysis - Detailed Metrics <span id="analysisModeBadge" class="badge">Spark</span></h2>
-                <pre id="pythonDetails"></pre>
+            <!-- Cart Abandonment -->
+            <div id="cartResults" class="analytics-section tab-content">
+                <h3>🛒 Cart Abandonment Analysis</h3>
+                <div class="metrics-grid">
+                    <div id="abandonmentRate" class="metric-card"></div>
+                    <div id="abandonedProducts" class="metric-card"></div>
+                    <div id="cartValueComparison" class="metric-card"></div>
+                </div>
+            </div>
 
-                <h2>LLM Insights (Parsed)</h2>
-                <pre id="llmParsed"></pre>
+            <!-- Retention Analysis -->
+            <div id="retentionResults" class="analytics-section tab-content">
+                <h3>📈 Cohort & Retention Analysis</h3>
+                <div class="metrics-grid">
+                    <div id="cohortTable" class="metric-card"></div>
+                    <div id="retentionMetrics" class="metric-card"></div>
+                    <div id="userSegments" class="metric-card"></div>
+                </div>
+            </div>
 
-                <details>
-                    <summary>LLM Raw Response</summary>
-                    <pre id="llmRaw"></pre>
-                </details>
+            <!-- Customer Journey -->
+            <div id="journeyResults" class="analytics-section tab-content">
+                <h3>🗺️ Customer Journey Path Analysis</h3>
+                <div class="metrics-grid">
+                    <div id="conversionPaths" class="metric-card"></div>
+                    <div id="dropoffPoints" class="metric-card"></div>
+                    <div id="pathStatistics" class="metric-card"></div>
+                    <div id="commonSequences" class="metric-card"></div>
+                </div>
+            </div>
 
-                <h2>Recommended Products</h2>
-                <div id="recs"></div>
+            <!-- Product Recommendations -->
+            <div id="recommendationsResults" class="analytics-section tab-content">
+                <h3>⭐ Product Recommendations (ALS)</h3>
+                <div id="alsRecommendations" class="metric-card"></div>
+            </div>
+
+            <!-- ML Results -->
+            <div id="mlResults" class="analytics-section hidden">
+                <h3>🤖 Machine Learning Results</h3>
+                <div id="mlContent" class="metric-card"></div>
             </div>
         </div>
+
+        <!-- Original Results Section -->
+        <div id="results" class="results" style="margin-top: 32px;">
+            <h2>Summary</h2>
+            <pre id="summary"></pre>
+
+            <h2>Analysis - Detailed Metrics <span id="analysisModeBadge" class="badge">Spark</span></h2>
+            <pre id="pythonDetails"></pre>
+
+            <h2>LLM Insights (Parsed)</h2>
+            <pre id="llmParsed"></pre>
+
+            <details>
+                <summary>LLM Raw Response</summary>
+                <pre id="llmRaw"></pre>
+            </details>
+
+            <h2>Recommended Products</h2>
+            <div id="recs"></div>
+        </div>
     </div>
+
     <script src="/static/analytics.js?v=2.4"></script>
     <script type="module" src="/static/dashboard.js?v=2.4"></script>
     <script type="module" src="/static/analysisDisplay.js?v=2.4"></script>

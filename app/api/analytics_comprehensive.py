@@ -259,7 +259,7 @@ async def run_comprehensive_analysis(request: AnalyticsRequest):
                 elif module == "recommendations" and request.username:
                     from app.spark.recommendation_als import ml_product_recommendations_als
                     results["results"]["recommendations"] = ml_product_recommendations_als(
-                        username=request.username, top_n=5
+                        username=request.username, top_n=50
                     )
                 
                 elif module == "segmentation":

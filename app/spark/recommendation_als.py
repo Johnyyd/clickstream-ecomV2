@@ -27,7 +27,7 @@ def get_spark():
     return spark_manager.get_session()
 
 
-def ml_product_recommendations_als(username=None, top_n=5, weights: dict | None = None):
+def ml_product_recommendations_als(username=None, top_n=50, weights: dict | None = None):
     """
     Collaborative Filtering using ALS (Alternating Least Squares)
     Generate personalized product recommendations

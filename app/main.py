@@ -183,6 +183,7 @@ try:
     # Mounting them under /api makes /api/products, /api/product/{...}, /api/search, /api/categories, /api/cart, ... work.
     app.include_router(products_api.router, prefix="/api")
     app.include_router(cart_api.router, prefix="/api")
+    app.include_router(recommendations_api.router, prefix="/api")
     # Expose ingest endpoints for clickstream SDK
     # events_api.router defines /ingest and /ingest-batch
     # Mounting under /api gives /api/ingest and /api/ingest-batch for static/analytics.js & shop.js

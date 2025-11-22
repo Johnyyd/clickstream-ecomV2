@@ -289,21 +289,20 @@ def get_spark_session() -> Optional[SparkSession]:
         # Set log level to reduce noise
         _spark_session.sparkContext.setLogLevel("WARN")
         
-        print(f"[Spark] ✅ Session initialized: {_spark_session.version}")
+        print(f"[Spark] Session initialized: {_spark_session.version}")
         return _spark_session
         
     except FileNotFoundError as e:
-        print(f"[Spark] ⚠️ Spark/Java not found: {e}")
+        print(f"[Spark] Spark/Java not found: {e}")
         print("[Spark] Analytics features will be disabled. Install Java 8/11 and set JAVA_HOME to enable.")
         return None
     except Exception as e:
-        print(f"[Spark] ⚠️ Failed to initialize Spark: {e}")
+        print(f"[Spark] Failed to initialize Spark: {e}")
         print("[Spark] Analytics features will be disabled.")
         import traceback
         print("[Spark] Full error traceback:")
         traceback.print_exc()
         return None
-
 
 def stop_spark_session():
     """

@@ -28,18 +28,19 @@
         if(!uid){uid=crypto.randomUUID(); localStorage.setItem(UID_KEY,uid)}
       }
 
-      // Generate session_id as a 24-hex-character string (ObjectId-like).
-      // If there is a legacy SID starting with "session_", regenerate.
+      // Generate session_id as a 24-hex string (ObjectId-like). Regenerate only when:
+      // - no SID
+      // - legacy SID (starts with "session_")
       let sid=sessionStorage.getItem(SID_KEY)||'';
-      if(!sid || (typeof sid === 'string' && sid.indexOf('session_') === 0)){
+      const legacy = (typeof sid === 'string' && sid.indexOf('session_') === 0);
+      if(!sid || legacy){
         try{
           const bytes = crypto.getRandomValues(new Uint8Array(12));
           sid = Array.from(bytes).map(b => b.toString(16).padStart(2,'0')).join('');
         }catch(e){
-          // Fallback: timestamp-based hex
           sid = Date.now().toString(16) + Math.floor(Math.random()*1e6).toString(16).padStart(6,'0');
         }
-        sessionStorage.setItem(SID_KEY,sid)
+        sessionStorage.setItem(SID_KEY,sid);
       }
       return {user_id:uid, session_id:sid};
     }catch{ return {user_id:'', session_id:''}; }

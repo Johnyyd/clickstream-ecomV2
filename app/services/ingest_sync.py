@@ -103,20 +103,27 @@ class SessionManager:
                 user_oid = ObjectId(user_id_value) if user_id_value else None
             except Exception:
                 user_oid = None
+            # Build update document; if we have a valid ObjectId user, also set it (not only on insert)
+            update_doc: Dict[str, Any] = {
+                "$setOnInsert": {
+                    "session_id": session_id,
+                    "created_at": timestamp
+                },
+                "$min": {"first_event_at": timestamp},
+                "$max": {"last_event_at": timestamp},
+                "$inc": {"event_count": 1},
+                "$addToSet": {"pages": event["page"]},
+                "$set": {"updated_at": datetime.utcnow()},
+            }
+            # Always set user_id from the current event. If it's a valid ObjectId, store the ObjectId;
+            # otherwise keep the raw value (e.g., guest UUID). Using only $set avoids conflicts with $setOnInsert.
+            update_doc["$set"].update({
+                "user_id": user_oid if user_oid is not None else event.get("user_id")
+            })
+
             result = sessions_col().find_one_and_update(
                 {"session_id": session_id},
-                {
-                    "$setOnInsert": {
-                        "session_id": session_id,
-                        "user_id": user_oid if user_oid is not None else event.get("user_id"),
-                        "created_at": timestamp
-                    },
-                    "$min": {"first_event_at": timestamp},
-                    "$max": {"last_event_at": timestamp},
-                    "$inc": {"event_count": 1},
-                    "$addToSet": {"pages": event["page"]},
-                    "$set": {"updated_at": datetime.utcnow()}
-                },
+                update_doc,
                 upsert=True,
                 return_document=ReturnDocument.AFTER
             )

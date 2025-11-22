@@ -92,9 +92,13 @@
           const savedUser = localStorage.getItem('user');
           console.log('✅ Verification - User in localStorage:', savedUser);
           
+          // Reset analytics session on login to avoid appending to previous session
           try {
-            if (j.session_id) {
-              sessionStorage.setItem('ecomv2_session_id', j.session_id);
+            const SID_KEY = 'ecomv2_session_id';
+            const existingSid = sessionStorage.getItem(SID_KEY);
+            // Preserve current SID for continuity; only set backend SID if none exists
+            if (!existingSid && j.session_id) {
+              sessionStorage.setItem(SID_KEY, j.session_id);
             }
           } catch (e) {}
           

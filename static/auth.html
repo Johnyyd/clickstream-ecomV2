@@ -269,7 +269,7 @@
 
         if (res.ok) {
           const json = await res.json();
-          localStorage.setItem('token', json.access_token);
+          localStorage.setItem('token', json.token);
           localStorage.setItem('user', JSON.stringify(json.user));
           window.location.href = '/home';
         } else {

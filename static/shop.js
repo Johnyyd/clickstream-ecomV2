@@ -615,19 +615,73 @@ const Shop = (() => {
   }
 
   function initSearchPage() {
-    const form = document.getElementById('searchForm');
     const results = document.getElementById('searchResults');
-    const info = document.getElementById('searchInfo');
-    renderSortControls('searchSort', state.search.sort, (val) => { state.search.sort = val; state.search.offset = 0; doSearch(); });
-    renderFilterControls('searchFilterBar', state.search, (filters) => { state.search = { ...state.search, ...filters }; state.search.offset = 0; doSearch(); });
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      state.search.q = document.getElementById('q').value.trim();
+    const resultsInfo = document.getElementById('resultsInfo');
+    const searchQuery = document.getElementById('searchQuery');
+    const searchResultCount = document.getElementById('searchResultCount');
+
+    // Read query from URL params
+    const urlParams = new URLSearchParams(window.location.search);
+    const query = urlParams.get('q') || '';
+
+    // Update page title with query
+    if (searchQuery && query) {
+      searchQuery.innerHTML = `Search Results for "<span class="search-highlight">${query}</span>"`;
+    }
+
+    // Initialize state
+    state.search = {
+      q: query,
+      limit: 12,
+      offset: 0,
+      sort: 'relevance',
+      min_price: null,
+      max_price: null,
+      category: null
+    };
+
+    // Render controls
+    renderSortControls('searchSort', state.search.sort, (val) => {
+      state.search.sort = val;
       state.search.offset = 0;
-      await doSearch(true);
+      doSearch(true);
     });
 
+    // Load categories for filters
+    loadCategories();
+
+    // Filter handlers
+    document.getElementById('applyPrice')?.addEventListener('click', () => {
+      const min = document.getElementById('minPrice')?.value;
+      const max = document.getElementById('maxPrice')?.value;
+      state.search.min_price = min ? parseFloat(min) : null;
+      state.search.max_price = max ? parseFloat(max) : null;
+      state.search.offset = 0;
+      doSearch(true);
+    });
+
+    document.getElementById('clearFilters')?.addEventListener('click', () => {
+      state.search.min_price = null;
+      state.search.max_price = null;
+      state.search.category = null;
+      document.getElementById('minPrice').value = '';
+      document.getElementById('maxPrice').value = '';
+      state.search.offset = 0;
+      doSearch(true);
+    });
+
+    // Load more button
+    document.getElementById('searchLoadMore')?.addEventListener('click', () => {
+      state.search.offset += state.search.limit;
+      doSearch(false);
+    });
+
+    // Initial search
+    doSearch(true);
+
     async function doSearch(reset = false) {
+      if (!results) return;
+
       const params = {
         q: state.search.q || '',
         limit: state.search.limit,
@@ -636,21 +690,36 @@ const Shop = (() => {
       };
       if (state.search.min_price) params.min_price = state.search.min_price;
       if (state.search.max_price) params.max_price = state.search.max_price;
-      if (state.search.tags) params.tags = state.search.tags;
-      const { items, total, limit, offset } = await api.search(params);
-      if (reset) results.innerHTML = '';
-      results.insertAdjacentHTML('beforeend', items.map(productCard).join(''));
-      bindAddButtons(results, items);
-      const moreBtn = document.getElementById('searchLoadMore');
-      if (moreBtn) {
-        const hasMore = offset + items.length < total;
-        moreBtn.style.display = hasMore ? 'inline-block' : 'none';
-        moreBtn.onclick = async () => { state.search.offset += limit; await doSearch(); };
-      }
-      if (info) info.textContent = `${offset + items.length}/${total}`;
-      track('/search', 'search', { search_term: params.q });
-    }
+      if (state.search.category) params.category = state.search.category;
 
+      try {
+        const { items, total, limit, offset } = await api.search(params);
+
+        if (reset) results.innerHTML = '';
+        results.insertAdjacentHTML('beforeend', items.map(productCard).join(''));
+        bindAddButtons(results, items);
+
+        // Update info
+        if (resultsInfo) {
+          resultsInfo.textContent = `Showing ${offset + 1}-${offset + items.length} of ${total} products`;
+        }
+        if (searchResultCount) {
+          searchResultCount.textContent = `${total} results found`;
+        }
+
+        // Load more button visibility
+        const moreBtn = document.getElementById('searchLoadMore');
+        if (moreBtn) {
+          const hasMore = offset + items.length < total;
+          moreBtn.style.display = hasMore ? 'inline-block' : 'none';
+        }
+
+        track('/search', 'search', { search_term: params.q, results: total });
+      } catch (err) {
+        console.error('Search error:', err);
+        if (resultsInfo) resultsInfo.textContent = 'Error loading results';
+      }
+    }
   }
 
   async function loadProductFromQuery() {

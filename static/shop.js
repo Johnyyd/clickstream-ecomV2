@@ -889,13 +889,20 @@ const Shop = (() => {
     }
     const subtotal = items.reduce((s, x) => s + x.price * x.quantity, 0);
     const tax = subtotal * 0.10;
-    const shipping = subtotal > 0 ? 5.00 : 0.00;
+    const shipping = 0; // Free shipping
     const total = subtotal + tax + shipping;
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = fmtPrice(v); };
-    set('cartSubtotal', subtotal);
-    set('cartTax', tax);
-    set('cartShipping', shipping);
-    set('cartTotal', total);
+    set('itemCount', items.length);
+    set('subtotal', subtotal);
+    set('tax', tax);
+    set('total', total);
+
+    // Enable checkout button
+    const checkoutBtn = document.getElementById('checkoutBtn');
+    if (checkoutBtn) {
+      checkoutBtn.onclick = () => window.location.href = '/checkout';
+    }
+
     track('/cart', 'pageview', { items: items.length, subtotal, tax, shipping, total_amount: total });
   }
 

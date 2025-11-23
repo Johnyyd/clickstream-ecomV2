@@ -240,7 +240,8 @@
 
         if (res.ok) {
           const json = await res.json();
-          localStorage.setItem('token', json.access_token);
+          localStorage.setItem('token', json.token);
+          localStorage.setItem('user', JSON.stringify(json.user));
           window.location.href = '/home';
         } else {
           alert('Login failed. Please check your credentials.');
@@ -269,6 +270,7 @@
         if (res.ok) {
           const json = await res.json();
           localStorage.setItem('token', json.access_token);
+          localStorage.setItem('user', JSON.stringify(json.user));
           window.location.href = '/home';
         } else {
           alert('Registration failed. Email may already be in use.');

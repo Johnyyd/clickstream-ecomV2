@@ -4,111 +4,195 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>EcomV2 – Cart</title>
-  <link rel="stylesheet" href="/static/styles.css">
+  <meta name="description" content="Your shopping cart - Review items and checkout securely.">
+
+  <title>Shopping Cart | EcomV2</title>
+
+  <link rel="stylesheet" href="/static/styles-pro.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@700;800&display=swap"
+    rel="stylesheet">
+
+  <script>
+    (function () {
+      try {
+        var token = localStorage.getItem('token');
+        if (!token) window.location.replace('/auth');
+      } catch (e) { }
+    })();
+  </script>
 </head>
 
 <body>
-  <header class="site-header">
-    <a class="logo" href="/home">EcomV2</a>
-    <nav>
-      <a href="/home">Home</a>
-      <a href="/category?category=computer">Computers</a>
-      <a href="/category?category=phone">Phones</a>
-      <a href="/category?category=accessories">Accessories</a>
-    </nav>
-    <div class="header-actions">
-      <a href="/search" class="icon-btn" aria-label="Search">
-        <i class="fa-solid fa-magnifying-glass"></i>
-      </a>
-      <a href="/cart" class="icon-btn" aria-label="Cart">
-        <i class="fa-solid fa-cart-shopping"></i>
-        <span id="cartCount" style="font-size: 12px; margin-left: 4px; font-weight: 700;"></span>
-      </a>
-      <a href="#" id="userMenuBtn" class="icon-btn" aria-label="User">
-        <i class="fa-regular fa-user"></i>
-      </a>
+  <!-- Header -->
+  <header class="site-header-pro">
+    <div class="header-top-pro">
+      <div class="container-pro">
+        <div class="header-top-links">
+          <span style="color: var(--text-tertiary);">
+            <i class="fa-solid fa-location-dot"></i> Deliver to: <strong style="color: var(--text-primary);">Your
+              Location</strong>
+          </span>
+        </div>
+        <div class="header-top-links">
+          <a href="#"><i class="fa-solid fa-headset"></i> Customer Service</a>
+          <a href="#"><i class="fa-solid fa-truck-fast"></i> Track Order</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="header-main-pro">
+      <div class="container-pro">
+        <a href="/home" class="logo-pro">EcomV2</a>
+
+        <div class="search-bar-pro">
+          <input type="search" class="search-input-pro" placeholder="Search for products..." aria-label="Search">
+          <button class="search-btn-pro" aria-label="Search"><i class="fa-solid fa-magnifying-glass"></i></button>
+        </div>
+
+        <div class="header-actions-pro">
+          <a href="#" id="userMenuBtn" class="icon-btn-pro" aria-label="Account">
+            <i class="fa-regular fa-user"></i>
+          </a>
+          <a href="/cart" class="icon-btn-pro active" aria-label="Cart">
+            <i class="fa-solid fa-cart-shopping"></i>
+            <span id="cartCount" class="badge-pro"></span>
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <div class="header-main-pro"
+      style="padding: var(--space-3) 0; background: var(--bg-secondary); border-top: 1px solid var(--border-color);">
+      <div class="container-pro">
+        <nav class="nav-pro">
+          <a href="/home" class="nav-link-pro"><i class="fa-solid fa-house"></i> Home</a>
+          <a href="/category?category=computer" class="nav-link-pro"><i class="fa-solid fa-laptop"></i> Computers</a>
+          <a href="/category?category=phone" class="nav-link-pro"><i class="fa-solid fa-mobile-screen"></i> Phones</a>
+          <a href="/category?category=accessories" class="nav-link-pro"><i class="fa-solid fa-headphones"></i>
+            Accessories</a>
+          <a href="/search" class="nav-link-pro"><i class="fa-solid fa-magnifying-glass"></i> Search</a>
+        </nav>
+      </div>
     </div>
   </header>
 
-  <main class="container">
-    <nav class="breadcrumbs" style="margin-top: 24px;">
-      <a href="/home">Home</a> <span style="margin:0 8px; color:var(--muted)">/</span> <span
-        style="color:var(--text)">Cart</span>
-    </nav>
+  <main>
+    <div class="container-pro" style="padding: var(--space-8) 0 var(--space-16);">
+      <nav aria-label="Breadcrumb">
+        <ol class="breadcrumb-pro">
+          <li><a href="/home"><i class="fa-solid fa-house"></i> Home</a></li>
+          <li>Shopping Cart</li>
+        </ol>
+      </nav>
 
-    <h1 style="margin: 24px 0 32px; font-size: 32px; font-weight: 800;">Your Cart</h1>
+      <h1 class="page-title">Shopping Cart</h1>
 
-    <div style="display: grid; grid-template-columns: 1fr 340px; gap: 32px; align-items: start;">
-      <div class="cart-left">
-        <div id="cartItems" class="cart-items"></div>
-        <div class="toolbar-row" style="margin-top: 24px;">
-          <button id="clearCart" class="btn" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.3);">Clear
-            Cart</button>
-        </div>
-      </div>
+      <div class="cart-layout">
+        <!-- Cart Items -->
+        <div class="cart-items-section">
+          <div id="cartItems"></div>
 
-      <div class="cart-right">
-        <div class="totals" style="position: sticky; top: 100px;">
-          <h3 style="margin-top: 0; margin-bottom: 20px;">Order Summary</h3>
-          <div class="row"><span>Subtotal</span><span id="cartSubtotal">$0.00</span></div>
-          <div class="row"><span>Tax (10%)</span><span id="cartTax">$0.00</span></div>
-          <div class="row"><span>Shipping</span><span id="cartShipping">$0.00</span></div>
-          <div class="row grand" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border);">
-            <span>Total</span><span id="cartTotal">$0.00</span>
-          </div>
-          <a href="/checkout" class="btn-primary"
-            style="display: block; text-align: center; margin-top: 24px; padding: 14px;">Proceed to Checkout</a>
-          <div class="text-muted" style="font-size: 12px; margin-top: 16px; text-align: center;">
-            Secure Checkout • Free Shipping over $100
+          <div class="cart-actions-bottom">
+            <a href="/home" class="btn-pro btn-pro-ghost">
+              <i class="fa-solid fa-arrow-left"></i> Continue Shopping
+            </a>
+            <button id="clearCart" class="btn-link" style="color: var(--error);">
+              <i class="fa-solid fa-trash"></i> Clear Cart
+            </button>
           </div>
         </div>
+
+        <!-- Cart Summary -->
+        <aside class="cart-summary">
+          <div class="summary-card">
+            <h2>Order Summary</h2>
+
+            <div class="summary-rows">
+              <div class="summary-row">
+                <span>Subtotal (<span id="itemCount">0</span> items)</span>
+                <span id="subtotal">$0.00</span>
+              </div>
+              <div class="summary-row">
+                <span>Shipping</span>
+                <span class="text-success">FREE</span>
+              </div>
+              <div class="summary-row">
+                <span>Tax (estimated)</span>
+                <span id="tax">$0.00</span>
+              </div>
+            </div>
+
+            <div class="summary-total">
+              <span>Total</span>
+              <span id="total">$0.00</span>
+            </div>
+
+            <button id="checkoutBtn" class="btn-pro btn-pro-primary btn-pro-lg" style="width: 100%;">
+              <i class="fa-solid fa-lock"></i> Proceed to Checkout
+            </button>
+
+            <div class="promo-code">
+              <input type="text" placeholder="Enter promo code" class="promo-input">
+              <button class="btn-pro btn-pro-sm btn-pro-secondary">Apply</button>
+            </div>
+          </div>
+
+          <!-- Trust Signals -->
+          <div class="cart-trust">
+            <div class="trust-item-small">
+              <i class="fa-solid fa-shield-halved"></i>
+              <span>Secure Checkout</span>
+            </div>
+            <div class="trust-item-small">
+              <i class="fa-solid fa-truck-fast"></i>
+              <span>Free Shipping Over $50</span>
+            </div>
+            <div class="trust-item-small">
+              <i class="fa-solid fa-rotate-left"></i>
+              <span>30-Day Returns</span>
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
   </main>
 
-  <footer class="site-footer">
-    <div class="container">
-      <div class="footer-grid">
-        <div class="footer-brand">
-          <h3>EcomV2</h3>
-          <p>Your one-stop destination for premium electronics and gadgets. Quality guaranteed.</p>
-        </div>
-        <div class="footer-col">
-          <h4>Shop</h4>
-          <div class="footer-links">
-            <a href="/home">All Products</a>
-            <a href="/category?category=computer">Computers</a>
-            <a href="/category?category=phone">Phones</a>
-            <a href="/search">Search</a>
+  <!-- Footer -->
+  <footer class="site-footer-pro">
+    <div class="footer-main">
+      <div class="container-pro">
+        <div class="footer-grid">
+          <div class="footer-brand">
+            <h3>EcomV2</h3>
+            <p>Your one-stop destination for premium electronics.</p>
+            <div class="social-links">
+              <a href="#" class="social-link"><i class="fa-brands fa-facebook-f"></i></a>
+              <a href="#" class="social-link"><i class="fa-brands fa-twitter"></i></a>
+              <a href="#" class="social-link"><i class="fa-brands fa-instagram"></i></a>
+            </div>
           </div>
-        </div>
-        <div class="footer-col">
-          <h4>Support</h4>
-          <div class="footer-links">
-            <a href="#">Help Center</a>
-            <a href="#">Order Status</a>
-            <a href="#">Returns</a>
-            <a href="#">Contact Us</a>
+          <div class="footer-col">
+            <h4>Shop</h4>
+            <div class="footer-links">
+              <a href="/home">All Products</a>
+              <a href="/category?category=computer">Computers</a>
+            </div>
           </div>
-        </div>
-        <div class="footer-col">
-          <h4>Legal</h4>
-          <div class="footer-links">
-            <a href="#">Privacy Policy</a>
-            <a href="#">Terms of Service</a>
-            <a href="#">Cookie Policy</a>
+          <div class="footer-col">
+            <h4>Support</h4>
+            <div class="footer-links">
+              <a href="#">Help Center</a>
+              <a href="#">Returns</a>
+            </div>
           </div>
         </div>
       </div>
-      <div class="footer-bottom">
+    </div>
+    <div class="footer-bottom">
+      <div class="container-pro">
         <div>© 2023 EcomV2. All rights reserved.</div>
-        <div style="display:flex; gap:16px;">
-          <a href="#" style="color:var(--muted)"><i class="fa-brands fa-twitter"></i></a>
-          <a href="#" style="color:var(--muted)"><i class="fa-brands fa-instagram"></i></a>
-          <a href="#" style="color:var(--muted)"><i class="fa-brands fa-github"></i></a>
-        </div>
       </div>
     </div>
   </footer>
@@ -118,7 +202,303 @@
   <script>
     Shop.initNav();
     Shop.renderCartPage();
+
+    const searchInput = document.querySelector('.search-input-pro');
+    searchInput?.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        const query = searchInput.value.trim();
+        if (query) window.location.href = `/search?q=${encodeURIComponent(query)}`;
+      }
+    });
   </script>
+
+  <style>
+    .page-title {
+      font-family: var(--font-display);
+      font-size: var(--font-size-4xl);
+      font-weight: var(--font-weight-bold);
+      color: var(--text-primary);
+      margin: var(--space-8) 0 var(--space-6);
+    }
+
+    .cart-layout {
+      display: grid;
+      grid-template-columns: 1fr 400px;
+      gap: var(--space-8);
+      margin-top: var(--space-6);
+    }
+
+    @media (max-width: 1024px) {
+      .cart-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .cart-summary {
+        order: -1;
+      }
+    }
+
+    /* Cart Items */
+    .cart-items-section {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-4);
+    }
+
+    .cart-item {
+      background: var(--surface-glass);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius-lg);
+      padding: var(--space-6);
+      display: grid;
+      grid-template-columns: 120px 1fr auto;
+      gap: var(--space-6);
+      align-items: center;
+      transition: all var(--transition-base);
+    }
+
+    .cart-item:hover {
+      border-color: var(--border-color-hover);
+      box-shadow: var(--shadow-md);
+    }
+
+    .cart-item-image {
+      width: 120px;
+      height: 120px;
+      background: var(--bg-tertiary);
+      border-radius: var(--border-radius-md);
+      overflow: hidden;
+    }
+
+    .cart-item-image img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .cart-item-info {
+      flex: 1;
+    }
+
+    .cart-item-name {
+      font-size: var(--font-size-lg);
+      font-weight: var(--font-weight-semibold);
+      color: var(--text-primary);
+      margin-bottom: var(--space-2);
+      line-height: var(--line-height-tight);
+    }
+
+    .cart-item-name a {
+      color: var(--text-primary);
+      text-decoration: none;
+      transition: color var(--transition-fast);
+    }
+
+    .cart-item-name a:hover {
+      color: var(--primary-400);
+    }
+
+    .cart-item-price {
+      font-size: var(--font-size-xl);
+      font-weight: var(--font-weight-bold);
+      color: var(--primary-400);
+      margin-bottom: var(--space-3);
+    }
+
+    .cart-item-controls {
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+    }
+
+    .quantity-control {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius-md);
+      padding: var(--space-1);
+    }
+
+    .quantity-btn {
+      width: 32px;
+      height: 32px;
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-size: var(--font-size-lg);
+      cursor: pointer;
+      border-radius: var(--border-radius-sm);
+      transition: all var(--transition-fast);
+    }
+
+    .quantity-btn:hover {
+      background: var(--surface-glass);
+      color: var(--text-primary);
+    }
+
+    .quantity-display {
+      min-width: 40px;
+      text-align: center;
+      font-weight: var(--font-weight-semibold);
+      color: var(--text-primary);
+    }
+
+    .remove-btn {
+      color: var(--error);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: var(--space-2);
+      font-size: var(--font-size-base);
+      transition: all var(--transition-fast);
+    }
+
+    .remove-btn:hover {
+      transform: scale(1.1);
+    }
+
+    .cart-actions-bottom {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: var(--space-6);
+      border-top: 1px solid var(--border-color);
+      margin-top: var(--space-6);
+    }
+
+    /* Cart Summary */
+    .cart-summary {
+      height: fit-content;
+      position: sticky;
+      top: calc(var(--header-height) + var(--space-4));
+    }
+
+    .summary-card {
+      background: var(--surface-glass);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius-lg);
+      padding: var(--space-6);
+      margin-bottom: var(--space-4);
+    }
+
+    .summary-card h2 {
+      font-size: var(--font-size-xl);
+      font-weight: var(--font-weight-bold);
+      color: var(--text-primary);
+      margin-bottom: var(--space-4);
+      padding-bottom: var(--space-4);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .summary-rows {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-3);
+      margin-bottom: var(--space-4);
+      padding-bottom: var(--space-4);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-secondary);
+    }
+
+    .summary-total {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--font-size-2xl);
+      font-weight: var(--font-weight-bold);
+      color: var(--text-primary);
+      margin-bottom: var(--space-6);
+    }
+
+    .promo-code {
+      display: flex;
+      gap: var(--space-2);
+      margin-top: var(--space-4);
+    }
+
+    .promo-input {
+      flex: 1;
+      padding: var(--space-2) var(--space-3);
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius-md);
+      color: var(--text-primary);
+      font-size: var(--font-size-sm);
+    }
+
+    .promo-input:focus {
+      outline: none;
+      border-color: var(--primary-500);
+    }
+
+    .cart-trust {
+      background: var(--surface-glass);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius-lg);
+      padding: var(--space-4);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-3);
+    }
+
+    .trust-item-small {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      color: var(--text-secondary);
+      font-size: var(--font-size-sm);
+    }
+
+    .trust-item-small i {
+      color: var(--primary-400);
+      font-size: var(--font-size-lg);
+    }
+
+    .empty-cart {
+      text-align: center;
+      padding: var(--space-16) var(--space-8);
+    }
+
+    .empty-cart i {
+      font-size: 80px;
+      color: var(--text-muted);
+      margin-bottom: var(--space-6);
+    }
+
+    .empty-cart h2 {
+      font-size: var(--font-size-3xl);
+      font-weight: var(--font-weight-bold);
+      color: var(--text-primary);
+      margin-bottom: var(--space-3);
+    }
+
+    .empty-cart p {
+      color: var(--text-secondary);
+      margin-bottom: var(--space-8);
+    }
+
+    @media (max-width: 768px) {
+      .cart-item {
+        grid-template-columns: 80px 1fr;
+        gap: var(--space-4);
+      }
+
+      .cart-item-image {
+        width: 80px;
+        height: 80px;
+      }
+
+      .cart-item-actions {
+        grid-column: 1 / -1;
+      }
+    }
+  </style>
 </body>
 
 </html>

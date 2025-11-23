@@ -235,26 +235,63 @@ const Shop = (() => {
 
   function productCard(p) {
     const img = p.image_url || '/static/images/placeholder.svg';
+    const productId = p._id || p.product_id;
+    const productSlug = p.slug || productId;
+
+    // Generate random rating for demo (in real app, use actual ratings)
+    const rating = 4 + Math.random() * 0.5;
+    const reviews = Math.floor(Math.random() * 500) + 10;
+
     return `
-  <div class="card">
-    <a href="/p/${encodeURIComponent(p.slug || (p._id || p.product_id))}?id=${encodeURIComponent(p._id || p.product_id)}" class="card-image-wrapper">
-      <img src="${img}" alt="${p.name}" onerror="this.onerror=null;this.src='/static/images/placeholder.svg'" />
-    </a>
-    <div class="card-body">
-      <div class="card-category">${p.category}</div>
-      <div class="card-title" title="${p.name}">${p.name}</div>
-      <div class="card-price">${fmtPrice(p.price)}</div>
-      <div class="card-actions">
-        <button class="btn-add-cart" data-add="${encodeURIComponent(p._id || p.product_id)}">
-          Add to Cart
+  <div class="product-card-pro">
+    <div class="product-image-wrapper">
+      <a href="/p/${encodeURIComponent(productSlug)}?id=${encodeURIComponent(productId)}">
+        <img src="${img}" alt="${p.name}" loading="lazy" onerror="this.onerror=null;this.src='/static/images/placeholder.svg'" />
+      </a>
+      <button class="wishlist-btn" data-wishlist="${productId}" aria-label="Add to wishlist">
+        <i class="fa-regular fa-heart"></i>
+      </button>
+    </div>
+    <div class="product-info-pro">
+      <div class="product-category">${p.category || 'General'}</div>
+      <a href="/p/${encodeURIComponent(productSlug)}?id=${encodeURIComponent(productId)}" style="text-decoration: none;">
+        <h3 class="product-name">${p.name}</h3>
+      </a>
+      <div class="product-rating">
+        <div class="stars">
+          ${generateStars(rating)}
+        </div>
+        <span class="rating-count">(${reviews})</span>
+      </div>
+      <div class="product-price">
+        <span class="price-current">${fmtPrice(p.price)}</span>
+      </div>
+      <div class="product-actions">
+        <button class="btn-pro btn-pro-primary" data-add="${encodeURIComponent(productId)}">
+          <i class="fa-solid fa-cart-plus"></i> Add to Cart
         </button>
-        <a class="btn-view" href="/p/${encodeURIComponent(p.slug || (p._id || p.product_id))}?id=${encodeURIComponent(p._id || p.product_id)}">
-          View
-        </a>
       </div>
     </div>
   </div>
 `;
+  }
+
+  function generateStars(rating) {
+    const fullStars = Math.floor(rating);
+    const hasHalfStar = rating % 1 >= 0.5;
+    const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
+
+    let starsHtml = '';
+    for (let i = 0; i < fullStars; i++) {
+      starsHtml += '<i class="fa-solid fa-star"></i>';
+    }
+    if (hasHalfStar) {
+      starsHtml += '<i class="fa-solid fa-star-half-stroke"></i>';
+    }
+    for (let i = 0; i < emptyStars; i++) {
+      starsHtml += '<i class="fa-regular fa-star"></i>';
+    }
+    return starsHtml;
   }
 
   function bindAddButtons(container, items) {
@@ -403,9 +440,11 @@ const Shop = (() => {
       grid.innerHTML = items.map(cat => {
         const icon = getCategoryIcon(cat.name);
         return `
-        <a href="/category?category=${encodeURIComponent(cat.name)}" class="category-card">
-          <i class="fa-solid ${icon} category-icon"></i>
-          <span class="category-name">${cat.name}</span>
+        <a href="/category?category=${encodeURIComponent(cat.name)}" class="category-card-pro">
+          <div class="category-icon-pro">
+            <i class="fa-solid ${icon}"></i>
+          </div>
+          <span class="category-name-pro">${cat.name}</span>
         </a>`;
       }).join('');
     } catch (e) {
@@ -642,42 +681,135 @@ const Shop = (() => {
       if (!id) return;
       p = await api.product(id);
     }
+
     const el = document.getElementById('productDetail');
     const img = p.image_url || '/static/images/placeholder.svg';
+
+    // Generate rating for display
+    const rating = 4 + Math.random() * 0.5;
+    const reviewCount = Math.floor(Math.random() * 500) + 50;
+
     el.innerHTML = `
-  <nav class="breadcrumbs"><a href="/home">Home</a> <span>/</span> <a href="/category?category=${encodeURIComponent(p.category || '')}">${p.category || 'All'}</a> <span>/</span> <span>${p.name}</span></nav>
-  <div class="product">
-    <img src="${img}" alt="${p.name}" onerror="this.onerror=null;this.src='/static/images/placeholder.svg'" />
-    <div class="product-info">
-      <h1>${p.name}</h1>
-      <div class="price">${fmtPrice(p.price)}</div>
-      <div class="meta">Category: ${p.category}</div>
-      <div class="tags">${(p.tags || []).map(t => `<span class="tag">${t}</span>`).join(' ')}</div>
-      <div class="actions">
-        <button id="addToCart" class="btn-primary">Add to Cart</button>
+  <nav aria-label="Breadcrumb">
+    <ol class="breadcrumb-pro">
+      <li><a href="/home"><i class="fa-solid fa-house"></i> Home</a></li>
+      <li><a href="/category?category=${encodeURIComponent(p.category || '')}">$ {p.category || 'All'}</a></li>
+      <li>${p.name}</li>
+    </ol>
+  </nav>
+  
+  <div class="product-detail-layout">
+    <!-- Product Gallery -->
+    <div class="product-gallery">
+      <div class="main-image">
+        <img src="${img}" alt="${p.name}" onerror="this.onerror=null;this.src='/static/images/placeholder.svg'" />
+      </div>
+    </div>
+    
+    <!-- Product Info -->
+    <div class="product-info-section">
+      <div class="product-detail-header">
+        <h1>${p.name}</h1>
+        <div class="product-meta">
+          <div class="product-rating-large">
+            <div class="stars-large">
+              ${generateStars(rating)}
+            </div>
+            <span class="rating-text">${rating.toFixed(1)} (${reviewCount} reviews)</span>
+          </div>
+          <span class="stock-badge">
+            <i class="fa-solid fa-check"></i> In Stock
+          </span>
+        </div>
+      </div>
+      
+      <div class="product-price-section">
+        <div class="price-display">
+          <span class="price-current-large">${fmtPrice(p.price)}</span>
+        </div>
+        
+        <div class="delivery-info">
+          <div class="delivery-icon">
+            <i class="fa-solid fa-truck-fast"></i>
+          </div>
+          <div class="delivery-text">
+            <strong>Free Delivery</strong>
+            <span>Delivery by Tomorrow if you order in 2 hours</span>
+          </div>
+        </div>
+        
+        <div class="product-actions-large">
+          <button id="addToCart" class="btn-pro btn-pro-primary btn-pro-lg">
+            <i class="fa-solid fa-cart-plus"></i> Add to Cart
+          </button>
+          <button class="btn-pro btn-pro-secondary btn-pro-lg" id="wishlistBtn">
+            <i class="fa-regular fa-heart"></i>
+          </button>
+        </div>
+        
+        <div class="trust-badges">
+          <div class="trust-badge-item">
+            <i class="fa-solid fa-shield-halved"></i>
+            <span>Secure Payment</span>
+          </div>
+          <div class="trust-badge-item">
+            <i class="fa-solid fa-rotate-left"></i>
+            <span>Easy Returns</span>
+          </div>
+          <div class="trust-badge-item">
+            <i class="fa-solid fa-award"></i>
+            <span>2 Year Warranty</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="product-description">
+        <h2>Product Description</h2>
+        <div class="description-content">
+          <p>Category: <strong>${p.category || 'General'}</strong></p>
+          ${p.description ? `<p>${p.description}</p>` : '<p>Premium quality product with excellent features and performance.</p>'}
+        </div>
+        ${(p.tags && p.tags.length) ? `
+          <div class="product-tags">
+            ${p.tags.map(t => `<span class="product-tag"><i class="fa-solid fa-tag"></i> ${t}</span>`).join('')}
+          </div>
+        ` : ''}
       </div>
     </div>
   </div>
-  <h2>Related products</h2>
-  <div id="relatedGrid" class="grid"></div>
 `;
-    // Track product pageview with product id in the page path
+
+    // Track product pageview
     try {
       const pagePath = `/product/${encodeURIComponent(p._id)}`;
       track(pagePath, 'pageview', { product_id: p._id, product_name: p.name, product_category: p.category, product_price: p.price });
-      // Track for session-based recommendations
       trackProductView(p);
     } catch { }
+
+    // Add to cart button
     document.getElementById('addToCart').addEventListener('click', () => {
       addToCart({ product_id: p._id, name: p.name, price: p.price, image_url: p.image_url, category: p.category, tags: p.tags || [], quantity: 1 });
       track('/cart', 'add_to_cart', { product_id: p._id, product_name: p.name, product_price: p.price });
     });
-    // load related
+
+    // Wishlist button
+    document.getElementById('wishlistBtn')?.addEventListener('click', () => {
+      const icon = document.querySelector('#wishlistBtn i');
+      if (icon.classList.contains('fa-regular')) {
+        icon.classList.remove('fa-regular');
+        icon.classList.add('fa-solid');
+      } else {
+        icon.classList.remove('fa-solid');
+        icon.classList.add('fa-regular');
+      }
+    });
+
+    // Load related products
     try {
       if (p.category) {
-        const { items } = await api.products({ category: p.category, limit: 8 });
+        const { items } = await api.products({ category: p.category, limit: 10 });
         const grid = document.getElementById('relatedGrid');
-        const filtered = items.filter(x => x._id !== p._id);
+        const filtered = items.filter(x => x._id !== p._id).slice(0, 5);
         grid.innerHTML = filtered.map(productCard).join('');
         bindAddButtons(grid, filtered);
       }

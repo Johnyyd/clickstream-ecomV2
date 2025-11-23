@@ -2,110 +2,481 @@
 <html lang="en">
 
 <head>
+  <!-- Meta Tags -->
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>EcomV2 – Category</title>
-  <link rel="stylesheet" href="/static/styles.css">
+  <meta name="description"
+    content="Browse our premium selection of electronics. Find the perfect products with advanced filters and sorting options.">
+
+  <title id="pageTitle">Shop Electronics | EcomV2</title>
+
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="/static/styles-pro.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@700;800&display=swap"
+    rel="stylesheet">
+
+  <!-- Auth Check -->
+  <script>
+    (function () {
+      try {
+        var token = localStorage.getItem('token');
+        if (!token) window.location.replace('/auth');
+      } catch (e) { }
+    })();
+  </script>
 </head>
 
 <body>
-  <header class="site-header">
-    <a class="logo" href="/home">EcomV2</a>
-    <nav>
-      <a href="/home">Home</a>
-      <a href="/category?category=computer">Computers</a>
-      <a href="/category?category=phone">Phones</a>
-      <a href="/category?category=accessories">Accessories</a>
-    </nav>
-    <div class="header-actions">
-      <a href="/search" class="icon-btn" aria-label="Search">
-        <i class="fa-solid fa-magnifying-glass"></i>
-      </a>
-      <a href="/cart" class="icon-btn" aria-label="Cart">
-        <i class="fa-solid fa-cart-shopping"></i>
-        <span id="cartCount" style="font-size: 12px; margin-left: 4px; font-weight: 700;"></span>
-      </a>
-      <a href="#" id="userMenuBtn" class="icon-btn" aria-label="User">
-        <i class="fa-regular fa-user"></i>
-      </a>
+  <!-- Header (Same as home) -->
+  <header class="site-header-pro">
+    <div class="header-top-pro">
+      <div class="container-pro">
+        <div class="header-top-links">
+          <span style="color: var(--text-tertiary);">
+            <i class="fa-solid fa-location-dot"></i> Deliver to: <strong style="color: var(--text-primary);">Your
+              Location</strong>
+          </span>
+        </div>
+        <div class="header-top-links">
+          <a href="#"><i class="fa-solid fa-headset"></i> Customer Service</a>
+          <a href="#"><i class="fa-solid fa-truck-fast"></i> Track Order</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="header-main-pro">
+      <div class="container-pro">
+        <a href="/home" class="logo-pro">EcomV2</a>
+
+        <div class="search-bar-pro">
+          <input type="search" class="search-input-pro" placeholder="Search for products, brands, categories..."
+            aria-label="Search products">
+          <button class="search-btn-pro" aria-label="Search"><i class="fa-solid fa-magnifying-glass"></i></button>
+        </div>
+
+        <div class="header-actions-pro">
+          <a href="#" id="userMenuBtn" class="icon-btn-pro" aria-label="My Account">
+            <i class="fa-regular fa-user"></i>
+          </a>
+          <a href="/cart" class="icon-btn-pro" aria-label="Shopping Cart">
+            <i class="fa-solid fa-cart-shopping"></i>
+            <span id="cartCount" class="badge-pro"></span>
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <div class="header-main-pro"
+      style="padding: var(--space-3) 0; background: var(--bg-secondary); border-top: 1px solid var(--border-color);">
+      <div class="container-pro">
+        <nav class="nav-pro">
+          <a href="/home" class="nav-link-pro"><i class="fa-solid fa-house"></i> Home</a>
+          <a href="/category?category=computer" class="nav-link-pro"><i class="fa-solid fa-laptop"></i> Computers</a>
+          <a href="/category?category=phone" class="nav-link-pro"><i class="fa-solid fa-mobile-screen"></i> Phones</a>
+          <a href="/category?category=accessories" class="nav-link-pro"><i class="fa-solid fa-headphones"></i>
+            Accessories</a>
+          <a href="/search" class="nav-link-pro"><i class="fa-solid fa-magnifying-glass"></i> Search</a>
+        </nav>
+      </div>
     </div>
   </header>
 
-  <main class="container">
-    <nav class="breadcrumbs" style="margin-top: 24px;">
-      <a href="/home">Home</a> <span style="margin:0 8px; color:var(--muted)">/</span> <span
-        style="color:var(--text)">Category</span>
-    </nav>
+  <main>
+    <div class="container-pro" style="padding-top: var(--space-6);">
+      <!-- Breadcrumbs -->
+      <nav aria-label="Breadcrumb">
+        <ol class="breadcrumb-pro" id="breadcrumbs">
+          <li><a href="/home"><i class="fa-solid fa-house"></i> Home</a></li>
+          <li id="categoryBreadcrumb">Category</li>
+        </ol>
+      </nav>
 
-    <div class="section-header" style="margin-top: 16px;">
-      <h1 id="categoryTitle" class="section-title">Category</h1>
-      <div id="categorySort"></div>
-    </div>
-
-    <div id="categoryFilters" class="category-filters" style="display:none;"></div>
-    <div id="categoryFilterBar" class="category-filters" style="margin-bottom: 24px;"></div>
-
-    <div id="categoryGrid" class="grid"></div>
-
-    <div class="toolbar-row" style="justify-content: center; margin-top: 32px;">
-      <button id="categoryLoadMore" class="hero-btn" style="font-size: 16px; padding: 10px 24px;">Load more</button>
-      <span id="categoryInfo" class="text-muted" style="display:none;"></span>
-    </div>
-  </main>
-
-  <footer class="site-footer">
-    <div class="container">
-      <div class="footer-grid">
-        <div class="footer-brand">
-          <h3>EcomV2</h3>
-          <p>Your one-stop destination for premium electronics and gadgets. Quality guaranteed.</p>
-        </div>
-        <div class="footer-col">
-          <h4>Shop</h4>
-          <div class="footer-links">
-            <a href="/home">All Products</a>
-            <a href="/category?category=computer">Computers</a>
-            <a href="/category?category=phone">Phones</a>
-            <a href="/search">Search</a>
+      <!-- Category Layout -->
+      <div class="category-layout">
+        <!-- Filters Sidebar -->
+        <aside class="filters-sidebar">
+          <div class="filters-header">
+            <h3><i class="fa-solid fa-sliders"></i> Filters</h3>
+            <button class="btn-link" id="clearFilters">Clear All</button>
           </div>
-        </div>
-        <div class="footer-col">
-          <h4>Support</h4>
-          <div class="footer-links">
-            <a href="#">Help Center</a>
-            <a href="#">Order Status</a>
-            <a href="#">Returns</a>
-            <a href="#">Contact Us</a>
+
+          <!-- Price Range Filter -->
+          <div class="filter-group">
+            <h4 class="filter-title">Price Range</h4>
+            <div class="filter-content">
+              <div class="price-inputs">
+                <input type="number" id="minPrice" placeholder="$ Min" class="price-input">
+                <span style="color: var(--text-muted);">—</span>
+                <input type="number" id="maxPrice" placeholder="$ Max" class="price-input">
+              </div>
+              <button class="btn-pro btn-pro-sm btn-pro-primary" id="applyPrice"
+                style="width: 100%; margin-top: var(--space-2);">
+                Apply
+              </button>
+            </div>
           </div>
-        </div>
-        <div class="footer-col">
-          <h4>Legal</h4>
-          <div class="footer-links">
-            <a href="#">Privacy Policy</a>
-            <a href="#">Terms of Service</a>
-            <a href="#">Cookie Policy</a>
+
+          <!-- Tags Filter -->
+          <div class="filter-group">
+            <h4 class="filter-title">Features</h4>
+            <div class="filter-content">
+              <div class="tag-cloud" id="tagFilters">
+                <!-- Tags loaded dynamically -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Stock Filter -->
+          <div class="filter-group">
+            <h4 class="filter-title">Availability</h4>
+            <div class="filter-content">
+              <label class="filter-checkbox">
+                <input type="checkbox" id="inStockOnly">
+                <span>In Stock Only</span>
+              </label>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Main Content -->
+        <div class="category-content">
+          <!-- Toolbar -->
+          <div class="category-toolbar">
+            <div class="toolbar-left">
+              <h1 class="category-title" id="categoryTitle">All Products</h1>
+              <p class="results-count" id="resultsCount">Showing products</p>
+            </div>
+
+            <div class="toolbar-right">
+              <!-- View Toggle -->
+              <div class="view-toggle">
+                <button class="view-btn active" data-view="grid" aria-label="Grid view">
+                  <i class="fa-solid fa-grid-2"></i>
+                </button>
+                <button class="view-btn" data-view="list" aria-label="List view">
+                  <i class="fa-solid fa-list"></i>
+                </button>
+              </div>
+
+              <!-- Sort Control -->
+              <div id="categorySort"></div>
+            </div>
+          </div>
+
+          <!-- Products Grid -->
+          <div class="grid-pro grid-pro-3" id="productGrid"></div>
+
+          <!-- Load More -->
+          <div class="text-center mt-8">
+            <button id="categoryLoadMore" class="btn-pro btn-pro-secondary btn-pro-lg">
+              <i class="fa-solid fa-arrow-down"></i> Load More Products
+            </button>
           </div>
         </div>
       </div>
-      <div class="footer-bottom">
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer-pro">
+    <div class="footer-main">
+      <div class="container-pro">
+        <div class="footer-grid">
+          <div class="footer-brand">
+            <h3>EcomV2</h3>
+            <p>Your one-stop destination for premium electronics and gadgets.</p>
+            <div class="social-links">
+              <a href="#" class="social-link" aria-label="Facebook"><i class="fa-brands fa-facebook-f"></i></a>
+              <a href="#" class="social-link" aria-label="Twitter"><i class="fa-brands fa-twitter"></i></a>
+              <a href="#" class="social-link" aria-label="Instagram"><i class="fa-brands fa-instagram"></i></a>
+              <a href="#" class="social-link" aria-label="YouTube"><i class="fa-brands fa-youtube"></i></a>
+            </div>
+          </div>
+          <div class="footer-col">
+            <h4>Shop</h4>
+            <div class="footer-links">
+              <a href="/home">All Products</a>
+              <a href="/category?category=computer">Computers</a>
+              <a href="/category?category=phone">Phones</a>
+              <a href="/category?category=accessories">Accessories</a>
+            </div>
+          </div>
+          <div class="footer-col">
+            <h4>Support</h4>
+            <div class="footer-links">
+              <a href="#">Help Center</a>
+              <a href="#">Track Order</a>
+              <a href="#">Returns</a>
+              <a href="#">Contact Us</a>
+            </div>
+          </div>
+          <div class="footer-col">
+            <h4>Company</h4>
+            <div class="footer-links">
+              <a href="#">About Us</a>
+              <a href="#">Careers</a>
+              <a href="#">Blog</a>
+            </div>
+          </div>
+          <div class="footer-col">
+            <h4>Legal</h4>
+            <div class="footer-links">
+              <a href="#">Privacy Policy</a>
+              <a href="#">Terms of Service</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <div class="container-pro">
         <div>© 2023 EcomV2. All rights reserved.</div>
-        <div style="display:flex; gap:16px;">
-          <a href="#" style="color:var(--muted)"><i class="fa-brands fa-twitter"></i></a>
-          <a href="#" style="color:var(--muted)"><i class="fa-brands fa-instagram"></i></a>
-          <a href="#" style="color:var(--muted)"><i class="fa-brands fa-github"></i></a>
+        <div style="display:flex; gap: var(--space-4); align-items: center;">
+          <span style="color: var(--text-tertiary); font-size: var(--font-size-xs);">Secure Payment:</span>
+          <i class="fa-brands fa-cc-visa" style="font-size: var(--font-size-xl);"></i>
+          <i class="fa-brands fa-cc-mastercard" style="font-size: var(--font-size-xl);"></i>
+          <i class="fa-brands fa-cc-paypal" style="font-size: var(--font-size-xl);"></i>
         </div>
       </div>
     </div>
   </footer>
 
+  <!-- Scripts -->
   <script src="/static/analytics.js"></script>
   <script src="/static/shop.js"></script>
   <script>
     Shop.initNav();
-    // Shop.renderCategories();
     Shop.loadCategoryFromQuery();
+
+    // Search functionality
+    const searchInput = document.querySelector('.search-input-pro');
+    searchInput?.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        const query = searchInput.value.trim();
+        if (query) window.location.href = `/search?q=${encodeURIComponent(query)}`;
+      }
+    });
+
+    document.querySelector('.search-btn-pro')?.addEventListener('click', () => {
+      const query = searchInput.value.trim();
+      if (query) window.location.href = `/search?q=${encodeURIComponent(query)}`;
+    });
   </script>
+
+  <style>
+    /* Category Layout */
+    .category-layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: var(--space-8);
+      margin-top: var(--space-6);
+      margin-bottom: var(--space-16);
+    }
+
+    @media (max-width: 1024px) {
+      .category-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .filters-sidebar {
+        display: none;
+        /* Mobile: filters in drawer */
+      }
+    }
+
+    /* Filters Sidebar */
+    .filters-sidebar {
+      background: var(--surface-glass);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius-lg);
+      padding: var(--space-6);
+      height: fit-content;
+      position: sticky;
+      top: calc(var(--header-height) + var(--space-4));
+    }
+
+    .filters-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: var(--space-4);
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: var(--space-4);
+    }
+
+    .filters-header h3 {
+      font-size: var(--font-size-lg);
+      font-weight: var(--font-weight-semibold);
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+
+    .btn-link {
+      color: var(--primary-400);
+      font-size: var(--font-size-sm);
+      background: none;
+      border: none;
+      cursor: pointer;
+      transition: color var(--transition-fast);
+    }
+
+    .btn-link:hover {
+      color: var(--primary-300);
+      text-decoration: underline;
+    }
+
+    .filter-group {
+      padding: var(--space-4) 0;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .filter-group:last-child {
+      border-bottom: none;
+    }
+
+    .filter-title {
+      font-size: var(--font-size-base);
+      font-weight: var(--font-weight-semibold);
+      color: var(--text-primary);
+      margin-bottom: var(--space-3);
+    }
+
+    .filter-content {
+      color: var(--text-secondary);
+    }
+
+    .price-inputs {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+
+    .price-input {
+      flex: 1;
+      padding: var(--space-2) var(--space-3);
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius-md);
+      color: var(--text-primary);
+      font-size: var(--font-size-sm);
+    }
+
+    .price-input:focus {
+      outline: none;
+      border-color: var(--primary-500);
+    }
+
+    .tag-cloud {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+    }
+
+    .tag-filter {
+      padding: var(--space-1) var(--space-3);
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius-full);
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+
+    .tag-filter:hover,
+    .tag-filter.active {
+      background: var(--primary-600);
+      border-color: var(--primary-600);
+      color: white;
+    }
+
+    .filter-checkbox {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      cursor: pointer;
+      padding: var(--space-2) 0;
+    }
+
+    .filter-checkbox input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+
+    /* Category Toolbar */
+    .category-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      padding-bottom: var(--space-6);
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: var(--space-6);
+    }
+
+    @media (max-width: 768px) {
+      .category-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: var(--space-4);
+      }
+    }
+
+    .category-title {
+      font-family: var(--font-display);
+      font-size: var(--font-size-3xl);
+      font-weight: var(--font-weight-bold);
+      color: var(--text-primary);
+      margin-bottom: var(--space-2);
+    }
+
+    .results-count {
+      font-size: var(--font-size-sm);
+      color: var(--text-muted);
+    }
+
+    .toolbar-right {
+      display: flex;
+      gap: var(--space-4);
+      align-items: center;
+    }
+
+    /* View Toggle */
+    .view-toggle {
+      display: flex;
+      background: var(--surface-glass);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius-md);
+      overflow: hidden;
+    }
+
+    .view-btn {
+      padding: var(--space-2) var(--space-4);
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+
+    .view-btn:hover {
+      background: var(--surface-glass-hover);
+      color: var(--text-primary);
+    }
+
+    .view-btn.active {
+      background: var(--primary-600);
+      color: white;
+    }
+
+    .view-btn+.view-btn {
+      border-left: 1px solid var(--border-color);
+    }
+  </style>
 </body>
 
 </html>

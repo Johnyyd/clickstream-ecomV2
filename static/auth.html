@@ -1,250 +1,594 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Auth - EcomV2</title>
-  <link rel="stylesheet" href="/static/styles.css" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Sign in to your EcomV2 account or create a new one.">
+
+  <title>Sign In | EcomV2</title>
+
+  <link rel="stylesheet" href="/static/styles-pro.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@700;800&display=swap"
+    rel="stylesheet">
+</head>
+
+<body class="auth-page">
+  <div class="auth-container">
+    <!-- Left Side - Branding -->
+    <div class="auth-branding">
+      <div class="auth-branding-content">
+        <a href="/home" class="logo-pro"
+          style="font-size: var(--font-size-5xl); margin-bottom: var(--space-8);">EcomV2</a>
+        <h2>Welcome to the Future of Shopping</h2>
+        <p>Discover premium electronics and gadgets with fast, secure delivery.</p>
+
+        <div class="auth-features">
+          <div class="auth-feature">
+            <i class="fa-solid fa-shield-halved"></i>
+            <span>Secure & Encrypted</span>
+          </div>
+          <div class="auth-feature">
+            <i class="fa-solid fa-truck-fast"></i>
+            <span>Free Shipping</span>
+          </div>
+          <div class="auth-feature">
+            <i class="fa-solid fa-headset"></i>
+            <span>24/7 Support</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Side - Auth Forms -->
+    <div class="auth-forms">
+      <div class="auth-forms-inner">
+        <!-- Tab Switcher -->
+        <div class="auth-tabs">
+          <button class="auth-tab active" data-tab="login">Sign In</button>
+          <button class="auth-tab" data-tab="register">Create Account</button>
+        </div>
+
+        <!-- Login Form -->
+        <div id="loginForm" class="auth-form-container active">
+          <h3>Welcome Back</h3>
+          <p class="auth-subtitle">Sign in to continue shopping</p>
+
+          <form id="loginFormElement">
+            <div class="form-group">
+              <label for="loginEmail">
+                <i class="fa-solid fa-envelope"></i> Email Address
+              </label>
+              <input type="email" id="loginEmail" name="username" class="form-input" placeholder="Enter your email"
+                required>
+            </div>
+
+            <div class="form-group">
+              <label for="loginPassword">
+                <i class="fa-solid fa-lock"></i> Password
+              </label>
+              <div class="password-input">
+                <input type="password" id="loginPassword" name="password" class="form-input"
+                  placeholder="Enter your password" required>
+                <button type="button" class="password-toggle" aria-label="Toggle password visibility">
+                  <i class="fa-solid fa-eye"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <label class="checkbox-label">
+                <input type="checkbox" name="remember">
+                <span>Remember me</span>
+              </label>
+              <a href="#" class="link-primary">Forgot password?</a>
+            </div>
+
+            <button type="submit" class="btn-pro btn-pro-primary btn-pro-lg" style="width: 100%;">
+              <i class="fa-solid fa-right-to-bracket"></i> Sign In
+            </button>
+          </form>
+
+          <div class="divider">
+            <span>or continue with</span>
+          </div>
+
+          <div class="social-auth">
+            <button class="social-btn">
+              <i class="fa-brands fa-google"></i> Google
+            </button>
+            <button class="social-btn">
+              <i class="fa-brands fa-facebook-f"></i> Facebook
+            </button>
+          </div>
+        </div>
+
+        <!-- Register Form -->
+        <div id="registerForm" class="auth-form-container">
+          <h3>Create Account</h3>
+          <p class="auth-subtitle">Join thousands of happy shoppers</p>
+
+          <form id="registerFormElement">
+            <div class="form-group">
+              <label for="registerEmail">
+                <i class="fa-solid fa-envelope"></i> Email Address
+              </label>
+              <input type="email" id="registerEmail" name="username" class="form-input" placeholder="Enter your email"
+                required>
+            </div>
+
+            <div class="form-group">
+              <label for="registerPassword">
+                <i class="fa-solid fa-lock"></i> Password
+              </label>
+              <div class="password-input">
+                <input type="password" id="registerPassword" name="password" class="form-input"
+                  placeholder="Create a password" required>
+                <button type="button" class="password-toggle" aria-label="Toggle password visibility">
+                  <i class="fa-solid fa-eye"></i>
+                </button>
+              </div>
+              <div class="password-strength">
+                <div class="strength-bar"></div>
+                <span class="strength-text">Password strength</span>
+              </div>
+            </div>
+
+            <label class="checkbox-label" style="margin-bottom: var(--space-6);">
+              <input type="checkbox" required>
+              <span>I agree to the <a href="#" class="link-primary">Terms & Conditions</a></span>
+            </label>
+
+            <button type="submit" class="btn-pro btn-pro-primary btn-pro-lg" style="width: 100%;">
+              <i class="fa-solid fa-user-plus"></i> Create Account
+            </button>
+          </form>
+
+          <div class="divider">
+            <span>or sign up with</span>
+          </div>
+
+          <div class="social-auth">
+            <button class="social-btn">
+              <i class="fa-brands fa-google"></i> Google
+            </button>
+            <button class="social-btn">
+              <i class="fa-brands fa-facebook-f"></i> Facebook
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Tab switching
+    document.querySelectorAll('.auth-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const targetTab = tab.dataset.tab;
+
+        document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.auth-form-container').forEach(f => f.classList.remove('active'));
+
+        tab.classList.add('active');
+        document.getElementById(`${targetTab}Form`).classList.add('active');
+      });
+    });
+
+    // Password toggle
+    document.querySelectorAll('.password-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const input = btn.parentElement.querySelector('input');
+        const icon = btn.querySelector('i');
+
+        if (input.type === 'password') {
+          input.type = 'text';
+          icon.classList.remove('fa-eye');
+          icon.classList.add('fa-eye-slash');
+        } else {
+          input.type = 'password';
+          icon.classList.remove('fa-eye-slash');
+          icon.classList.add('fa-eye');
+        }
+      });
+    });
+
+    // Password strength indicator
+    const registerPassword = document.getElementById('registerPassword');
+    registerPassword?.addEventListener('input', (e) => {
+      const password = e.target.value;
+      const strengthBar = document.querySelector('.strength-bar');
+      const strengthText = document.querySelector('.strength-text');
+
+      let strength = 0;
+      if (password.length >= 8) strength++;
+      if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength++;
+      if (/\d/.test(password)) strength++;
+      if (/[^a-zA-Z0-9]/.test(password)) strength++;
+
+      strengthBar.style.width = `${strength * 25}%`;
+
+      const colors = ['#ef4444', '#f59e0b', '#eab308', '#10b981'];
+      const labels = ['Weak', 'Fair', 'Good', 'Strong'];
+
+      if (strength > 0) {
+        strengthBar.style.background = colors[strength - 1];
+        strengthText.textContent = labels[strength - 1];
+      } else {
+        strengthBar.style.width = '0%';
+        strengthText.textContent = 'Password strength';
+      }
+    });
+
+    // Form submission (existing auth logic)
+    document.getElementById('loginFormElement')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+      const data = Object.fromEntries(formData);
+
+      try {
+        const res = await fetch('/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        if (res.ok) {
+          const json = await res.json();
+          localStorage.setItem('token', json.access_token);
+          window.location.href = '/home';
+        } else {
+          alert('Login failed. Please check your credentials.');
+        }
+      } catch (err) {
+        alert('An error occurred. Please try again.');
+      }
+    });
+
+    document.getElementById('registerFormElement')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+      const data = Object.fromEntries(formData);
+
+      try {
+        const res = await fetch('/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        if (res.ok) {
+          const json = await res.json();
+          localStorage.setItem('token', json.access_token);
+          window.location.href = '/home';
+        } else {
+          alert('Registration failed. Email may already be in use.');
+        }
+      } catch (err) {
+        alert('An error occurred. Please try again.');
+      }
+    });
+  </script>
+
   <style>
-    body {
-      background: linear-gradient(rgba(11, 15, 20, 0.8), rgba(11, 15, 20, 0.8)), url('https://images.unsplash.com/photo-1550745165-9bc0b252726f?ixlib=rb-1.2.1&auto=format&fit=crop&w=1950&q=80');
-      background-size: cover;
-      background-position: center;
+    .auth-page {
+      background: var(--bg-primary);
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
-      margin: 0;
+      padding: var(--space-6);
     }
 
-    .auth-card {
-      background: rgba(15, 23, 34, 0.95);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 40px;
+    .auth-container {
       width: 100%;
-      max-width: 400px;
-      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      max-width: 1200px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      background: var(--surface-glass);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius-xl);
+      overflow: hidden;
+      box-shadow: var(--shadow-2xl);
     }
 
-    .auth-logo {
-      text-align: center;
-      font-size: 32px;
-      font-weight: 800;
-      margin-bottom: 8px;
-      background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+    @media (max-width: 1024px) {
+      .auth-container {
+        grid-template-columns: 1fr;
+      }
+
+      .auth-branding {
+        display: none;
+      }
+    }
+
+    .auth-branding {
+      background: linear-gradient(135deg, var(--primary-700), var(--secondary-700));
+      padding: var(--space-16);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .auth-branding::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+      animation: pulse 15s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        transform: scale(1);
+        opacity: 0.5;
+      }
+
+      50% {
+        transform: scale(1.1);
+        opacity: 0.3;
+      }
+    }
+
+    .auth-branding-content {
+      position: relative;
+      z-index: 1;
+    }
+
+    .auth-branding h2 {
+      font-family: var(--font-display);
+      font-size: var(--font-size-4xl);
+      font-weight: var(--font-weight-bold);
+      color: white;
+      margin-bottom: var(--space-4);
+      line-height: var(--line-height-tight);
+    }
+
+    .auth-branding p {
+      font-size: var(--font-size-lg);
+      color: rgba(255, 255, 255, 0.9);
+      margin-bottom: var(--space-12);
+    }
+
+    .auth-features {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-4);
+    }
+
+    .auth-feature {
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+      color: white;
+      font-size: var(--font-size-lg);
+    }
+
+    .auth-feature i {
+      width: 48px;
+      height: 48px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: var(--border-radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: var(--font-size-2xl);
+    }
+
+    .auth-forms {
+      padding: var(--space-12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .auth-forms-inner {
+      width: 100%;
+      max-width: 480px;
+    }
+
+    .auth-tabs {
+      display: flex;
+      gap: var(--space-2);
+      margin-bottom: var(--space-8);
+      background: var(--bg-tertiary);
+      border-radius: var(--border-radius-md);
+      padding: var(--space-1);
+    }
+
+    .auth-tab {
+      flex: 1;
+      padding: var(--space-3) var(--space-4);
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-weight: var(--font-weight-medium);
+      border-radius: var(--border-radius-sm);
+      cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+
+    .auth-tab.active {
+      background: var(--primary-600);
+      color: white;
+    }
+
+    .auth-form-container {
+      display: none;
+    }
+
+    .auth-form-container.active {
       display: block;
-      text-decoration: none;
+    }
+
+    .auth-form-container h3 {
+      font-size: var(--font-size-3xl);
+      font-weight: var(--font-weight-bold);
+      color: var(--text-primary);
+      margin-bottom: var(--space-2);
     }
 
     .auth-subtitle {
-      text-align: center;
-      color: var(--muted);
-      margin-bottom: 32px;
+      color: var(--text-secondary);
+      margin-bottom: var(--space-8);
     }
 
     .form-group {
-      margin-bottom: 16px;
+      margin-bottom: var(--space-6);
+    }
+
+    .form-group label {
+      display: block;
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-medium);
+      color: var(--text-secondary);
+      margin-bottom: var(--space-2);
     }
 
     .form-input {
       width: 100%;
-      padding: 12px 16px;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text);
-      font-size: 15px;
-      transition: all 0.2s;
+      padding: var(--space-3) var(--space-4);
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius-md);
+      color: var(--text-primary);
+      font-size: var(--font-size-base);
+      transition: all var(--transition-base);
     }
 
     .form-input:focus {
-      border-color: var(--primary);
-      background: rgba(255, 255, 255, 0.1);
       outline: none;
+      border-color: var(--primary-500);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
     }
 
-    .auth-btn {
-      width: 100%;
-      padding: 12px;
-      background: var(--primary);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
-      margin-top: 8px;
+    .password-input {
+      position: relative;
     }
 
-    .auth-btn:hover {
-      background: var(--primary-hover);
-      transform: translateY(-1px);
-    }
-
-    .auth-switch {
-      text-align: center;
-      margin-top: 24px;
-      padding-top: 24px;
-      border-top: 1px solid var(--border);
-    }
-
-    .switch-btn {
+    .password-toggle {
+      position: absolute;
+      right: var(--space-3);
+      top: 50%;
+      transform: translateY(-50%);
       background: none;
       border: none;
-      color: var(--primary);
-      font-weight: 500;
+      color: var(--text-muted);
       cursor: pointer;
-      font-size: 14px;
+      padding: var(--space-2);
     }
 
-    .switch-btn:hover {
+    .password-strength {
+      margin-top: var(--space-2);
+    }
+
+    .strength-bar {
+      height: 4px;
+      background: var(--border-color);
+      border-radius: 2px;
+      width: 0%;
+      transition: all var(--transition-base);
+      margin-bottom: var(--space-1);
+    }
+
+    .strength-text {
+      font-size: var(--font-size-xs);
+      color: var(--text-muted);
+    }
+
+    .form-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: var(--space-6);
+    }
+
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      color: var(--text-secondary);
+      font-size: var(--font-size-sm);
+      cursor: pointer;
+    }
+
+    .checkbox-label input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+
+    .link-primary {
+      color: var(--primary-400);
+      font-size: var(--font-size-sm);
+      text-decoration: none;
+      transition: color var(--transition-fast);
+    }
+
+    .link-primary:hover {
+      color: var(--primary-300);
       text-decoration: underline;
     }
 
-    .status-msg {
-      margin-top: 16px;
+    .divider {
+      position: relative;
       text-align: center;
-      font-size: 14px;
-      min-height: 20px;
+      margin: var(--space-8) 0;
+    }
+
+    .divider::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 50%;
+      height: 1px;
+      background: var(--border-color);
+    }
+
+    .divider span {
+      position: relative;
+      background: var(--bg-primary);
+      padding: 0 var(--space-4);
+      color: var(--text-muted);
+      font-size: var(--font-size-sm);
+    }
+
+    .social-auth {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-3);
+    }
+
+    .social-btn {
+      padding: var(--space-3) var(--space-4);
+      background: var(--surface-glass);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius-md);
+      color: var(--text-primary);
+      font-weight: var(--font-weight-medium);
+      cursor: pointer;
+      transition: all var(--transition-base);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-2);
+    }
+
+    .social-btn:hover {
+      background: var(--surface-glass-hover);
+      border-color: var(--border-color-hover);
     }
   </style>
-</head>
-
-<body>
-
-  <div class="auth-card">
-    <a href="/home" class="auth-logo">EcomV2</a>
-    <p class="auth-subtitle" id="subtitle">Welcome back! Please login to continue.</p>
-
-    <form id="loginForm" aria-label="Login form">
-      <div class="form-group">
-        <input id="username" class="form-input" name="username" placeholder="Username" autocomplete="username"
-          required />
-      </div>
-      <div class="form-group">
-        <input id="password" class="form-input" name="password" type="password" placeholder="Password"
-          autocomplete="current-password" required />
-      </div>
-      <button id="loginBtn" type="submit" class="auth-btn">Login</button>
-    </form>
-
-    <form id="signupForm" aria-label="Signup form" style="display:none">
-      <div class="form-group">
-        <input id="su_username" class="form-input" name="username" placeholder="Username" required />
-      </div>
-      <div class="form-group">
-        <input id="su_email" class="form-input" name="email" type="email" placeholder="Email" required />
-      </div>
-      <div class="form-group">
-        <input id="su_password" class="form-input" name="password" type="password" placeholder="Password" required />
-      </div>
-      <button id="signupBtn" type="submit" class="auth-btn">Create Account</button>
-    </form>
-
-    <div class="auth-switch">
-      <button id="switchBtn" class="switch-btn" type="button">Don't have an account? Sign up</button>
-    </div>
-
-    <div class="status-msg" id="status" role="status" aria-live="polite"></div>
-  </div>
-
-  <script>
-    const statusEl = document.getElementById('status');
-    const switchBtn = document.getElementById('switchBtn');
-    const loginForm = document.getElementById('loginForm');
-    const signupForm = document.getElementById('signupForm');
-    const subtitleEl = document.getElementById('subtitle');
-
-    function setStatus(msg) { statusEl.textContent = msg || ''; statusEl.style.color = msg.startsWith('❌') ? '#ef4444' : '#10b981'; }
-
-    switchBtn.onclick = () => {
-      const loginVisible = loginForm.style.display !== 'none';
-      if (loginVisible) {
-        loginForm.style.display = 'none';
-        signupForm.style.display = 'block';
-        subtitleEl.textContent = 'Create an account to get started.';
-        switchBtn.textContent = 'Already have an account? Login';
-      } else {
-        loginForm.style.display = 'block';
-        signupForm.style.display = 'none';
-        subtitleEl.textContent = 'Welcome back! Please login to continue.';
-        switchBtn.textContent = "Don't have an account? Sign up";
-      }
-      setStatus('');
-    };
-
-    loginForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      setStatus('Logging in...');
-      const body = { username: document.getElementById('username').value, password: document.getElementById('password').value };
-      try {
-        const resp = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        const j = await resp.json();
-        if (j.token) {
-          setStatus('✅ Logged in successfully');
-          const role = (j.user && j.user.role) || 'user';
-          localStorage.setItem('token', j.token);
-          if (j.user) localStorage.setItem('user', JSON.stringify(j.user));
-
-          try {
-            const SID_KEY = 'ecomv2_session_id';
-            if (!sessionStorage.getItem(SID_KEY) && j.session_id) {
-              sessionStorage.setItem(SID_KEY, j.session_id);
-            }
-          } catch (e) { }
-
-          try {
-            if (role !== 'admin') {
-              const resp2 = await fetch('/api/cart', { headers: { 'Authorization': j.token } });
-              if (resp2.ok) {
-                const data = await resp2.json();
-                const items = Array.isArray(data.items) ? data.items : [];
-                localStorage.setItem('ecomv2_cart', JSON.stringify(items.map(x => ({
-                  product_id: x.product_id,
-                  name: x.name,
-                  price: x.price,
-                  image_url: x.image_url,
-                  quantity: x.quantity || 1,
-                }))));
-              }
-            }
-          } catch (e) { }
-
-          const redirectUrl = role === 'admin' ? '/dashboard-spa' : '/home';
-          setTimeout(() => { window.location.href = redirectUrl; }, 600);
-        } else {
-          setStatus('❌ ' + (j.error || 'Login failed'));
-        }
-      } catch (e) { setStatus('❌ ' + e.message); }
-    });
-
-    signupForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      setStatus('Creating account...');
-      const body = {
-        username: document.getElementById('su_username').value,
-        email: document.getElementById('su_email').value,
-        password: document.getElementById('su_password').value
-      };
-      try {
-        const resp = await fetch('/api/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        const j = await resp.json();
-        if (j.user_id) {
-          setStatus('✅ Account created. Please login.');
-          setTimeout(() => { switchBtn.click(); }, 1000);
-        } else {
-          setStatus('❌ ' + (j.error || 'Signup failed'));
-        }
-      } catch (e) { setStatus('❌ ' + e.message); }
-    });
-  </script>
 </body>
 
 </html>

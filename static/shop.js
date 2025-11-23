@@ -578,8 +578,8 @@ const Shop = (() => {
     const usp = new URLSearchParams(location.search);
     const category = usp.get('category') || '';
     document.getElementById('categoryTitle').textContent = category ? `Category: ${category}` : 'All Products';
-    const grid = document.getElementById('categoryGrid');
-    const info = document.getElementById('categoryInfo');
+    const grid = document.getElementById('productGrid');
+    const info = document.getElementById('resultsCount');
     const sortBar = document.getElementById('categorySort');
     state.category.category = category;
     renderCategories();
@@ -609,7 +609,7 @@ const Shop = (() => {
       moreBtn.style.display = hasMore ? 'inline-block' : 'none';
       moreBtn.onclick = () => { state.category.offset += limit; loadCategoryFromQuery(); };
     }
-    if (info) info.textContent = `${offset + items.length}/${total}`;
+    if (info) info.textContent = `Showing ${offset + 1}-${offset + items.length} of ${total} products`;
     const pagePath = `/category?category=${encodeURIComponent(category)}`;
     track(pagePath, 'pageview', { category });
   }

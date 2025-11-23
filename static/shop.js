@@ -352,6 +352,67 @@ const Shop = (() => {
     };
   }
 
+  // Map categories to appropriate icons
+  function getCategoryIcon(category) {
+    const categoryLower = category.toLowerCase();
+    const iconMap = {
+      'computer': 'fa-laptop',
+      'computers': 'fa-laptop',
+      'laptop': 'fa-laptop',
+      'phone': 'fa-mobile-screen',
+      'phones': 'fa-mobile-screen',
+      'mobile': 'fa-mobile-screen',
+      'accessories': 'fa-headphones',
+      'accessory': 'fa-headphones',
+      'camera': 'fa-camera',
+      'cameras': 'fa-camera',
+      'tablet': 'fa-tablet',
+      'tablets': 'fa-tablet',
+      'watch': 'fa-clock',
+      'watches': 'fa-clock',
+      'smartwatch': 'fa-clock',
+      'audio': 'fa-volume-high',
+      'speaker': 'fa-volume-high',
+      'headphone': 'fa-headphones',
+      'gaming': 'fa-gamepad',
+      'monitor': 'fa-desktop',
+      'keyboard': 'fa-keyboard',
+      'mouse': 'fa-computer-mouse',
+      'storage': 'fa-hard-drive',
+      'network': 'fa-network-wired',
+      'printer': 'fa-print'
+    };
+
+    for (const [key, icon] of Object.entries(iconMap)) {
+      if (categoryLower.includes(key)) {
+        return icon;
+      }
+    }
+    // Default icon
+    return 'fa-box';
+  }
+
+  async function loadCategories() {
+    try {
+      const grid = document.getElementById('categoryGrid');
+      if (!grid) return;
+
+      const { items } = await api.categories();
+      if (!items || items.length === 0) return;
+
+      grid.innerHTML = items.map(cat => {
+        const icon = getCategoryIcon(cat.name);
+        return `
+        <a href="/category?category=${encodeURIComponent(cat.name)}" class="category-card">
+          <i class="fa-solid ${icon} category-icon"></i>
+          <span class="category-name">${cat.name}</span>
+        </a>`;
+      }).join('');
+    } catch (e) {
+      console.error('Error loading categories:', e);
+    }
+  }
+
   async function loadFeaturedProducts() {
     try {
       const grid = document.getElementById('productGrid');
@@ -819,6 +880,7 @@ const Shop = (() => {
 
   return {
     initNav,
+    loadCategories,
     loadFeaturedProducts,
     renderCategories,
     loadCategoryFromQuery,

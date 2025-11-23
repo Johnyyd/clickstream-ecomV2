@@ -52,28 +52,13 @@
       </div>
     </section>
 
-    <!-- Categories -->
+    <!-- Categories - Now Dynamic -->
     <section class="categories-section">
       <div class="section-header">
         <h2 class="section-title">Browse Categories</h2>
       </div>
-      <div class="category-grid">
-        <a href="/category?category=computer" class="category-card">
-          <i class="fa-solid fa-laptop category-icon"></i>
-          <span class="category-name">Computers</span>
-        </a>
-        <a href="/category?category=phone" class="category-card">
-          <i class="fa-solid fa-mobile-screen category-icon"></i>
-          <span class="category-name">Phones</span>
-        </a>
-        <a href="/category?category=accessories" class="category-card">
-          <i class="fa-solid fa-headphones category-icon"></i>
-          <span class="category-name">Accessories</span>
-        </a>
-        <a href="/category?category=camera" class="category-card">
-          <i class="fa-solid fa-camera category-icon"></i>
-          <span class="category-name">Cameras</span>
-        </a>
+      <div class="category-grid" id="categoryGrid">
+        <!-- Categories will be loaded dynamically via JavaScript -->
       </div>
     </section>
 
@@ -85,7 +70,6 @@
       </div>
 
       <div id="categoryFilters" class="category-filters" style="display:none;"></div>
-      <!-- Hidden but kept for logic if needed -->
 
       <div id="productGrid" class="grid"></div>
 
@@ -157,7 +141,7 @@
   <script src="/static/shop.js"></script>
   <script>
     Shop.initNav();
-    // Shop.renderCategories(); // We hardcoded categories for better design control
+    Shop.loadCategories(); // Load categories dynamically
     Shop.loadFeaturedProducts();
     Shop.loadRecommendations();
   </script>

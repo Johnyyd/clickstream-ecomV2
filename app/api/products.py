@@ -49,7 +49,8 @@ def list_categories():
     repo = ProductsRepository()
     try:
         cats = repo.categories()
-        return {"items": cats}
+        # Transform list of strings to list of objects with 'name' property
+        return {"items": [{"name": cat} for cat in cats]}
     except Exception:
         raise HTTPException(status_code=500, detail="Database unavailable")
 

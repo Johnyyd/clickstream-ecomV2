@@ -242,7 +242,11 @@
           const json = await res.json();
           localStorage.setItem('token', json.token);
           localStorage.setItem('user', JSON.stringify(json.user));
-          window.location.href = '/home';
+          if (json.user.role === 'admin') {
+            window.location.href = '/static/spa/index.html';
+          } else {
+            window.location.href = '/home';
+          }
         } else {
           alert('Login failed. Please check your credentials.');
         }

@@ -444,7 +444,7 @@ const Shop = (() => {
           <div class="category-icon-pro">
             <i class="fa-solid ${icon}"></i>
           </div>
-          <span class="category-name-pro">${cat.name}</span>
+          <span class="category-name-pro">${cat.name.charAt(0).toUpperCase() + cat.name.slice(1)}</span>
         </a>`;
       }).join('');
     } catch (e) {

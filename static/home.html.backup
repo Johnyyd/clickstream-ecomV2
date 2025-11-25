@@ -153,81 +153,21 @@
           <div class="trust-item">
             <div class="trust-icon">
               <i class="fa-solid fa-rotate-left"></i>
+              <div class="section-header-pro">
+                <div>
+                  <h2 class="section-title-pro">Recommended for You</h2>
+                  <p class="section-subtitle-pro">Based on your browsing history</p>
+                </div>
+              </div>
+
+              <div class="grid-pro grid-pro-5" id="recoGrid"></div>
+
+              <div class="text-center mt-8">
+                <button id="recoLoadMore" class="btn-pro btn-pro-secondary" style="display: none;">
+                  <i class="fa-solid fa-arrow-down"></i> Load More Recommendations
+                </button>
+              </div>
             </div>
-            <div class="trust-text">
-              <h4>Easy Returns</h4>
-              <p>30-day return policy</p>
-            </div>
-          </div>
-          <div class="trust-item">
-            <div class="trust-icon">
-              <i class="fa-solid fa-headset"></i>
-            </div>
-            <div class="trust-text">
-              <h4>24/7 Support</h4>
-              <p>Dedicated customer service</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Categories -->
-    <section id="categories" class="section-pro category-section-compact">
-      <div class="container-pro">
-        <div class="section-header-pro">
-          <h2 class="section-title-pro">Browse Categories</h2>
-          <p class="section-subtitle-pro">Explore our wide range of premium products</p>
-        </div>
-        <div class="category-slider-container">
-          <div class="category-slider">
-            <div class="category-slider-track" id="categoryGrid">
-              <!-- Categories loaded dynamically via JavaScript -->
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Featured Products -->
-    <section id="featuredSection" class="section-pro">
-      <div class="container-pro">
-        <div class="section-header-pro">
-          <div>
-            <h2 class="section-title-pro">Featured Products</h2>
-            <p class="section-subtitle-pro">Handpicked selections just for you</p>
-          </div>
-          <div id="homeSort"></div>
-        </div>
-
-        <div class="grid-pro grid-pro-4" id="productGrid"></div>
-
-        <div class="text-center mt-8">
-          <button id="homeLoadMore" class="btn-pro btn-pro-secondary btn-pro-lg">
-            <i class="fa-solid fa-arrow-down"></i> Load More Products
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <!-- Recommendations -->
-    <section id="recoWrap" class="section-pro" style="display:none;">
-      <div class="container-pro">
-        <div class="section-header-pro">
-          <div>
-            <h2 class="section-title-pro">Recommended for You</h2>
-            <p class="section-subtitle-pro">Based on your browsing history</p>
-          </div>
-        </div>
-
-        <div class="grid-pro grid-pro-5" id="recoGrid"></div>
-
-        <div class="text-center mt-8">
-          <button id="recoLoadMore" class="btn-pro btn-pro-secondary" style="display: none;">
-            <i class="fa-solid fa-arrow-down"></i> Load More Recommendations
-          </button>
-        </div>
-      </div>
     </section>
   </main>
 
@@ -483,7 +423,7 @@
       background: var(--surface-glass);
       border: 1px solid var(--border-color);
       border-radius: var(--border-radius-lg);
-      padding: var(--space-8);
+      padding: var(--space-4);
       display: flex;
       flex-direction: column;
       align-items: center;

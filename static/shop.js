@@ -270,6 +270,9 @@ const Shop = (() => {
         <button class="btn-pro btn-pro-primary" data-add="${encodeURIComponent(productId)}">
           <i class="fa-solid fa-cart-plus"></i> Add to Cart
         </button>
+        <button class="btn-pro btn-pro-warning" data-buy="${encodeURIComponent(productId)}">
+          <i class="fa-solid fa-bolt"></i> Buy Now
+        </button>
       </div>
     </div>
   </div>
@@ -304,6 +307,21 @@ const Shop = (() => {
         track('/cart', 'add_to_cart', { product_id: p._id || p.product_id, product_name: p.name, product_price: p.price });
       });
     });
+    // Bind Buy Now buttons
+    container.querySelectorAll('[data-buy]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-buy');
+        const p = items.find(x => (x._id || x.product_id) === id);
+        if (!p) return;
+        // Add to cart first
+        addToCart({ product_id: (p._id || p.product_id), name: p.name, price: p.price, image_url: p.image_url, category: p.category, tags: p.tags || [], quantity: 1 });
+        // Track the buy now action
+        track('/checkout', 'buy_now', { product_id: p._id || p.product_id, product_name: p.name, product_price: p.price });
+        // Redirect to checkout page
+        window.location.href = '/checkout';
+      });
+    });
+
     // Track view button clicks for session-based recommendations
     container.querySelectorAll('.btn-view').forEach(link => {
       link.addEventListener('click', () => {

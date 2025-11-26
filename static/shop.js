@@ -308,13 +308,31 @@ const Shop = (() => {
       });
     });
     // Bind Buy Now buttons
+    // Bind Buy Now buttons
     container.querySelectorAll('[data-buy]').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.getAttribute('data-buy');
         const p = items.find(x => (x._id || x.product_id) === id);
         if (!p) return;
-        // Add to cart first
-        addToCart({ product_id: (p._id || p.product_id), name: p.name, price: p.price, image_url: p.image_url, category: p.category, tags: p.tags || [], quantity: 1 });
+
+        // IMPORTANT: Backup current cart before Buy Now
+        const currentCart = getCart();
+        sessionStorage.setItem('cart_backup', JSON.stringify(currentCart));
+        console.log('💾 Backed up cart:', currentCart);
+
+        // Save product info for Buy Now checkout (only this product)
+        const buyNowProduct = {
+          product_id: (p._id || p.product_id),
+          name: p.name,
+          price: p.price,
+          image_url: p.image_url,
+          category: p.category,
+          tags: p.tags || [],
+          quantity: 1
+        };
+
+        // Store in sessionStorage to indicate Buy Now mode
+        sessionStorage.setItem('buy_now_product', JSON.stringify(buyNowProduct));
         // Track the buy now action
         track('/checkout', 'buy_now', { product_id: p._id || p.product_id, product_name: p.name, product_price: p.price });
         // Redirect to checkout page
@@ -996,8 +1014,29 @@ const Shop = (() => {
   function initCheckoutPage() {
     const form = document.getElementById('checkoutForm');
     const status = document.getElementById('checkoutStatus');
-    // Render order summary if elements exist
-    const items = getCart();
+
+    // Check if this is a "Buy Now" checkout (single product)
+    let items;
+    const buyNowProductStr = sessionStorage.getItem('buy_now_product');
+
+    if (buyNowProductStr) {
+      // Buy Now mode: checkout only the selected product
+      try {
+        const buyNowProduct = JSON.parse(buyNowProductStr);
+        items = [buyNowProduct];
+        console.log('💳 CHECKOUT PAGE: Buy Now mode detected', buyNowProduct);
+      } catch (e) {
+        // If parsing fails, fall back to regular cart
+        items = getCart();
+        console.log('⚠️ CHECKOUT PAGE: Failed to parse buy now product, using cart');
+      }
+    } else {
+      // Regular checkout: use full cart
+      items = getCart();
+      console.log('💳 CHECKOUT PAGE: Regular checkout mode');
+    }
+
+    // Render order summary
     const subtotal = items.reduce((s, x) => s + x.price * x.quantity, 0);
     const tax = subtotal * 0.10;
     const shipping = subtotal > 0 ? 5.00 : 0.00;
@@ -1045,16 +1084,58 @@ const Shop = (() => {
           }
         } catch { }
       } catch { }
-      // 3) Clear local cart and (again) ensure server cart is cleared
-      localStorage.removeItem(CART_KEY);
-      updateCartCount();
-      // Best-effort: clear server-side cart if logged in (await to avoid being cancelled by redirect)
-      try {
-        const token = getToken();
-        if (token) {
-          await fetch('/api/cart', { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } });
+      // 3) Handle cart after checkout
+      const buyNowProductStr = sessionStorage.getItem('buy_now_product');
+      const isBuyNowMode = !!buyNowProductStr;
+      console.log('=== CHECKOUT DEBUG ===');
+      console.log('isBuyNowMode:', isBuyNowMode);
+      if (isBuyNowMode) {
+        // Buy Now mode: Restore backed up cart
+        console.log('✅ BUY NOW MODE: Restoring backed up cart');
+        const cartBackup = sessionStorage.getItem('cart_backup');
+        if (cartBackup) {
+          try {
+            const restoredCart = JSON.parse(cartBackup);
+            localStorage.setItem(CART_KEY, cartBackup);
+            console.log('✅ Cart restored:', restoredCart);
+
+            // Sync to server if logged in
+            const token = getToken();
+            if (token) {
+              try {
+                await fetch('/api/cart', {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                  body: JSON.stringify({ items: restoredCart.map(x => ({ product_id: x.product_id, quantity: x.quantity || 1 })) })
+                });
+                console.log('✅ Server cart synced');
+              } catch (e) {
+                console.log('⚠️ Server sync failed:', e);
+              }
+            }
+          } catch (e) {
+            console.error('❌ Failed to restore cart:', e);
+          }
         }
-      } catch { }
+        sessionStorage.removeItem('buy_now_product');
+        sessionStorage.removeItem('cart_backup');
+        updateCartCount();
+      } else {
+        // Regular checkout: clear entire cart
+        console.log('❌ REGULAR CHECKOUT: Clearing cart');
+        localStorage.removeItem(CART_KEY);
+        sessionStorage.removeItem('cart_backup'); // Clear backup if any
+        updateCartCount();
+        // Best-effort: clear server-side cart if logged in
+        try {
+          const token = getToken();
+          if (token) {
+            await fetch('/api/cart', { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } });
+          }
+        } catch { }
+      }
+      console.log('Cart after operation:', getCart());
+      console.log('=== END DEBUG ===');
       status.textContent = 'Order placed successfully!';
       setTimeout(() => { window.location.href = '/static/confirmation.html'; }, 600);
     });

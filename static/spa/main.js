@@ -202,7 +202,12 @@ async function renderLLM() {
     statusEl.textContent = 'Loading…';
     const data = fetchFresh ? await safeGet(url) : await getWithTTL(url, 600000);
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
-    snapUpdate('llm', data);
+    // Always save to cache when fetching fresh data
+    if (fetchFresh) {
+      snapSet('llm', data);
+    } else {
+      snapUpdate('llm', data);
+    }
     renderReport(data);
     try {
       const chartsTop = data?.charts || {};
@@ -604,7 +609,13 @@ async function renderML() {
       fetchFresh ? safeGet(uSeg) : getWithTTL(uSeg, 600000)
     ]);
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
-    snapUpdate('ml', { conversion: conv || {}, purchase: prob || {}, segmentation: seg || {} });
+    // Always save to cache when fetching fresh data
+    const payload = { conversion: conv || {}, purchase: prob || {}, segmentation: seg || {} };
+    if (fetchFresh) {
+      snapSet('ml', payload);
+    } else {
+      snapUpdate('ml', payload);
+    }
     renderConv(conv || {}); renderProb(prob || {}); renderSeg(seg || {});
   }
 
@@ -630,7 +641,16 @@ function filterSig() {
   return `r=${range || ''}|f=${from || ''}|t=${to || ''}|s=${segment || ''}|c=${channel || ''}`;
 }
 function snapKey(tab) { return SNAP_NS + tab + '|' + filterSig(); }
-function snapSet(tab, payload) { try { localStorage.setItem(snapKey(tab), JSON.stringify({ ts: Date.now(), payload })); } catch { } }
+function snapSet(tab, payload) {
+  try {
+    const key = snapKey(tab);
+    const data = { ts: Date.now(), payload };
+    localStorage.setItem(key, JSON.stringify(data));
+    console.debug(`[Cache] snapSet('${tab}') - Saved to ${key}`, { hasData: hasAnyData(payload), payloadKeys: Object.keys(payload || {}) });
+  } catch (e) {
+    console.error(`[Cache] snapSet('${tab}') failed:`, e);
+  }
+}
 function snapGet(tab) { try { const s = localStorage.getItem(snapKey(tab)); return s ? JSON.parse(s).payload : null; } catch { return null; } }
 function snapRaw(tab) { try { const s = localStorage.getItem(snapKey(tab)); return s ? JSON.parse(s) : null; } catch { return null; } }
 function snapAgeMs(tab) { try { const r = snapRaw(tab); return r && typeof r.ts === 'number' ? (Date.now() - r.ts) : Infinity; } catch { return Infinity; } }
@@ -658,12 +678,23 @@ function hasAnyData(obj) {
 function snapMaybe(tab, payload) { if (hasAnyData(payload)) snapSet(tab, payload); }
 // Update snapshot only if payload has data and is different from the existing one
 function snapUpdate(tab, payload) {
-  if (!hasAnyData(payload)) return;
+  if (!hasAnyData(payload)) {
+    console.debug(`[Cache] snapUpdate('${tab}') - Skipped (no data)`);
+    return;
+  }
   try {
     const prev = snapGet(tab);
     const same = prev && JSON.stringify(prev) === JSON.stringify(payload);
-    if (!same) { snapSet(tab, payload); }
-  } catch { snapSet(tab, payload); }
+    if (!same) {
+      snapSet(tab, payload);
+      console.debug(`[Cache] snapUpdate('${tab}') - Updated (data changed)`);
+    } else {
+      console.debug(`[Cache] snapUpdate('${tab}') - Skipped (data unchanged)`);
+    }
+  } catch {
+    snapSet(tab, payload);
+    console.debug(`[Cache] snapUpdate('${tab}') - Saved (error comparing)`);
+  }
 }
 // Legacy helpers: migrate old snapshots (without filter signature) to new scoped keys
 function snapGetLegacyRaw(tab) {
@@ -1293,8 +1324,12 @@ async function loadOverview() {
       }
     } catch { }
 
-    // Save snapshot only if fresh or not yet cached
-    snapUpdate('overview', data);
+    // Always save to cache when fetching fresh data
+    if (fetchFresh) {
+      snapSet('overview', data);
+    } else {
+      snapUpdate('overview', data);
+    }
     updateUI(data);
   }
 
@@ -1348,7 +1383,13 @@ async function renderCart() {
     const trends = await safeGet(urlT);
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
     // Save snapshot for Cart (fresh only or if missing)
-    snapUpdate('cart', { channels: analysis?.channels ?? {}, size_distribution: analysis?.size_distribution ?? [] });
+    // Always save to cache when fetching fresh data
+    const payload = { channels: analysis?.channels ?? {}, size_distribution: analysis?.size_distribution ?? [] };
+    if (fetchFresh) {
+      snapSet('cart', payload);
+    } else {
+      snapUpdate('cart', payload);
+    }
 
     // Abandonment by channel
     const channels = (analysis.channels && Object.keys(analysis.channels)) || [];
@@ -1409,63 +1450,80 @@ async function renderJourney() {
     </div>
   `;
   const statusEl = el('#jn-status');
-  // Restore snapshot
-  (function () {
-    const snap = snapGet('journey'); if (!snap) return;
-    // Funnel
-    let funnelData = []; if (snap.funnel && Array.isArray(snap.funnel.steps)) funnelData = snap.funnel.steps.map(s => ({ name: s.name || s.step || '', value: s.value || s.count || 0 })); else if (snap.funnel && typeof snap.funnel === 'object') funnelData = Object.entries(snap.funnel).map(([name, value]) => ({ name, value }));
-    const funnelEl = el('#chart-funnel'); if (funnelEl && funnelData.length) { const chart = echarts.init(funnelEl); chart.setOption({ tooltip: { trigger: 'item' }, series: [{ type: 'funnel', data: funnelData }] }); }
-    // Sankey
-    let nodes = [], links = []; if (snap.paths?.links) { links = snap.paths.links; nodes = snap.paths.nodes || Array.from(new Set(links.flatMap(l => [l.source, l.target]))); }
-    // If snapshot lacks links, synthesize from funnel steps as a fallback
-    if ((!links || !links.length) && snap.funnel) {
-      try {
-        let steps = [];
-        if (Array.isArray(snap.funnel.steps)) steps = snap.funnel.steps.map(s => ({ name: s.name || s.step || '', value: s.value || s.count || 0 }));
-        else if (typeof snap.funnel === 'object') steps = Object.entries(snap.funnel).map(([name, value]) => ({ name, value }));
-        steps = steps.filter(s => s.name);
-        const syn = []; for (let i = 0; i < steps.length - 1; i++) { const a = steps[i], b = steps[i + 1]; const v = isFinite(b.value) && b.value > 0 ? b.value : Math.max(0, Math.min(a.value || 0, b.value || 0)); syn.push({ source: a.name, target: b.name, value: v }); }
-        if (syn.length) { links = syn; nodes = Array.from(new Set(syn.flatMap(l => [l.source, l.target]))); }
-      } catch { }
+
+  // Restore and render charts from cache immediately (no API call)
+  // This provides instant feedback when switching tabs
+  const cachedData = snapGet('journey');
+  if (cachedData) {
+    statusEl.textContent = 'Restored from cache';
+
+    // Render Funnel from cache
+    let funnelData = [];
+    if (cachedData.funnel && Array.isArray(cachedData.funnel.steps)) {
+      funnelData = cachedData.funnel.steps.map(s => ({ name: s.name || s.step || '', value: s.value || s.count || 0 }));
+    } else if (cachedData.funnel && typeof cachedData.funnel === 'object') {
+      funnelData = Object.entries(cachedData.funnel).map(([name, value]) => ({ name, value }));
     }
-    // Enforce DAG and limit edges for snapshot render
-    if (Array.isArray(links) && links.length) {
-      const stageOf = (label) => {
-        const s = String(label || '').toLowerCase();
-        if (/purchase|order|success|complete/.test(s)) return 3;
-        if (/checkout|payment|pay/.test(s)) return 2;
-        if (/add\s*to\s*cart|cart/.test(s)) return 1;
-        if (/view|landing|home|list|product/.test(s)) return 0;
-        return 4;
-      };
-      const seen = new Set();
-      links = links.filter(l => {
-        if (!l || !l.source || !l.target) return false;
-        const a = String(l.source), b = String(l.target);
-        if (a === b) return false;
-        const sa = stageOf(a), sb = stageOf(b);
-        if (!(sa < sb)) return false;
-        const key = a + "->" + b;
-        if (seen.has(key)) return false;
-        seen.add(key); return true;
-      });
-      if (links.length > 100) { links = links.slice().sort((a, b) => (b.value || 0) - (a.value || 0)).slice(0, 100); }
-      nodes = Array.from(new Set(links.flatMap(l => [l.source, l.target])));
-    }
-    const sankeyEl = el('#chart-sankey'); if (sankeyEl && nodes.length && links.length) {
-      const currHash = JSON.stringify({ nodes, links });
-      const prev = (echarts.getInstanceByDom && echarts.getInstanceByDom(sankeyEl)) || null;
-      if (!prev || window.__jnSankeyHash !== currHash) {
-        if (prev) { prev.dispose(); }
-        const sankey = echarts.init(sankeyEl);
-        sankey.setOption({ animation: false, tooltip: {}, series: [{ type: 'sankey', data: nodes.map(n => ({ name: n })), links }] });
-        window.__jnSankeyHash = currHash;
-        requestAnimationFrame(() => { try { sankey.resize(); } catch { } });
+
+    if (funnelData.length) {
+      const funnelEl = el('#chart-funnel');
+      if (funnelEl) {
+        const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(funnelEl);
+        if (prev) prev.dispose();
+        const funnel = echarts.init(funnelEl);
+
+        const totalUsers = funnelData[0]?.value || 0;
+        const enrichedData = funnelData.map((step, idx) => {
+          const conversionRate = totalUsers > 0 ? (step.value / totalUsers * 100) : 0;
+          const dropOff = idx > 0 ? ((funnelData[idx - 1].value - step.value) / funnelData[idx - 1].value * 100) : 0;
+          return { ...step, conversionRate, dropOff, index: idx };
+        });
+
+        funnel.setOption({
+          title: {
+            text: 'Conversion Funnel',
+            subtext: `Total Users: ${totalUsers.toLocaleString()}`,
+            left: 'center', top: 10,
+            textStyle: { fontSize: 14, fontWeight: 'bold' },
+            subtextStyle: { fontSize: 11, color: '#666' }
+          },
+          tooltip: { trigger: 'item' },
+          series: [{ type: 'funnel', data: funnelData }]
+        });
       }
     }
-    statusEl.textContent = 'Restored from cache';
-    // Do not auto-refresh; user decides when to fetch new data via Load/Refresh
-  })();
+
+    // Render Sankey from cache
+    let nodes = [], links = [];
+    if (cachedData.paths?.links) {
+      links = cachedData.paths.links;
+      nodes = cachedData.paths.nodes || Array.from(new Set(links.flatMap(l => [l.source, l.target])));
+    }
+
+    if (nodes.length && links.length) {
+      const sankeyEl = el('#chart-sankey');
+      if (sankeyEl) {
+        const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(sankeyEl);
+        if (prev) prev.dispose();
+        const sankey = echarts.init(sankeyEl);
+        const totalFlow = links.reduce((sum, link) => sum + (link.value || 0), 0);
+
+        sankey.setOption({
+          animation: false,
+          title: {
+            text: 'User Journey Paths',
+            subtext: `${nodes.length} stages, ${links.length} transitions`,
+            left: 'center', top: 10,
+            textStyle: { fontSize: 14, fontWeight: 'bold' },
+            subtextStyle: { fontSize: 11, color: '#666' }
+          },
+          tooltip: { trigger: 'item' },
+          series: [{ type: 'sankey', data: nodes.map(n => ({ name: n })), links }]
+        });
+      }
+    }
+  }
+
   async function run(fetchFresh = false) {
     const q = buildQuery();
     let url = `/api/v1/analytics/journey?${q}`;
@@ -1493,9 +1551,100 @@ async function renderJourney() {
       const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(funnelEl);
       if (prev) { prev.dispose(); }
       const funnel = echarts.init(funnelEl);
+
+      // Calculate conversion rates and drop-off
+      const totalUsers = funnelData[0]?.value || 0;
+      const enrichedData = funnelData.map((step, idx) => {
+        const conversionRate = totalUsers > 0 ? (step.value / totalUsers * 100) : 0;
+        const dropOff = idx > 0 ? ((funnelData[idx - 1].value - step.value) / funnelData[idx - 1].value * 100) : 0;
+        return {
+          ...step,
+          conversionRate,
+          dropOff,
+          index: idx
+        };
+      });
+
       funnel.setOption({
-        tooltip: { trigger: 'item' },
-        series: [{ type: 'funnel', data: funnelData }]
+        title: {
+          text: 'Conversion Funnel',
+          subtext: `Total Users: ${totalUsers.toLocaleString()}`,
+          left: 'center',
+          top: 10,
+          textStyle: { fontSize: 14, fontWeight: 'bold' },
+          subtextStyle: { fontSize: 11, color: '#666' }
+        },
+        tooltip: {
+          trigger: 'item',
+          formatter: function (params) {
+            const data = enrichedData[params.dataIndex];
+            const nextStep = enrichedData[params.dataIndex + 1];
+            const dropOffToNext = nextStep ? ((data.value - nextStep.value) / data.value * 100) : 0;
+
+            return `<div style="padding:8px">
+              <strong>${params.name}</strong><br/>
+              Users: <strong>${params.value.toLocaleString()}</strong><br/>
+              Conversion Rate: <strong>${data.conversionRate.toFixed(1)}%</strong><br/>
+              ${data.index > 0 ? `Drop-off from previous: <strong style="color:#ef4444">${data.dropOff.toFixed(1)}%</strong><br/>` : ''}
+              ${nextStep ? `Drop-off to next: <strong style="color:#ef4444">${dropOffToNext.toFixed(1)}%</strong><br/>` : ''}
+              <span style="color:#666;font-size:11px">Stage ${data.index + 1} of ${funnelData.length}</span>
+            </div>`;
+          }
+        },
+        legend: {
+          show: false
+        },
+        grid: {
+          left: 60,
+          right: 60,
+          top: 80,
+          bottom: 40
+        },
+        series: [{
+          type: 'funnel',
+          data: funnelData,
+          label: {
+            show: true,
+            position: 'inside',
+            formatter: function (params) {
+              const data = enrichedData[params.dataIndex];
+              return `${params.name}\\n${params.value.toLocaleString()} (${data.conversionRate.toFixed(1)}%)`;
+            },
+            fontSize: 11,
+            color: '#fff'
+          },
+          itemStyle: {
+            borderColor: '#fff',
+            borderWidth: 2,
+            color: function (params) {
+              const colors = [
+                new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                  { offset: 0, color: '#3b82f6' },
+                  { offset: 1, color: '#1d4ed8' }
+                ]),
+                new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                  { offset: 0, color: '#8b5cf6' },
+                  { offset: 1, color: '#6d28d9' }
+                ]),
+                new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                  { offset: 0, color: '#f59e0b' },
+                  { offset: 1, color: '#d97706' }
+                ]),
+                new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                  { offset: 0, color: '#10b981' },
+                  { offset: 1, color: '#059669' }
+                ])
+              ];
+              return colors[params.dataIndex % colors.length];
+            }
+          },
+          emphasis: {
+            label: {
+              fontSize: 12,
+              fontWeight: 'bold'
+            }
+          }
+        }]
       });
       requestAnimationFrame(() => { try { funnel.resize(); } catch { } });
     } else if (funnelEl) { funnelEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
@@ -1544,11 +1693,14 @@ async function renderJourney() {
         }
       } catch { }
     }
-    // Persist latest payload ALWAYS to ensure old cache does not reappear on tab switch
+    // Persist latest payload - always save when fetchFresh=true
     try {
       const payload = { funnel: journey?.funnel ?? null, paths: { nodes, links } };
-      if (fetchFresh) { snapSet('journey', payload); }
-      else { snapUpdate('journey', payload); }
+      if (fetchFresh) {
+        snapSet('journey', payload);
+      } else {
+        snapUpdate('journey', payload);
+      }
     } catch { }
     const sankeyEl = el('#chart-sankey');
     if (sankeyEl && nodes.length && links.length) {
@@ -1558,10 +1710,65 @@ async function renderJourney() {
         if (prev) { prev.dispose(); }
         sankeyEl.innerHTML = '';
         const sankey = echarts.init(sankeyEl);
+
+        // Calculate total flow for percentage calculations
+        const totalFlow = links.reduce((sum, link) => sum + (link.value || 0), 0);
+
         sankey.setOption({
           animation: false,
-          tooltip: {},
-          series: [{ type: 'sankey', data: nodes.map(n => ({ name: n })), links }]
+          title: {
+            text: 'User Journey Paths',
+            subtext: `${nodes.length} stages, ${links.length} transitions`,
+            left: 'center',
+            top: 10,
+            textStyle: { fontSize: 14, fontWeight: 'bold' },
+            subtextStyle: { fontSize: 11, color: '#666' }
+          },
+          tooltip: {
+            trigger: 'item',
+            formatter: function (params) {
+              if (params.dataType === 'edge') {
+                const pct = totalFlow > 0 ? (params.value / totalFlow * 100) : 0;
+                return `<div style="padding:8px">
+                  <strong>${params.data.source}</strong> → <strong>${params.data.target}</strong><br/>
+                  Users: <strong>${params.value.toLocaleString()}</strong><br/>
+                  Flow: <strong>${pct.toFixed(1)}%</strong> of total<br/>
+                  <span style="color:#666;font-size:11px">User transition between stages</span>
+                </div>`;
+              } else {
+                // Node tooltip
+                const nodeLinks = links.filter(l => l.source === params.name || l.target === params.name);
+                const inFlow = nodeLinks.filter(l => l.target === params.name).reduce((sum, l) => sum + (l.value || 0), 0);
+                const outFlow = nodeLinks.filter(l => l.source === params.name).reduce((sum, l) => sum + (l.value || 0), 0);
+                return `<div style="padding:8px">
+                  <strong>${params.name}</strong><br/>
+                  Incoming: <strong>${inFlow.toLocaleString()}</strong> users<br/>
+                  Outgoing: <strong>${outFlow.toLocaleString()}</strong> users<br/>
+                  <span style="color:#666;font-size:11px">Journey stage</span>
+                </div>`;
+              }
+            }
+          },
+          grid: {
+            top: 70,
+            bottom: 20
+          },
+          series: [{
+            type: 'sankey',
+            data: nodes.map(n => ({ name: n })),
+            links: links,
+            emphasis: {
+              focus: 'adjacency'
+            },
+            lineStyle: {
+              color: 'gradient',
+              curveness: 0.5
+            },
+            label: {
+              fontSize: 11,
+              color: '#333'
+            }
+          }]
         });
         window.__jnSankeyHash = currHash;
         requestAnimationFrame(() => { try { sankey.resize(); } catch { } });
@@ -1587,7 +1794,8 @@ async function renderJourney() {
     const handler = () => { console.debug('Journey: Refresh clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('journey'); runDeb(true); };
     jnRefBtn.addEventListener('click', handler, { capture: true });
   }
-  // Do not auto-fetch; show cache only until user clicks Load/Refresh
+  // Don't auto-call run() - charts already rendered from cache above
+  // User can click Load/Refresh to fetch fresh data
   // Expose for console-driven testing
   window.journeyRun = run;
 }
@@ -1759,16 +1967,61 @@ async function renderSEO() {
     </div>
   `;
   const statusEl = el('#seo-status');
-  // Restore snapshot
-  (function () {
-    const snap = snapGet('seo'); if (!snap) return;
-    // Donut
-    const donutEl = el('#chart-donut'); let dist = []; if (snap.sources?.distribution) { dist = Object.entries(snap.sources.distribution).map(([name, value]) => ({ name, value })); }
-    if (donutEl && dist.length) { const donut = echarts.init(donutEl); donut.setOption({ tooltip: { trigger: 'item' }, series: [{ type: 'pie', radius: ['40%', '70%'], data: dist }] }); }
-    // Trend
-    const trafficEl = el('#chart-traffic'); if (trafficEl && Array.isArray(snap.timeseries)) { const categories = snap.timeseries.map(r => r.date || r.time || r.t || ''); const build = k => snap.timeseries.map(r => r[k] ?? r[k?.toUpperCase()] ?? 0); const series = [{ name: 'SEO', type: 'line', data: build('seo') }, { name: 'Direct', type: 'line', data: build('direct') }, { name: 'Social', type: 'line', data: build('social') }]; const traffic = echarts.init(trafficEl); traffic.setOption({ tooltip: { trigger: 'axis' }, legend: { data: series.map(s => s.name) }, xAxis: { type: 'category', data: categories }, yAxis: { type: 'value' }, series }); }
+
+  // Restore and render charts from cache immediately (no API call)
+  const cachedData = snapGet('seo');
+  if (cachedData) {
     statusEl.textContent = 'Restored from cache';
-  })();
+
+    // Render Donut chart
+    const donutEl = el('#chart-donut');
+    let dist = [];
+    if (cachedData.sources?.distribution) {
+      dist = Object.entries(cachedData.sources.distribution).map(([name, value]) => ({ name, value }));
+    }
+    if (donutEl && dist.length) {
+      const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(donutEl);
+      if (prev) prev.dispose();
+      const donut = echarts.init(donutEl);
+      const total = dist.reduce((sum, item) => sum + (item.value || 0), 0);
+      donut.setOption({
+        title: {
+          text: 'Traffic Sources',
+          subtext: `Total: ${total.toLocaleString()} visits`,
+          left: 'center', top: 10,
+          textStyle: { fontSize: 14, fontWeight: 'bold' },
+          subtextStyle: { fontSize: 11, color: '#666' }
+        },
+        tooltip: { trigger: 'item' },
+        legend: { orient: 'vertical', right: 10, top: 'middle' },
+        series: [{ type: 'pie', radius: ['40%', '70%'], data: dist }]
+      });
+    }
+
+    // Render Traffic Trend
+    const trafficEl = el('#chart-traffic');
+    if (trafficEl && Array.isArray(cachedData.timeseries)) {
+      const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(trafficEl);
+      if (prev) prev.dispose();
+      const traffic = echarts.init(trafficEl);
+      const categories = cachedData.timeseries.map(r => r.date || r.time || r.t || '');
+      const build = k => cachedData.timeseries.map(r => r[k] ?? r[k?.toUpperCase()] ?? 0);
+      const series = [
+        { name: 'SEO', type: 'line', data: build('seo') },
+        { name: 'Direct', type: 'line', data: build('direct') },
+        { name: 'Social', type: 'line', data: build('social') }
+      ];
+      traffic.setOption({
+        title: { text: 'Traffic Trend Over Time', left: 'center', top: 10 },
+        tooltip: { trigger: 'axis' },
+        legend: { data: series.map(s => s.name), top: 50 },
+        xAxis: { type: 'category', data: categories },
+        yAxis: { type: 'value' },
+        series
+      });
+    }
+  }
+
   async function run(fetchFresh = false) {
     const q = buildQuery();
     let url = `/api/v1/analytics/seo?${q}`;
@@ -1776,8 +2029,12 @@ async function renderSEO() {
     statusEl.textContent = 'Loading…';
     const seo = await safeGet(url);
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
-    // Save snapshot for SEO (fresh only or if missing)
-    snapUpdate('seo', seo || {});
+    // Always save to cache when fetching fresh data
+    if (fetchFresh) {
+      snapSet('seo', seo || {});
+    } else {
+      snapUpdate('seo', seo || {});
+    }
 
     // Distribution
     const donutEl = el('#chart-donut');
@@ -1787,9 +2044,57 @@ async function renderSEO() {
     }
     if (donutEl && dist.length) {
       const donut = echarts.init(donutEl);
+      const total = dist.reduce((sum, item) => sum + (item.value || 0), 0);
+
       donut.setOption({
-        tooltip: { trigger: 'item' },
-        series: [{ type: 'pie', radius: ['40%', '70%'], data: dist }]
+        title: {
+          text: 'Traffic Sources',
+          subtext: `Total: ${total.toLocaleString()} visits`,
+          left: 'center',
+          top: 10,
+          textStyle: { fontSize: 14, fontWeight: 'bold' },
+          subtextStyle: { fontSize: 11, color: '#666' }
+        },
+        tooltip: {
+          trigger: 'item',
+          formatter: function (params) {
+            const pct = params.percent;
+            return `<div style="padding:8px">
+              <strong>${params.name}</strong><br/>
+              Visits: <strong>${params.value.toLocaleString()}</strong><br/>
+              Percentage: <strong>${pct.toFixed(1)}%</strong><br/>
+              <span style="color:#666;font-size:11px">Traffic source contribution</span>
+            </div>`;
+          }
+        },
+        legend: {
+          orient: 'vertical',
+          right: 10,
+          top: 'middle',
+          textStyle: { fontSize: 11 }
+        },
+        series: [{
+          type: 'pie',
+          radius: ['40%', '70%'],
+          data: dist,
+          label: {
+            formatter: '{b}: {d}%',
+            fontSize: 11
+          },
+          emphasis: {
+            itemStyle: {
+              shadowBlur: 10,
+              shadowOffsetX: 0,
+              shadowColor: 'rgba(0, 0, 0, 0.5)'
+            }
+          },
+          itemStyle: {
+            color: function (params) {
+              const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4'];
+              return colors[params.dataIndex % colors.length];
+            }
+          }
+        }]
       });
     } else if (donutEl) { donutEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
 
@@ -1808,19 +2113,80 @@ async function renderSEO() {
     }
     if (trafficEl && categories.length && series.length) {
       const traffic = echarts.init(trafficEl);
+
+      // Calculate totals for each source
+      const totals = series.map(s => ({
+        name: s.name,
+        total: s.data.reduce((sum, val) => sum + val, 0)
+      }));
+
       traffic.setOption({
-        tooltip: { trigger: 'axis' },
-        legend: { data: series.map(s => s.name) },
-        xAxis: { type: 'category', data: categories },
-        yAxis: { type: 'value' },
-        series
+        title: {
+          text: 'Traffic Trend Over Time',
+          subtext: totals.map(t => `${t.name}: ${t.total.toLocaleString()}`).join(' | '),
+          left: 'center',
+          top: 10,
+          textStyle: { fontSize: 14, fontWeight: 'bold' },
+          subtextStyle: { fontSize: 10, color: '#666' }
+        },
+        tooltip: {
+          trigger: 'axis',
+          formatter: function (params) {
+            let result = `<div style="padding:8px"><strong>${params[0].axisValue}</strong><br/>`;
+            const total = params.reduce((sum, p) => sum + p.value, 0);
+            params.forEach(p => {
+              const pct = total > 0 ? (p.value / total * 100) : 0;
+              result += `${p.marker} ${p.seriesName}: <strong>${p.value.toLocaleString()}</strong> (${pct.toFixed(1)}%)<br/>`;
+            });
+            result += `Total: <strong>${total.toLocaleString()}</strong></div>`;
+            return result;
+          }
+        },
+        legend: {
+          data: series.map(s => s.name),
+          top: 50,
+          textStyle: { fontSize: 11 }
+        },
+        grid: {
+          left: 60,
+          right: 30,
+          bottom: 60,
+          top: 90
+        },
+        xAxis: {
+          type: 'category',
+          data: categories,
+          axisLabel: { rotate: 45, fontSize: 10 },
+          name: 'Date',
+          nameLocation: 'middle',
+          nameGap: 40
+        },
+        yAxis: {
+          type: 'value',
+          name: 'Visits',
+          nameLocation: 'middle',
+          nameGap: 45
+        },
+        series: series.map((s, idx) => ({
+          ...s,
+          smooth: true,
+          symbol: 'circle',
+          symbolSize: 6,
+          lineStyle: { width: 2 },
+          itemStyle: {
+            color: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'][idx % 4]
+          },
+          areaStyle: {
+            opacity: 0.1
+          }
+        }))
       });
     } else if (trafficEl) { trafficEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
   }
   el('#seo-load').addEventListener('click', () => { clearSnapshotForTabCurrentFilter('seo'); run(true); });
   el('#seo-refresh').addEventListener('click', () => { clearSnapshotForTabCurrentFilter('seo'); run(true); });
-  // Auto-fetch on first visit if there is no snapshot yet
-  if (!snapGet('seo')) { await run(false); }
+  // Don't auto-call run() - charts already rendered from cache above
+  // User can click Load/Refresh to fetch fresh data
 }
 
 async function renderRetention() {
@@ -1887,7 +2253,12 @@ async function renderRetention() {
     }
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
     // Save snapshot for Retention (fresh only or if missing)
-    snapUpdate('retention', retention || {});
+    // Always save to cache when fetching fresh data
+    if (fetchFresh) {
+      snapSet('retention', retention || {});
+    } else {
+      snapUpdate('retention', retention || {});
+    }
     const labels = [];
     const retVals = [];
     const churnVals = [];

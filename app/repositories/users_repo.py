@@ -35,6 +35,16 @@ class UsersRepository:
         doc["_id"] = str(doc["_id"])  # normalize
         return doc
     
+    def find_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """Find user by email address"""
+        if not email:
+            return None
+        doc = self.col.find_one({"email": email})
+        if not doc:
+            return None
+        doc["_id"] = str(doc["_id"])  # normalize
+        return doc
+    
     def create(self, user: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new user"""
         result = self.col.insert_one(user)

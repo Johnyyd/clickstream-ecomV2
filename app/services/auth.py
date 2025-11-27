@@ -6,6 +6,7 @@ import os
 import hashlib
 import secrets
 import bcrypt
+import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from jose import jwt
@@ -15,6 +16,9 @@ from bson import ObjectId
 from app.core.config import settings
 from app.repositories.users_repo import UsersRepository
 from app.core.db_sync import auth_sessions_col
+
+# Setup logger
+logger = logging.getLogger(__name__)
 
 # Settings
 SESSION_TTL_SECONDS = int(os.environ.get("SESSION_TTL", 3600*24))  # 24h
@@ -54,20 +58,41 @@ def create_user(username: str, email: str, password: str) -> Dict[str, Any]:
         "role": "user",  # Default role
         "created_at": datetime.utcnow()
     })
+    logger.info(f"Created new user: {username}")
     return user
 
 def login_user(username: str, password: str) -> Optional[Dict[str, Any]]:
-    """Log in a user and create a session"""
+    """Log in a user and create a session. Supports login with username or email."""
     repo = UsersRepository()
-    user = repo.find_by_username(username)
+    
+    # Check if identifier is an email (contains @)
+    if "@" in username:
+        # Try to find user by email
+        logger.info(f"Login attempt with email: {username}")
+        user = repo.find_by_email(username)
+        if not user:
+            logger.warning(f"User not found by email: {username}")
+    else:
+        # Find user by username
+        logger.info(f"Login attempt with username: {username}")
+        user = repo.find_by_username(username)
+        if not user:
+            logger.warning(f"User not found by username: {username}")
     
     if not user:
         return None
     
     # Support multiple password field names: password_hash, hashed_password, password
     hashed_pwd = user.get("password_hash") or user.get("hashed_password") or user.get("password")
-    if not hashed_pwd or not verify_password(password, hashed_pwd):
+    if not hashed_pwd:
+        logger.error(f"No password hash found for user: {username}")
         return None
+    
+    if not verify_password(password, hashed_pwd):
+        logger.warning(f"Invalid password for user: {username}")
+        return None
+    
+    logger.info(f"Login successful for user: {username}")
         
     # Create session
     session_token = secrets.token_urlsafe(32)

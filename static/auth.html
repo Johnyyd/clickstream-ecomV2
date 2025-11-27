@@ -58,11 +58,11 @@
 
           <form id="loginFormElement">
             <div class="form-group">
-              <label for="loginEmail">
-                <i class="fa-solid fa-envelope"></i> Email Address
+              <label for="loginIdentifier">
+                <i class="fa-solid fa-user"></i> Username or Email
               </label>
-              <input type="text" id="loginEmail" name="username" class="form-input" placeholder="Enter your email"
-                required>
+              <input type="text" id="loginIdentifier" name="identifier" class="form-input"
+                placeholder="Enter your username or email" required>
             </div>
 
             <div class="form-group">
@@ -112,10 +112,18 @@
 
           <form id="registerFormElement">
             <div class="form-group">
+              <label for="registerUsername">
+                <i class="fa-solid fa-user"></i> Username
+              </label>
+              <input type="text" id="registerUsername" name="username" class="form-input"
+                placeholder="Choose a username" required minlength="3">
+            </div>
+
+            <div class="form-group">
               <label for="registerEmail">
                 <i class="fa-solid fa-envelope"></i> Email Address
               </label>
-              <input type="email" id="registerEmail" name="username" class="form-input" placeholder="Enter your email"
+              <input type="email" id="registerEmail" name="email" class="form-input" placeholder="Enter your email"
                 required>
             </div>
 
@@ -125,7 +133,7 @@
               </label>
               <div class="password-input">
                 <input type="password" id="registerPassword" name="password" class="form-input"
-                  placeholder="Create a password" required>
+                  placeholder="Create a password" required minlength="6">
                 <button type="button" class="password-toggle" aria-label="Toggle password visibility">
                   <i class="fa-solid fa-eye"></i>
                 </button>
@@ -222,18 +230,19 @@
       }
     });
 
-    // Form submission (existing auth logic)
+    // Login Form submission
     document.getElementById('loginFormElement')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const formData = new FormData(e.target);
       const data = Object.fromEntries(formData);
 
       try {
+        // Send identifier (can be username or email) to backend
         const res = await fetch('/api/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            username: data.username,
+            username: data.identifier,  // Backend will handle both username and email
             password: data.password
           })
         });
@@ -242,23 +251,34 @@
           const json = await res.json();
           localStorage.setItem('token', json.token);
           localStorage.setItem('user', JSON.stringify(json.user));
+
+          // Redirect based on role
           if (json.user.role === 'admin') {
             window.location.href = '/static/spa/index.html';
           } else {
             window.location.href = '/home';
           }
         } else {
-          alert('Login failed. Please check your credentials.');
+          const errorData = await res.json().catch(() => ({}));
+          alert(errorData.detail || 'Login failed. Please check your credentials.');
         }
       } catch (err) {
+        console.error('Login error:', err);
         alert('An error occurred. Please try again.');
       }
     });
 
+    // Register Form submission
     document.getElementById('registerFormElement')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const formData = new FormData(e.target);
       const data = Object.fromEntries(formData);
+
+      // Validate password strength
+      if (data.password.length < 6) {
+        alert('Password must be at least 6 characters long.');
+        return;
+      }
 
       try {
         const res = await fetch('/api/signup', {
@@ -266,7 +286,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             username: data.username,
-            email: data.username,
+            email: data.email,
             password: data.password
           })
         });
@@ -275,11 +295,14 @@
           const json = await res.json();
           localStorage.setItem('token', json.token);
           localStorage.setItem('user', JSON.stringify(json.user));
+          alert('Registration successful! Welcome to EcomV2.');
           window.location.href = '/home';
         } else {
-          alert('Registration failed. Email may already be in use.');
+          const errorData = await res.json().catch(() => ({}));
+          alert(errorData.detail || 'Registration failed. Username or email may already be in use.');
         }
       } catch (err) {
+        console.error('Registration error:', err);
         alert('An error occurred. Please try again.');
       }
     });

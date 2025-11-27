@@ -11,41 +11,41 @@ const state = {
 
 const el = (sel) => document.querySelector(sel);
 const httpCache = new Map();
-function cacheKey(url){ return url; }
+function cacheKey(url) { return url; }
 // Remove snapshot only for a specific tab under the current filter signature
-function clearSnapshotForTabCurrentFilter(tab){
-  try{ localStorage.removeItem(snapKey(tab)); }catch{}
-  if(tab === 'journey'){
-    try{ delete window.__jnSankeyHash; }catch{}
+function clearSnapshotForTabCurrentFilter(tab) {
+  try { localStorage.removeItem(snapKey(tab)); } catch { }
+  if (tab === 'journey') {
+    try { delete window.__jnSankeyHash; } catch { }
   }
 }
 // Remove all snapshots for a given tab across any filter signature
-function clearSnapshotsForTab(tab){
-  try{
+function clearSnapshotsForTab(tab) {
+  try {
     const prefix = SNAP_NS + tab + '|';
-    for(let i=localStorage.length-1;i>=0;i--){
+    for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i);
-      if(k && k.startsWith(prefix)){
-        try{ localStorage.removeItem(k); }catch{}
+      if (k && k.startsWith(prefix)) {
+        try { localStorage.removeItem(k); } catch { }
       }
     }
-  }catch{}
+  } catch { }
 }
 // Remove all snapshots that match the current filter signature
-function clearSnapshotsForCurrentFilters(){
-  try{
+function clearSnapshotsForCurrentFilters() {
+  try {
     const suffix = '|' + filterSig();
-    for(let i=localStorage.length-1;i>=0;i--){
+    for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i);
-      if(!k) continue;
-      if(k.startsWith(SNAP_NS) && k.endsWith(suffix)){
-        try{ localStorage.removeItem(k); }catch{}
+      if (!k) continue;
+      if (k.startsWith(SNAP_NS) && k.endsWith(suffix)) {
+        try { localStorage.removeItem(k); } catch { }
       }
     }
-  }catch{}
+  } catch { }
 }
 
-async function renderLLM(){
+async function renderLLM() {
   view.innerHTML = `
     <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:8px">
       <button id="llm-load" class="tab">Load</button>
@@ -77,7 +77,7 @@ async function renderLLM(){
   `;
   const statusEl = el('#llm-status');
 
-  function renderReport(payload){
+  function renderReport(payload) {
     const rep = payload?.report?.parsed || payload?.report || {};
     const summary = rep.executive_summary || rep.summary || rep.insights || '';
     el('#llm-summary').innerHTML = summary ? `<div style="white-space:pre-wrap">${summary}</div>` : '<div class="muted">No summary.</div>';
@@ -85,21 +85,21 @@ async function renderLLM(){
     const recEl = el('#llm-recs');
     const insEl = el('#llm-insights');
     let insightsHtml = '';
-    try{
-      if(rep.insights && typeof rep.insights==='object'){
+    try {
+      if (rep.insights && typeof rep.insights === 'object') {
         const groups = [
-          { key: 'business',      label: 'Business' },
-          { key: 'journey',       label: 'Journey / Funnel' },
-          { key: 'seo',           label: 'SEO & Traffic' },
-          { key: 'retention',     label: 'Retention & Churn' },
-          { key: 'cart',          label: 'Cart & Abandonment' },
+          { key: 'business', label: 'Business' },
+          { key: 'journey', label: 'Journey / Funnel' },
+          { key: 'seo', label: 'SEO & Traffic' },
+          { key: 'retention', label: 'Retention & Churn' },
+          { key: 'cart', label: 'Cart & Abandonment' },
           { key: 'ml_prediction', label: 'ML Prediction' },
         ];
-        for(const {key,label} of groups){
+        for (const { key, label } of groups) {
           const v = rep.insights[key];
-          if(!v) continue;
+          if (!v) continue;
           const bullets = Array.isArray(v) ? v : (Array.isArray(v?.bullets) ? v.bullets : []);
-          if(!bullets.length) continue;
+          if (!bullets.length) continue;
           const items = bullets.map(b => {
             if (b == null) return '';
             if (typeof b === 'string' || typeof b === 'number') return String(b);
@@ -107,77 +107,79 @@ async function renderLLM(){
             if (typeof b === 'object' && b.text) return String(b.text);
             try { return JSON.stringify(b); } catch { return String(b); }
           }).filter(Boolean);
-          if(!items.length) continue;
-          insightsHtml += `<li><b>${label}</b><ul>` + items.map(t=>`<li>${t}</li>`).join('') + '</ul></li>';
+          if (!items.length) continue;
+          insightsHtml += `<li><b>${label}</b><ul>` + items.map(t => `<li>${t}</li>`).join('') + '</ul></li>';
         }
       }
-    }catch{}
+    } catch { }
 
     // Fallback: flat list from key_insights/highlights if no structured insights
-    if(!insightsHtml){
+    if (!insightsHtml) {
       let ins = Array.isArray(rep.key_insights) ? rep.key_insights : (Array.isArray(rep.highlights) ? rep.highlights : []);
-      insightsHtml = ins.length ? ins.map(i=>`<li>${i}</li>`).join('') : '<li class="muted">—</li>';
+      insightsHtml = ins.length ? ins.map(i => `<li>${i}</li>`).join('') : '<li class="muted">—</li>';
     }
-    if(insEl){ insEl.innerHTML = insightsHtml || '<li class="muted">—</li>'; }
+    if (insEl) { insEl.innerHTML = insightsHtml || '<li class="muted">—</li>'; }
     // Recommendations: combine recommendations + next_best_actions + risk_alerts
     const recs = [];
-    try{
-      if(Array.isArray(rep.recommendations)) recs.push(...rep.recommendations);
-      if(Array.isArray(rep.next_best_actions)) recs.push(...rep.next_best_actions.map(a=> typeof a==='string'? a : `${a.action} — impact:${a.impact||''}/effort:${a.effort||''}`));
-      if(Array.isArray(rep.risk_alerts)) recs.push(...rep.risk_alerts.map(r=> typeof r==='string'? r : `Risk(${r.severity||''}): ${r.title||''} — ${r.reason||''}`));
-    }catch{}
-    recEl.innerHTML = recs.length ? recs.map(i=>`<li>${i}</li>`).join('') : '<li class="muted">—</li>';
+    try {
+      if (Array.isArray(rep.recommendations)) recs.push(...rep.recommendations);
+      if (Array.isArray(rep.next_best_actions)) recs.push(...rep.next_best_actions.map(a => typeof a === 'string' ? a : `${a.action} — impact:${a.impact || ''}/effort:${a.effort || ''}`));
+      if (Array.isArray(rep.risk_alerts)) recs.push(...rep.risk_alerts.map(r => typeof r === 'string' ? r : `Risk(${r.severity || ''}): ${r.title || ''} — ${r.reason || ''}`));
+    } catch { }
+    recEl.innerHTML = recs.length ? recs.map(i => `<li>${i}</li>`).join('') : '<li class="muted">—</li>';
   }
 
-  function renderCharts(charts){
-    if(!charts || typeof charts !== 'object') return;
-    try{
+  function renderCharts(charts) {
+    if (!charts || typeof charts !== 'object') return;
+    try {
       const k = charts.kpis || {};
-      const s = Number(k.sessions||0), u = Number(k.users||0), cr = Number(k.cr||0), rev = Number(k.revenue||0), aov = Number(k.aov||0);
-      const ks = el('#llm-kpi-sessions'); if(ks) ks.textContent = fmt(s);
-      const ku = el('#llm-kpi-users'); if(ku) ku.textContent = fmt(u);
-      const kc = el('#llm-kpi-cr'); if(kc) kc.textContent = `${fmt((cr||0)*100,2)}%`;
-      const kr = el('#llm-kpi-rev'); if(kr) kr.textContent = fmtCurrency(rev);
-      const ka = el('#llm-kpi-aov'); if(ka) ka.textContent = aov > 0 ? fmtCurrency(aov) : '—';
-    }catch{}
+      const s = Number(k.sessions || 0), u = Number(k.users || 0), cr = Number(k.cr || 0), rev = Number(k.revenue || 0), aov = Number(k.aov || 0);
+      const ks = el('#llm-kpi-sessions'); if (ks) ks.textContent = fmt(s);
+      const ku = el('#llm-kpi-users'); if (ku) ku.textContent = fmt(u);
+      const kc = el('#llm-kpi-cr'); if (kc) kc.textContent = `${fmt((cr || 0) * 100, 2)}%`;
+      const kr = el('#llm-kpi-rev'); if (kr) kr.textContent = fmtCurrency(rev);
+      const ka = el('#llm-kpi-aov'); if (ka) ka.textContent = aov > 0 ? fmtCurrency(aov) : '—';
+    } catch { }
     // Funnel
-    try{
+    try {
       const fEl = el('#llm-chart-funnel');
       const data = Array.isArray(charts.funnel) ? charts.funnel : [];
-      if(fEl && data.length){ const c=echarts.init(fEl); c.setOption({ tooltip:{ trigger:'item' }, series:[{ type:'funnel', data }] }); }
-    }catch{}
+      if (fEl && data.length) { const c = echarts.init(fEl); c.setOption({ tooltip: { trigger: 'item' }, series: [{ type: 'funnel', data }] }); }
+    } catch { }
     // SEO distribution
-    try{
+    try {
       const sEl = el('#llm-chart-seo');
       const dist = Array.isArray(charts.seo_distribution) ? charts.seo_distribution : [];
-      if(sEl && dist.length){ const c=echarts.init(sEl); c.setOption({ tooltip:{ trigger:'item' }, series:[{ type:'pie', radius:['40%','70%'], data: dist }] }); }
-    }catch{}
+      if (sEl && dist.length) { const c = echarts.init(sEl); c.setOption({ tooltip: { trigger: 'item' }, series: [{ type: 'pie', radius: ['40%', '70%'], data: dist }] }); }
+    } catch { }
     // Retention
-    try{
+    try {
       const rEl = el('#llm-chart-ret');
       const ts = Array.isArray(charts.retention_timeseries) ? charts.retention_timeseries : [];
-      if(rEl && ts.length){ const cats = ts.map(r=>r.date||''); const ret = ts.map(r=> r.retained||0); const ch = ts.map(r=> r.churned||0); const c=echarts.init(rEl); c.setOption({ tooltip:{ trigger:'axis' }, legend:{ data:['Retained','Churned'] }, xAxis:{ type:'category', data: cats }, yAxis:{ type:'value' }, series:[{ name:'Retained', type:'line', data: ret }, { name:'Churned', type:'line', data: ch }] }); }
-    }catch{}
+      if (rEl && ts.length) { const cats = ts.map(r => r.date || ''); const ret = ts.map(r => r.retained || 0); const ch = ts.map(r => r.churned || 0); const c = echarts.init(rEl); c.setOption({ tooltip: { trigger: 'axis' }, legend: { data: ['Retained', 'Churned'] }, xAxis: { type: 'category', data: cats }, yAxis: { type: 'value' }, series: [{ name: 'Retained', type: 'line', data: ret }, { name: 'Churned', type: 'line', data: ch }] }); }
+    } catch { }
     // Data quality text
-    try{
+    try {
       const dqEl = el('#llm-dq'); const dq = charts.data_quality || {};
-      if(dqEl){ dqEl.innerHTML = `
+      if (dqEl) {
+        dqEl.innerHTML = `
         <div style="display:flex;gap:16px;flex-wrap:wrap">
-          <div>Events: <b>${fmt(Number(dq.events_count||0))}</b></div>
-          <div>Sessions: <b>${fmt(Number(dq.sessions_count||0))}</b></div>
-          <div>Missing %: <b>${fmt(Number(dq.missing_values_pct||0),2)}%</b></div>
-          <div>Duplicates %: <b>${fmt(Number(dq.duplicate_events_pct||0),2)}%</b></div>
+          <div>Events: <b>${fmt(Number(dq.events_count || 0))}</b></div>
+          <div>Sessions: <b>${fmt(Number(dq.sessions_count || 0))}</b></div>
+          <div>Missing %: <b>${fmt(Number(dq.missing_values_pct || 0), 2)}%</b></div>
+          <div>Duplicates %: <b>${fmt(Number(dq.duplicate_events_pct || 0), 2)}%</b></div>
           <div>Last event: <b>${dq.last_event_ts ? String(dq.last_event_ts) : '—'}</b></div>
-        </div>`; }
-    }catch{}
+        </div>`;
+      }
+    } catch { }
   }
 
   // Restore
-  (function(){
+  (function () {
     const snap = snapGet('llm');
-    if(snap){
+    if (snap) {
       renderReport(snap);
-      try{
+      try {
         const chartsTop = snap?.charts || {};
         const chartsParsed = snap?.report?.parsed?.charts || {};
         const mergedCharts = {
@@ -186,23 +188,23 @@ async function renderLLM(){
           retention_timeseries: chartsParsed.retention_timeseries || chartsTop.retention_timeseries,
         };
         renderCharts(mergedCharts);
-      }catch{
+      } catch {
         renderCharts(snap?.charts);
       }
-      statusEl.textContent='Restored from cache';
+      statusEl.textContent = 'Restored from cache';
     }
   })();
 
-  async function run(fetchFresh=false){
+  async function run(fetchFresh = false) {
     const q = buildQuery();
     let url = `/api/v1/openrouter/report?${q}`;
-    if(fetchFresh){ const b = withBypass(url); httpCache.delete(cacheKey(b.clean)); lsDel(cacheKey(b.clean)); url = b.fresh; }
+    if (fetchFresh) { const b = withBypass(url); httpCache.delete(cacheKey(b.clean)); lsDel(cacheKey(b.clean)); url = b.fresh; }
     statusEl.textContent = 'Loading…';
     const data = fetchFresh ? await safeGet(url) : await getWithTTL(url, 600000);
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
     snapUpdate('llm', data);
     renderReport(data);
-    try{
+    try {
       const chartsTop = data?.charts || {};
       const chartsParsed = data?.report?.parsed?.charts || {};
       const mergedCharts = {
@@ -210,17 +212,17 @@ async function renderLLM(){
         retention_timeseries: chartsParsed.retention_timeseries || chartsTop.retention_timeseries,
       };
       renderCharts(mergedCharts);
-    }catch{
+    } catch {
       renderCharts(data?.charts);
     }
   }
 
-  el('#llm-load').addEventListener('click', ()=>{ clearSnapshotForTabCurrentFilter('llm'); run(true); });
-  el('#llm-refresh').addEventListener('click', ()=>{ clearSnapshotForTabCurrentFilter('llm'); run(true); });
-  if(!snapGet('llm')){ await run(false); }
+  el('#llm-load').addEventListener('click', () => { clearSnapshotForTabCurrentFilter('llm'); run(true); });
+  el('#llm-refresh').addEventListener('click', () => { clearSnapshotForTabCurrentFilter('llm'); run(true); });
+  if (!snapGet('llm')) { await run(false); }
 }
 
-async function renderML(){
+async function renderML() {
   view.innerHTML = `
     <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -242,104 +244,358 @@ async function renderML(){
   const statusEl = el('#ml-status');
 
   // Restore snapshot if exists
-  (function(){
+  (function () {
     const snap = snapGet('ml');
-    if(!snap) return;
-    renderConv(snap.conversion||{});
-    renderProb(snap.purchase||{});
-    renderSeg(snap.segmentation||{});
+    if (!snap) return;
+    renderConv(snap.conversion || {});
+    renderProb(snap.purchase || {});
+    renderSeg(snap.segmentation || {});
     statusEl.textContent = 'Restored from cache';
   })();
 
-  function renderConv(data){
+  function renderConv(data) {
     const elc = el('#ml-conv');
-    if(!elc) return;
+    if (!elc) return;
     // Support Decision Tree payload: feature_importance map and sample_predictions[].confidence
     let avg = 0; let n = 0;
-    try{
-      if(Array.isArray(data.sample_predictions)){
-        for(const p of data.sample_predictions){
+    try {
+      if (Array.isArray(data.sample_predictions)) {
+        for (const p of data.sample_predictions) {
           const v = Number(p.confidence ?? p.purchase_probability ?? 0);
-          if(isFinite(v)){ avg += v; n++; }
+          if (isFinite(v)) { avg += v; n++; }
         }
       }
-    }catch{}
-    const score = n ? (avg/n) : Number(data.avg_probability ?? 0);
-    const title = `Avg Likelihood: ${fmt((score||0)*100,2)}%` + (data.auc_score?` • AUC ${fmt(Number(data.auc_score||0),3)}`:'');
+    } catch { }
+    const score = n ? (avg / n) : Number(data.avg_probability ?? 0);
+    const aucScore = Number(data.auc_score || 0);
+    const title = `Conversion Prediction Model`;
+    const subtitle = `Avg Likelihood: ${fmt((score || 0) * 100, 2)}%` + (aucScore ? ` • AUC Score: ${fmt(aucScore, 3)}` : '');
+
     // Feature importance bar if available
-    let cats=[], vals=[];
-    try{
+    let cats = [], vals = [];
+    try {
       const fmap = data.feature_importance;
-      if(fmap && typeof fmap==='object'){
+      if (fmap && typeof fmap === 'object') {
         cats = Object.keys(fmap);
-        vals = cats.map(k=> Number(fmap[k]||0));
+        vals = cats.map(k => Number(fmap[k] || 0));
       }
-    }catch{}
+    } catch { }
+
     const chart = echarts.init(elc);
-    if(cats.length){
+    if (cats.length) {
       chart.setOption({
-        title:{ text:title, left:'center', textStyle:{ fontSize:12 } },
-        tooltip:{}, xAxis:{ type:'category', data: cats }, yAxis:{ type:'value' },
-        series:[{ type:'bar', name:'Importance', data: vals }]
+        title: [
+          { text: title, left: 'center', top: 10, textStyle: { fontSize: 14, fontWeight: 'bold' } },
+          { text: subtitle, left: 'center', top: 30, textStyle: { fontSize: 11, color: '#666' } }
+        ],
+        tooltip: {
+          trigger: 'axis',
+          formatter: function (params) {
+            const p = params[0];
+            return `<div style="padding:8px">
+              <strong>${p.name}</strong><br/>
+              Importance: <strong>${fmt(p.value, 4)}</strong><br/>
+              <span style="color:#666;font-size:11px">Higher values indicate stronger influence on conversion</span>
+            </div>`;
+          }
+        },
+        grid: { left: 60, right: 30, bottom: 60, top: 70 },
+        xAxis: {
+          type: 'category',
+          data: cats,
+          axisLabel: { rotate: 45, fontSize: 10 },
+          name: 'Features',
+          nameLocation: 'middle',
+          nameGap: 40
+        },
+        yAxis: {
+          type: 'value',
+          name: 'Importance Score',
+          nameLocation: 'middle',
+          nameGap: 45
+        },
+        series: [{
+          type: 'bar',
+          name: 'Feature Importance',
+          data: vals,
+          itemStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: '#3b82f6' },
+              { offset: 1, color: '#1d4ed8' }
+            ])
+          },
+          label: {
+            show: true,
+            position: 'top',
+            formatter: '{c}',
+            fontSize: 10
+          }
+        }]
       });
-    }else{
-      chart.setOption({ title:{ text:title, left:'center', textStyle:{ fontSize:12 } }, xAxis:{ type:'category', data:['Likelihood'] }, yAxis:{ type:'value', max:100 }, series:[{ type:'bar', data:[Math.round((score||0)*10000)/100] }] });
+    } else {
+      chart.setOption({
+        title: [
+          { text: title, left: 'center', top: 10, textStyle: { fontSize: 14, fontWeight: 'bold' } },
+          { text: subtitle, left: 'center', top: 30, textStyle: { fontSize: 11, color: '#666' } }
+        ],
+        tooltip: {
+          formatter: function (params) {
+            return `<div style="padding:8px">
+              <strong>Conversion Likelihood</strong><br/>
+              Score: <strong>${params.value}%</strong><br/>
+              <span style="color:#666;font-size:11px">Probability that a user will complete a purchase</span>
+            </div>`;
+          }
+        },
+        grid: { left: 60, right: 30, bottom: 40, top: 70 },
+        xAxis: { type: 'category', data: ['Likelihood'] },
+        yAxis: { type: 'value', max: 100, name: 'Percentage (%)' },
+        series: [{
+          type: 'bar',
+          data: [Math.round((score || 0) * 10000) / 100],
+          itemStyle: { color: '#10b981' },
+          label: { show: true, position: 'top', formatter: '{c}%' }
+        }]
+      });
     }
   }
-  function renderProb(data){
+  function renderProb(data) {
     const elp = el('#ml-prob');
-    if(!elp) return;
+    if (!elp) return;
     // Logistic Regression payload: feature_coefficients map and sample_predictions[].purchase_probability
-    let avg=0, n=0;
-    try{
-      if(Array.isArray(data.sample_predictions)){
-        for(const p of data.sample_predictions){ const v=Number(p.purchase_probability||0); if(isFinite(v)){ avg+=v; n++; } }
+    let avg = 0, n = 0;
+    try {
+      if (Array.isArray(data.sample_predictions)) {
+        for (const p of data.sample_predictions) { const v = Number(p.purchase_probability || 0); if (isFinite(v)) { avg += v; n++; } }
       }
-    }catch{}
-    const score = n ? (avg/n) : Number(data.avg_probability||0);
-    let cats=[], vals=[];
-    try{
+    } catch { }
+    const score = n ? (avg / n) : Number(data.avg_probability || 0);
+    const aucScore = Number(data.auc_score || 0);
+    let cats = [], vals = [];
+    try {
       const coeff = data.feature_coefficients;
-      if(coeff && typeof coeff==='object'){
+      if (coeff && typeof coeff === 'object') {
         cats = Object.keys(coeff);
-        vals = cats.map(k=> Math.abs(Number(coeff[k]||0)));
-      } 
-    }catch{}
-    const chart = echarts.init(elp);
-    const title = `Avg Purchase Prob: ${fmt((score||0)*100,2)}%` + (data.auc_score?` • AUC ${fmt(Number(data.auc_score||0),3)}`:'');
-    if(cats.length){ chart.setOption({ title:{ text:title, left:'center', textStyle:{ fontSize:12 } }, tooltip:{}, xAxis:{ type:'category', data: cats }, yAxis:{ type:'value' }, series:[{ type:'bar', data: vals }] }); }
-    else { chart.setOption({ title:{ text:title||'No detailed features. Showing placeholder.', left:'center', textStyle:{ fontSize:12 } }, xAxis:{ show:false }, yAxis:{ show:false }, series:[{ type:'bar', data:[Math.round((score||0)*10000)/100] }] }); }
-  }
-  function renderSeg(data){
-    const els = el('#ml-seg');
-    if(!els) return;
-    // KMeans payload: cluster_stats map keyed by cluster label -> {user_count,...}
-    let cats=[], vals=[];
-    try{
-      const stats = data.cluster_stats;
-      if(stats && typeof stats==='object'){
-        cats = Object.keys(stats);
-        vals = cats.map(k=> Number((stats[k]||{}).user_count || 0));
+        vals = cats.map(k => Math.abs(Number(coeff[k] || 0)));
       }
-    }catch{}
+    } catch { }
+
+    const chart = echarts.init(elp);
+    const title = `Purchase Probability Model`;
+    const subtitle = `Avg Purchase Prob: ${fmt((score || 0) * 100, 2)}%` + (aucScore ? ` • AUC: ${fmt(aucScore, 3)}` : '');
+
+    if (cats.length) {
+      chart.setOption({
+        title: [
+          { text: title, left: 'center', top: 10, textStyle: { fontSize: 14, fontWeight: 'bold' } },
+          { text: subtitle, left: 'center', top: 30, textStyle: { fontSize: 11, color: '#666' } }
+        ],
+        tooltip: {
+          trigger: 'axis',
+          formatter: function (params) {
+            const p = params[0];
+            return `<div style="padding:8px">
+              <strong>${p.name}</strong><br/>
+              Coefficient: <strong>${fmt(p.value, 4)}</strong><br/>
+              <span style="color:#666;font-size:11px">Impact on purchase probability (absolute value)</span>
+            </div>`;
+          }
+        },
+        grid: { left: 60, right: 30, bottom: 60, top: 70 },
+        xAxis: {
+          type: 'category',
+          data: cats,
+          axisLabel: { rotate: 45, fontSize: 10 },
+          name: 'Features',
+          nameLocation: 'middle',
+          nameGap: 40
+        },
+        yAxis: {
+          type: 'value',
+          name: 'Coefficient (abs)',
+          nameLocation: 'middle',
+          nameGap: 45
+        },
+        series: [{
+          type: 'bar',
+          data: vals,
+          itemStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: '#8b5cf6' },
+              { offset: 1, color: '#6d28d9' }
+            ])
+          },
+          label: {
+            show: true,
+            position: 'top',
+            formatter: '{c}',
+            fontSize: 10
+          }
+        }]
+      });
+    } else {
+      chart.setOption({
+        title: [
+          { text: title, left: 'center', top: 10, textStyle: { fontSize: 14, fontWeight: 'bold' } },
+          { text: subtitle, left: 'center', top: 30, textStyle: { fontSize: 11, color: '#666' } }
+        ],
+        tooltip: {
+          formatter: function (params) {
+            return `<div style="padding:8px">
+              <strong>Purchase Probability</strong><br/>
+              Score: <strong>${params.value}%</strong><br/>
+              <span style="color:#666;font-size:11px">Likelihood of user making a purchase</span>
+            </div>`;
+          }
+        },
+        grid: { left: 60, right: 30, bottom: 40, top: 70 },
+        xAxis: { type: 'category', data: ['Probability'] },
+        yAxis: { type: 'value', max: 100, name: 'Percentage (%)' },
+        series: [{
+          type: 'bar',
+          data: [Math.round((score || 0) * 10000) / 100],
+          itemStyle: { color: '#f59e0b' },
+          label: { show: true, position: 'top', formatter: '{c}%' }
+        }]
+      });
+    }
+  }
+  function renderSeg(data) {
+    const els = el('#ml-seg');
+    if (!els) return;
+    // KMeans payload: cluster_stats map keyed by cluster label -> {user_count,...}
+    let cats = [], vals = [], avgEvents = [], convRates = [];
+    try {
+      const stats = data.cluster_stats;
+      if (stats && typeof stats === 'object') {
+        cats = Object.keys(stats);
+        vals = cats.map(k => Number((stats[k] || {}).user_count || 0));
+        avgEvents = cats.map(k => Number((stats[k] || {}).avg_events || 0));
+        convRates = cats.map(k => Number((stats[k] || {}).conversion_rate || 0) * 100);
+      }
+    } catch { }
+
     const chart = echarts.init(els);
-    if(cats.length){
-      chart.setOption({ tooltip:{}, xAxis:{ type:'category', data: cats }, yAxis:{ type:'value' }, series:[{ type:'bar', data: vals }] });
-    }else{
-      chart.setOption({ title:{ text:'No segmentation data', left:'center', textStyle:{ fontSize:12 } } });
+    const totalUsers = vals.reduce((a, b) => a + b, 0);
+
+    if (cats.length) {
+      chart.setOption({
+        title: [
+          { text: 'User Segmentation (K-Means Clustering)', left: 'center', top: 10, textStyle: { fontSize: 14, fontWeight: 'bold' } },
+          { text: `Total Users: ${totalUsers.toLocaleString()} across ${cats.length} segments`, left: 'center', top: 30, textStyle: { fontSize: 11, color: '#666' } }
+        ],
+        tooltip: {
+          trigger: 'axis',
+          formatter: function (params) {
+            const idx = params[0].dataIndex;
+            const cluster = cats[idx];
+            const users = vals[idx];
+            const events = avgEvents[idx] || 0;
+            const conv = convRates[idx] || 0;
+            const pct = totalUsers > 0 ? ((users / totalUsers) * 100).toFixed(1) : 0;
+
+            return `<div style="padding:8px">
+              <strong>Cluster ${cluster}</strong><br/>
+              Users: <strong>${users.toLocaleString()}</strong> (${pct}%)<br/>
+              Avg Events: <strong>${fmt(events, 1)}</strong><br/>
+              Conversion Rate: <strong>${fmt(conv, 1)}%</strong><br/>
+              <span style="color:#666;font-size:11px">User behavior segment based on activity patterns</span>
+            </div>`;
+          }
+        },
+        legend: {
+          data: ['User Count', 'Avg Events', 'Conversion Rate (%)'],
+          top: 55,
+          textStyle: { fontSize: 11 }
+        },
+        grid: { left: 60, right: 30, bottom: 60, top: 100 },
+        xAxis: {
+          type: 'category',
+          data: cats.map(c => `Cluster ${c}`),
+          axisLabel: { fontSize: 11 },
+          name: 'User Segments',
+          nameLocation: 'middle',
+          nameGap: 40
+        },
+        yAxis: [
+          {
+            type: 'value',
+            name: 'User Count',
+            nameLocation: 'middle',
+            nameGap: 45,
+            position: 'left'
+          },
+          {
+            type: 'value',
+            name: 'Metrics',
+            nameLocation: 'middle',
+            nameGap: 45,
+            position: 'right'
+          }
+        ],
+        series: [
+          {
+            type: 'bar',
+            name: 'User Count',
+            data: vals,
+            yAxisIndex: 0,
+            itemStyle: {
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: '#06b6d4' },
+                { offset: 1, color: '#0891b2' }
+              ])
+            },
+            label: {
+              show: true,
+              position: 'top',
+              formatter: '{c}',
+              fontSize: 10
+            }
+          },
+          {
+            type: 'line',
+            name: 'Avg Events',
+            data: avgEvents,
+            yAxisIndex: 1,
+            smooth: true,
+            itemStyle: { color: '#f59e0b' },
+            lineStyle: { width: 2 }
+          },
+          {
+            type: 'line',
+            name: 'Conversion Rate (%)',
+            data: convRates,
+            yAxisIndex: 1,
+            smooth: true,
+            itemStyle: { color: '#10b981' },
+            lineStyle: { width: 2 }
+          }
+        ]
+      });
+    } else {
+      chart.setOption({
+        title: {
+          text: 'No segmentation data available',
+          subtext: 'Run user segmentation analysis to see clusters',
+          left: 'center',
+          top: 'middle',
+          textStyle: { fontSize: 14, color: '#666' },
+          subtextStyle: { fontSize: 12, color: '#999' }
+        }
+      });
     }
   }
 
-  async function run(fetchFresh=false){
-    const username = (userIn.value||'').trim();
-    const q = new URLSearchParams(); if(username) q.set('username', username);
-    let uConv = `/api/v1/spark-analytics/conversion-prediction` + (q.toString()?`?${q.toString()}`:'');
-    let uProb = `/api/v1/spark-analytics/purchase-probability` + (q.toString()?`?${q.toString()}`:'');
-    let uSeg = `/api/v1/spark-analytics/user-segmentation` + (q.toString()?`?${q.toString()}`:'');
-    if(fetchFresh){
-      const arr = [uConv,uProb,uSeg].map(withBypass);
-      arr.forEach(({clean})=>{ httpCache.delete(clean); lsDel(clean); });
-      [uConv,uProb,uSeg] = arr.map(x=>x.fresh);
+  async function run(fetchFresh = false) {
+    const username = (userIn.value || '').trim();
+    const q = new URLSearchParams(); if (username) q.set('username', username);
+    let uConv = `/api/v1/spark-analytics/conversion-prediction` + (q.toString() ? `?${q.toString()}` : '');
+    let uProb = `/api/v1/spark-analytics/purchase-probability` + (q.toString() ? `?${q.toString()}` : '');
+    let uSeg = `/api/v1/spark-analytics/user-segmentation` + (q.toString() ? `?${q.toString()}` : '');
+    if (fetchFresh) {
+      const arr = [uConv, uProb, uSeg].map(withBypass);
+      arr.forEach(({ clean }) => { httpCache.delete(clean); lsDel(clean); });
+      [uConv, uProb, uSeg] = arr.map(x => x.fresh);
     }
     statusEl.textContent = 'Loading…';
     const [conv, prob, seg] = await Promise.all([
@@ -348,96 +604,96 @@ async function renderML(){
       fetchFresh ? safeGet(uSeg) : getWithTTL(uSeg, 600000)
     ]);
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
-    snapUpdate('ml', { conversion: conv||{}, purchase: prob||{}, segmentation: seg||{} });
-    renderConv(conv||{}); renderProb(prob||{}); renderSeg(seg||{});
+    snapUpdate('ml', { conversion: conv || {}, purchase: prob || {}, segmentation: seg || {} });
+    renderConv(conv || {}); renderProb(prob || {}); renderSeg(seg || {});
   }
 
-  el('#ml-load').addEventListener('click', ()=>{ clearSnapshotForTabCurrentFilter('ml'); run(true); });
-  el('#ml-refresh').addEventListener('click', ()=>{ clearSnapshotForTabCurrentFilter('ml'); run(true); });
-  if(!snapGet('ml')){ await run(false); }
+  el('#ml-load').addEventListener('click', () => { clearSnapshotForTabCurrentFilter('ml'); run(true); });
+  el('#ml-refresh').addEventListener('click', () => { clearSnapshotForTabCurrentFilter('ml'); run(true); });
+  if (!snapGet('ml')) { await run(false); }
 }
 // LocalStorage-backed persistence
 const LS_NS = 'spa_cache_v1:';
 const SNAP_NS = 'spa_snap_v1:';
-function lsKey(url){ return LS_NS + url; }
-function lsGet(url){
-  try{ const s = localStorage.getItem(lsKey(url)); return s ? JSON.parse(s) : null; }catch{ return null; }
+function lsKey(url) { return LS_NS + url; }
+function lsGet(url) {
+  try { const s = localStorage.getItem(lsKey(url)); return s ? JSON.parse(s) : null; } catch { return null; }
 }
-function lsSet(url, data){
-  try{ localStorage.setItem(lsKey(url), JSON.stringify({ data, ts: Date.now() })); }catch{}
+function lsSet(url, data) {
+  try { localStorage.setItem(lsKey(url), JSON.stringify({ data, ts: Date.now() })); } catch { }
 }
-function lsData(payload){ return payload && typeof payload === 'object' ? (payload.data ?? payload) : payload; }
-function lsDel(url){ try{ localStorage.removeItem(lsKey(url)); }catch{} }
+function lsData(payload) { return payload && typeof payload === 'object' ? (payload.data ?? payload) : payload; }
+function lsDel(url) { try { localStorage.removeItem(lsKey(url)); } catch { } }
 // Build a stable signature for current filters so snapshots are scoped per-filter
-function filterSig(){
+function filterSig() {
   const { range, from, to, segment, channel } = state.filters || {};
-  return `r=${range||''}|f=${from||''}|t=${to||''}|s=${segment||''}|c=${channel||''}`;
+  return `r=${range || ''}|f=${from || ''}|t=${to || ''}|s=${segment || ''}|c=${channel || ''}`;
 }
-function snapKey(tab){ return SNAP_NS + tab + '|' + filterSig(); }
-function snapSet(tab, payload){ try{ localStorage.setItem(snapKey(tab), JSON.stringify({ ts: Date.now(), payload })); }catch{} }
-function snapGet(tab){ try{ const s = localStorage.getItem(snapKey(tab)); return s ? JSON.parse(s).payload : null; }catch{ return null; } }
-function snapRaw(tab){ try{ const s = localStorage.getItem(snapKey(tab)); return s ? JSON.parse(s) : null; }catch{ return null; } }
-function snapAgeMs(tab){ try{ const r = snapRaw(tab); return r && typeof r.ts==='number' ? (Date.now()-r.ts) : Infinity; }catch{ return Infinity; } }
+function snapKey(tab) { return SNAP_NS + tab + '|' + filterSig(); }
+function snapSet(tab, payload) { try { localStorage.setItem(snapKey(tab), JSON.stringify({ ts: Date.now(), payload })); } catch { } }
+function snapGet(tab) { try { const s = localStorage.getItem(snapKey(tab)); return s ? JSON.parse(s).payload : null; } catch { return null; } }
+function snapRaw(tab) { try { const s = localStorage.getItem(snapKey(tab)); return s ? JSON.parse(s) : null; } catch { return null; } }
+function snapAgeMs(tab) { try { const r = snapRaw(tab); return r && typeof r.ts === 'number' ? (Date.now() - r.ts) : Infinity; } catch { return Infinity; } }
 // Only persist snapshot when payload is non-empty to avoid wiping good cache with empty results
-function hasAnyData(obj){
-  try{
-    if(obj == null) return false;
-    if(Array.isArray(obj)) return obj.length > 0;
-    if(typeof obj !== 'object') return true;
+function hasAnyData(obj) {
+  try {
+    if (obj == null) return false;
+    if (Array.isArray(obj)) return obj.length > 0;
+    if (typeof obj !== 'object') return true;
     // plain object: if no keys -> empty
     const keys = Object.keys(obj);
-    if(keys.length === 0) return false;
-    for(const k of keys){
+    if (keys.length === 0) return false;
+    for (const k of keys) {
       const v = obj[k];
-      if(Array.isArray(v)){ if(v.length > 0) return true; continue; }
-      if(v && typeof v === 'object'){
-        if(Object.keys(v).length > 0 && hasAnyData(v)) return true;
+      if (Array.isArray(v)) { if (v.length > 0) return true; continue; }
+      if (v && typeof v === 'object') {
+        if (Object.keys(v).length > 0 && hasAnyData(v)) return true;
         continue;
       }
-      if(v != null) return true;
+      if (v != null) return true;
     }
-  }catch{}
+  } catch { }
   return false;
 }
-function snapMaybe(tab, payload){ if(hasAnyData(payload)) snapSet(tab, payload); }
+function snapMaybe(tab, payload) { if (hasAnyData(payload)) snapSet(tab, payload); }
 // Update snapshot only if payload has data and is different from the existing one
-function snapUpdate(tab, payload){
-  if(!hasAnyData(payload)) return;
-  try{
+function snapUpdate(tab, payload) {
+  if (!hasAnyData(payload)) return;
+  try {
     const prev = snapGet(tab);
     const same = prev && JSON.stringify(prev) === JSON.stringify(payload);
-    if(!same){ snapSet(tab, payload); }
-  }catch{ snapSet(tab, payload); }
+    if (!same) { snapSet(tab, payload); }
+  } catch { snapSet(tab, payload); }
 }
 // Legacy helpers: migrate old snapshots (without filter signature) to new scoped keys
-function snapGetLegacyRaw(tab){
-  try{ const s = localStorage.getItem(SNAP_NS + tab); return s ? JSON.parse(s) : null; }catch{ return null; }
+function snapGetLegacyRaw(tab) {
+  try { const s = localStorage.getItem(SNAP_NS + tab); return s ? JSON.parse(s) : null; } catch { return null; }
 }
-function migrateOldSnapshots(){
-  try{
+function migrateOldSnapshots() {
+  try {
     const prefix = SNAP_NS;
-    for(let i=0;i<localStorage.length;i++){
+    for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if(!k || !k.startsWith(prefix)) continue;
+      if (!k || !k.startsWith(prefix)) continue;
       // If already contains filter pipe, skip
-      if(k.includes('|')) continue;
+      if (k.includes('|')) continue;
       const tab = k.slice(prefix.length);
       const raw = snapGetLegacyRaw(tab);
       const payload = raw && raw.payload;
-      if(hasAnyData(payload)){
+      if (hasAnyData(payload)) {
         // write to new key scoped by current filters
-        try{ localStorage.setItem(snapKey(tab), JSON.stringify({ ts: Date.now(), payload })); }catch{}
+        try { localStorage.setItem(snapKey(tab), JSON.stringify({ ts: Date.now(), payload })); } catch { }
       }
     }
-  }catch{}
+  } catch { }
 }
 // TTL-aware local cache getter
-async function getWithTTL(url, ttlMs = 600000){
+async function getWithTTL(url, ttlMs = 600000) {
   const key = cacheKey(url);
-  if(httpCache.has(key)) return httpCache.get(key);
+  if (httpCache.has(key)) return httpCache.get(key);
   const persisted = lsGet(key);
-  if(persisted && typeof persisted === 'object' && typeof persisted.ts === 'number'){
-    if(Date.now() - persisted.ts <= ttlMs){
+  if (persisted && typeof persisted === 'object' && typeof persisted.ts === 'number') {
+    if (Date.now() - persisted.ts <= ttlMs) {
       const data = lsData(persisted);
       httpCache.set(key, data);
       return data;
@@ -447,37 +703,37 @@ async function getWithTTL(url, ttlMs = 600000){
   }
   const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
   const res = await fetch(url, { headers: { 'Accept': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) } });
-  if(!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const json = await res.json();
   httpCache.set(key, json);
   lsSet(key, json);
   return json;
 }
 // Simple debounce helper
-function debounce(fn, ms){ let t; return (...args)=>{ clearTimeout(t); t = setTimeout(()=>fn.apply(null,args), ms); }; }
-function requestIdle(cb){
-  if(window.requestIdleCallback){ return window.requestIdleCallback(cb, { timeout: 1500 }); }
+function debounce(fn, ms) { let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn.apply(null, args), ms); }; }
+function requestIdle(cb) {
+  if (window.requestIdleCallback) { return window.requestIdleCallback(cb, { timeout: 1500 }); }
   return setTimeout(cb, 300);
 }
 // Build a fresh URL that bypasses caches; also return the original clean URL for invalidation
-function withBypass(url){
+function withBypass(url) {
   const join = url.includes('?') ? '&' : '?';
   return { clean: url, fresh: `${url}${join}bypass_cache=true&_ts=${Date.now()}` };
 }
-function showToast(message, kind = 'info', timeout = 2600){
+function showToast(message, kind = 'info', timeout = 2600) {
   const t = el('#toast');
-  if(!t) return;
+  if (!t) return;
   t.textContent = message;
   t.style.display = 'block';
   t.style.background = kind === 'error' ? '#b91c1c' : (kind === 'success' ? '#065f46' : '#111827');
   clearTimeout(showToast._timer);
-  showToast._timer = setTimeout(()=>{ t.style.display='none'; }, timeout);
+  showToast._timer = setTimeout(() => { t.style.display = 'none'; }, timeout);
 }
 const view = el('#view');
 
-function setActiveTab(name){
+function setActiveTab(name) {
   state.tab = name;
-  for(const b of document.querySelectorAll('.tab')){
+  for (const b of document.querySelectorAll('.tab')) {
     b.classList.toggle('active', b.dataset.tab === name);
   }
   // Expose for debugging
@@ -485,79 +741,79 @@ function setActiveTab(name){
   render();
 }
 
-function toISO(dt){
-  try{ return new Date(dt).toISOString(); } catch { return null; }
+function toISO(dt) {
+  try { return new Date(dt).toISOString(); } catch { return null; }
 }
 
-function presetToDates(range){
+function presetToDates(range) {
   const now = new Date();
   const end = new Date(now);
   const start = new Date(now);
-  switch(range){
-    case '7d': start.setDate(start.getDate()-7); break;
-    case '30d': start.setDate(start.getDate()-30); break;
+  switch (range) {
+    case '7d': start.setDate(start.getDate() - 7); break;
+    case '30d': start.setDate(start.getDate() - 30); break;
     case 'mtd': start.setDate(1); break;
     case 'qtd': {
       const m = start.getMonth();
-      const qStartMonth = m - (m%3);
+      const qStartMonth = m - (m % 3);
       start.setMonth(qStartMonth, 1);
-      start.setHours(0,0,0,0);
+      start.setHours(0, 0, 0, 0);
       break;
     }
-    case 'ytd': start.setMonth(0,1); break;
+    case 'ytd': start.setMonth(0, 1); break;
     default: return { start: null, end: null };
   }
   return { start: toISO(start), end: toISO(end) };
 }
 
-function fmt(n, digits=0){
-  if(n == null || isNaN(n)) return '—';
+function fmt(n, digits = 0) {
+  if (n == null || isNaN(n)) return '—';
   return Intl.NumberFormat(undefined, { maximumFractionDigits: digits }).format(n);
 }
-function fmtCurrency(n){
-  if(n == null || isNaN(n)) return '$0.00';
-  try{
+function fmtCurrency(n) {
+  if (n == null || isNaN(n)) return '$0.00';
+  try {
     return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(Number(n));
-  }catch{
-    return `$${fmt(Number(n),2)}`;
+  } catch {
+    return `$${fmt(Number(n), 2)}`;
   }
 }
-function fmtShort(n){
-  if(!isFinite(n)) return '0';
+function fmtShort(n) {
+  if (!isFinite(n)) return '0';
   const abs = Math.abs(n);
-  if(abs >= 1e9) return (n/1e9).toFixed(1)+'B';
-  if(abs >= 1e6) return (n/1e6).toFixed(1)+'M';
-  if(abs >= 1e3) return (n/1e3).toFixed(1)+'K';
+  if (abs >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+  if (abs >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (abs >= 1e3) return (n / 1e3).toFixed(1) + 'K';
   return String(Math.round(n));
 }
 
-async function safeGet(url){
-  try{
+async function safeGet(url) {
+  try {
     const key = cacheKey(url);
-    if(httpCache.has(key)) return httpCache.get(key);
+    if (httpCache.has(key)) return httpCache.get(key);
     const persisted = lsGet(key);
-    if(persisted){
+    if (persisted) {
       const data = lsData(persisted);
       httpCache.set(key, data);
       return data;
     }
     const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
     const res = await fetch(url, { headers: { 'Accept': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) } });
-    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     httpCache.set(key, json);
     lsSet(key, json);
     return json;
-  }catch(e){
+  } catch (e) {
     showToast(`Request failed: ${String(e)}`, 'error');
     return { error: String(e) };
   }
 }
 
-async function safePost(url, body){
-  try{
+async function safePost(url, body) {
+  try {
     const key = cacheKey(url + JSON.stringify(body));
-    if(httpCache.has(key)) return httpCache.get(key);
+    if (httpCache.has(key)) return httpCache.get(key);
     // Note: POST requests are not typically cached in localStorage the same way as GET.
     // This is a simple implementation that does not use lsGet/lsSet for POST.
     const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
@@ -570,53 +826,53 @@ async function safePost(url, body){
       },
       body: JSON.stringify(body)
     });
-    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     httpCache.set(key, json);
     // Do not lsSet for POST to avoid caching mutable operations
     return json;
-  }catch(e){
+  } catch (e) {
     showToast(`Request failed: ${String(e)}`, 'error');
     return { error: String(e) };
   }
 }
 
-async function preload(url){
+async function preload(url) {
   const key = cacheKey(url);
-  if(httpCache.has(key)) return;
-  try{
+  if (httpCache.has(key)) return;
+  try {
     const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
     const res = await fetch(url, { headers: { 'Accept': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) } });
-    if(!res.ok) return;
+    if (!res.ok) return;
     const json = await res.json();
     httpCache.set(key, json);
     lsSet(key, json);
-  }catch{}
+  } catch { }
 }
 
-function buildQuery(){
+function buildQuery() {
   const p = new URLSearchParams();
-  const {range, from, to, segment, channel} = state.filters;
+  const { range, from, to, segment, channel } = state.filters;
   // Backend expects start_date/end_date (ISO). If custom, use provided dates; else derive from preset.
   let startISO = null, endISO = null;
-  if(range === 'custom' && from && to){
+  if (range === 'custom' && from && to) {
     startISO = toISO(new Date(from));
     // include full day for 'to'
     const toDt = new Date(to);
-    toDt.setHours(23,59,59,999);
+    toDt.setHours(23, 59, 59, 999);
     endISO = toISO(toDt);
-  }else{
+  } else {
     const pr = presetToDates(range);
     startISO = pr.start; endISO = pr.end;
   }
-  if(startISO) p.set('start_date', startISO);
-  if(endISO) p.set('end_date', endISO);
-  if(segment && segment !== 'all') p.set('segment', segment);
-  if(channel && channel !== 'all') p.set('channel', channel);
+  if (startISO) p.set('start_date', startISO);
+  if (endISO) p.set('end_date', endISO);
+  if (segment && segment !== 'all') p.set('segment', segment);
+  if (channel && channel !== 'all') p.set('channel', channel);
   return p.toString();
 }
 
-async function loadOverview(){
+async function loadOverview() {
   view.innerHTML = `
     <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:8px">
       <button id="ov-load" class="tab">Load</button>
@@ -649,8 +905,8 @@ async function loadOverview(){
   const statusEl = el('#ov-status');
 
   // Simplified data update function
-  function updateUI(data){
-    if(!data) {
+  function updateUI(data) {
+    if (!data) {
       statusEl.textContent = 'No data to display.';
       return;
     }
@@ -659,165 +915,165 @@ async function loadOverview(){
     const kpiUsers = Number(data.total_users ?? 0);
     let kpiCR = Number(data.conversion_rate ?? 0);
     // Fallbacks if snapshot lacked computed fields
-    if(!Number.isFinite(kpiSessions) || kpiSessions <= 0){
+    if (!Number.isFinite(kpiSessions) || kpiSessions <= 0) {
       const tv = Number(data.seo_site_metrics?.total_views ?? 0);
-      if(Number.isFinite(tv) && tv > 0) kpiSessions = tv;
+      if (Number.isFinite(tv) && tv > 0) kpiSessions = tv;
     }
-    if(!Number.isFinite(kpiCR) || kpiCR <= 0){
+    if (!Number.isFinite(kpiCR) || kpiCR <= 0) {
       const dcr = Number(data.derived_cr ?? 0);
-      if(Number.isFinite(dcr) && dcr > 0) kpiCR = dcr;
+      if (Number.isFinite(dcr) && dcr > 0) kpiCR = dcr;
     }
     const kpiRev = Number(data.revenue ?? 0);
     // Update header quick KPIs
     el('#qk-sessions') && (el('#qk-sessions').textContent = fmt(Number.isFinite(kpiSessions) ? kpiSessions : 0));
-    el('#qk-cr') && (el('#qk-cr').textContent = `${fmt(Number.isFinite(kpiCR) ? kpiCR*100 : 0, 2)}%`);
+    el('#qk-cr') && (el('#qk-cr').textContent = `${fmt(Number.isFinite(kpiCR) ? kpiCR * 100 : 0, 2)}%`);
     // AOV header
-    try{
+    try {
       const aov = Number(data.aov ?? 0);
       const aovEl = el('#qk-aov');
-      if(aovEl){ aovEl.textContent = aov > 0 ? fmtCurrency(aov) : '—'; }
-    }catch{}
+      if (aovEl) { aovEl.textContent = aov > 0 ? fmtCurrency(aov) : '—'; }
+    } catch { }
     // Update Overview card KPIs
     el('#ov-sessions') && (el('#ov-sessions').textContent = fmt(Number.isFinite(kpiSessions) ? kpiSessions : 0));
     el('#ov-users') && (el('#ov-users').textContent = fmt(Number.isFinite(kpiUsers) ? kpiUsers : 0));
-    el('#ov-cr') && (el('#ov-cr').textContent = `${fmt(Number.isFinite(kpiCR) ? kpiCR*100 : 0, 2)}%`);
+    el('#ov-cr') && (el('#ov-cr').textContent = `${fmt(Number.isFinite(kpiCR) ? kpiCR * 100 : 0, 2)}%`);
     // Force fill if still '—'
     const sessEl = el('#ov-sessions');
-    if(sessEl && (sessEl.textContent === '—' || sessEl.textContent.trim() === '')){
+    if (sessEl && (sessEl.textContent === '—' || sessEl.textContent.trim() === '')) {
       const tv = Number(data.seo_site_metrics?.total_views ?? 0);
-      if(Number.isFinite(tv) && tv > 0){ sessEl.textContent = fmt(tv); }
+      if (Number.isFinite(tv) && tv > 0) { sessEl.textContent = fmt(tv); }
     }
     const crEl = el('#ov-cr');
-    if(crEl && (crEl.textContent.startsWith('—') || crEl.textContent.trim() === '' || /NaN/.test(crEl.textContent))){
+    if (crEl && (crEl.textContent.startsWith('—') || crEl.textContent.trim() === '' || /NaN/.test(crEl.textContent))) {
       const dcr = Number(data.derived_cr ?? 0);
-      if(Number.isFinite(dcr) && dcr > 0){ crEl.textContent = `${fmt(dcr*100, 2)}%`; }
+      if (Number.isFinite(dcr) && dcr > 0) { crEl.textContent = `${fmt(dcr * 100, 2)}%`; }
     }
     el('#ov-rev') && (el('#ov-rev').textContent = fmtCurrency(Number.isFinite(kpiRev) ? kpiRev : 0));
 
     // Peak labels & lists (ưu tiên dữ liệu từ activity API)
-    try{
+    try {
       const pd = data.peak_day || data.peak_day_label || '';
       const ph = data.peak_hour || data.peak_hour_users_label || '';
-      const elPd = el('#ov-peak-day'); if(elPd) elPd.textContent = pd || '—';
-      const elPh = el('#ov-peak-hour'); if(elPh) elPh.textContent = ph || '—';
+      const elPd = el('#ov-peak-day'); if (elPd) elPd.textContent = pd || '—';
+      const elPh = el('#ov-peak-hour'); if (elPh) elPh.textContent = ph || '—';
 
       // Top Hours: ưu tiên server-side top_hours, fallback sang tự tính từ activity_hourly
       let hTop = [];
-      if(Array.isArray(data.top_hours) && data.top_hours.length){
-        hTop = data.top_hours.map(h=>({
-          label: String(h.label ?? (typeof h.hour==='number'? String(h.hour).padStart(2,'0')+':00' : '')),
-          v: Number(h.count||0),
-          pct: Number(h.pct||0)
+      if (Array.isArray(data.top_hours) && data.top_hours.length) {
+        hTop = data.top_hours.map(h => ({
+          label: String(h.label ?? (typeof h.hour === 'number' ? String(h.hour).padStart(2, '0') + ':00' : '')),
+          v: Number(h.count || 0),
+          pct: Number(h.pct || 0)
         }));
-      }else{
+      } else {
         const hours = Array.isArray(data.activity_hourly) ? data.activity_hourly : [];
-        const hTotal = hours.reduce((a,b)=>a+(Number(b)||0),0) || 1;
-        hTop = hours.map((v,i)=>({label: String(i).padStart(2,'0')+':00', v:Number(v)||0, pct: ((Number(v)||0)*100)/hTotal}))
-          .sort((a,b)=> b.v - a.v).slice(0,3);
+        const hTotal = hours.reduce((a, b) => a + (Number(b) || 0), 0) || 1;
+        hTop = hours.map((v, i) => ({ label: String(i).padStart(2, '0') + ':00', v: Number(v) || 0, pct: ((Number(v) || 0) * 100) / hTotal }))
+          .sort((a, b) => b.v - a.v).slice(0, 3);
       }
       const hEl = el('#ov-peak-hours-list');
-      if(hEl){ hEl.innerHTML = hTop.length ? hTop.map(x=> `<li>${x.label}: ${fmt(x.v)} (${x.pct.toFixed(1)}%)</li>`).join('') : '<li class="muted">—</li>'; }
+      if (hEl) { hEl.innerHTML = hTop.length ? hTop.map(x => `<li>${x.label}: ${fmt(x.v)} (${x.pct.toFixed(1)}%)</li>`).join('') : '<li class="muted">—</li>'; }
 
       // Top Days: ưu tiên server-side top_days, fallback sang tự tính từ by_date
       let dTop = [];
-      if(Array.isArray(data.top_days) && data.top_days.length){
-        const dTotal = data.top_days.reduce((a,b)=> a + (Number(b?.count)||0), 0) || 1;
-        dTop = data.top_days.map(r=>({
-          label: String(r.date||''),
-          v: Number(r.count)||0,
-          pct: ((Number(r.count)||0)*100)/dTotal
+      if (Array.isArray(data.top_days) && data.top_days.length) {
+        const dTotal = data.top_days.reduce((a, b) => a + (Number(b?.count) || 0), 0) || 1;
+        dTop = data.top_days.map(r => ({
+          label: String(r.date || ''),
+          v: Number(r.count) || 0,
+          pct: ((Number(r.count) || 0) * 100) / dTotal
         }));
-      }else{
+      } else {
         const byDate = Array.isArray(data.by_date) ? data.by_date : [];
-        const dTotal = byDate.reduce((a,b)=> a + (Number(b?.count)||0), 0) || 1;
-        dTop = byDate.map(r=>({label: String(r.date||''), v:Number(r.count)||0, pct: ((Number(r.count)||0)*100)/dTotal}))
-          .sort((a,b)=> b.v - a.v).slice(0,3);
+        const dTotal = byDate.reduce((a, b) => a + (Number(b?.count) || 0), 0) || 1;
+        dTop = byDate.map(r => ({ label: String(r.date || ''), v: Number(r.count) || 0, pct: ((Number(r.count) || 0) * 100) / dTotal }))
+          .sort((a, b) => b.v - a.v).slice(0, 3);
       }
       const dEl = el('#ov-peak-days-list');
-      if(dEl){ dEl.innerHTML = dTop.length ? dTop.map(x=> `<li>${x.label}: ${fmt(x.v)} (${x.pct.toFixed(1)}%)</li>`).join('') : '<li class="muted">—</li>'; }
-    }catch{}
+      if (dEl) { dEl.innerHTML = dTop.length ? dTop.map(x => `<li>${x.label}: ${fmt(x.v)} (${x.pct.toFixed(1)}%)</li>`).join('') : '<li class="muted">—</li>'; }
+    } catch { }
 
     // Trend chart
     const trendEl = el('#chart-trend');
-    if(trendEl && data.traffic_trend?.categories?.length){
+    if (trendEl && data.traffic_trend?.categories?.length) {
       const chart = echarts.init(trendEl);
       chart.setOption({
         tooltip: {},
         legend: { data: data.traffic_trend.series.map(s => s.name) },
         xAxis: { type: 'category', data: data.traffic_trend.categories },
-        yAxis: { type: 'value', axisLabel: { formatter: (v)=> fmtShort(v) } },
+        yAxis: { type: 'value', axisLabel: { formatter: (v) => fmtShort(v) } },
         series: data.traffic_trend.series
       });
-    } else if(trendEl) {
+    } else if (trendEl) {
       trendEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>';
     }
 
     // Segmentation chart
     const segEl = el('#chart-seg');
-    if(segEl && data.segments?.categories?.length && data.segments.series?.[0]?.data){
+    if (segEl && data.segments?.categories?.length && data.segments.series?.[0]?.data) {
       const seg = echarts.init(segEl);
       seg.setOption({
         tooltip: {},
         xAxis: { type: 'category', data: data.segments.categories },
-        yAxis: { type: 'value', axisLabel: { formatter: (v)=> fmtShort(v) } },
+        yAxis: { type: 'value', axisLabel: { formatter: (v) => fmtShort(v) } },
         series: [{ type: 'bar', name: 'Users', data: data.segments.series[0].data }]
       });
-    } else if(segEl) {
+    } else if (segEl) {
       segEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>';
     }
 
     // Activity by Hour chart
-    try{
+    try {
       const hrEl = el('#chart-hr');
       const arr = Array.isArray(data.activity_hourly) ? data.activity_hourly : [];
-      if(hrEl){
-        if(arr.length === 24){
-          const labels = Array.from({length:24}, (_,i)=> String(i).padStart(2,'0')+':00');
+      if (hrEl) {
+        if (arr.length === 24) {
+          const labels = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0') + ':00');
           const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(hrEl);
-          if(prev){ prev.dispose(); }
+          if (prev) { prev.dispose(); }
           const c = echarts.init(hrEl);
-          c.setOption({ tooltip:{}, xAxis:{ type:'category', data: labels }, yAxis:{ type:'value' }, series:[{ type:'bar', data: arr }] });
-        }else{
+          c.setOption({ tooltip: {}, xAxis: { type: 'category', data: labels }, yAxis: { type: 'value' }, series: [{ type: 'bar', data: arr }] });
+        } else {
           hrEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>';
         }
       }
-    }catch{}
+    } catch { }
 
     // Activity by Day chart: ưu tiên theo từng ngày trong khoảng lọc (by_date), fallback theo thứ trong tuần
-    try{
+    try {
       const dwEl = el('#chart-dow');
-      if(dwEl){
+      if (dwEl) {
         const byDate = Array.isArray(data.by_date) ? data.by_date : [];
         const hasByDate = byDate.length > 0;
         const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(dwEl);
-        if(prev){ prev.dispose(); }
-        if(hasByDate){
-          const labels = byDate.map(r => String(r.date||''));
-          const vals = byDate.map(r => Number(r.count)||0);
+        if (prev) { prev.dispose(); }
+        if (hasByDate) {
+          const labels = byDate.map(r => String(r.date || ''));
+          const vals = byDate.map(r => Number(r.count) || 0);
           const c = echarts.init(dwEl);
           c.setOption({
-            tooltip:{ trigger:'axis' },
-            xAxis:{ type:'category', data: labels, axisLabel:{ rotate:45 } },
-            yAxis:{ type:'value' },
-            series:[{ type:'bar', data: vals }]
+            tooltip: { trigger: 'axis' },
+            xAxis: { type: 'category', data: labels, axisLabel: { rotate: 45 } },
+            yAxis: { type: 'value' },
+            series: [{ type: 'bar', data: vals }]
           });
-        }else{
+        } else {
           const arr = Array.isArray(data.activity_dow) ? data.activity_dow : [];
-          if(arr.length === 7){
-            const labels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+          if (arr.length === 7) {
+            const labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
             const c = echarts.init(dwEl);
-            c.setOption({ tooltip:{}, xAxis:{ type:'category', data: labels }, yAxis:{ type:'value' }, series:[{ type:'bar', data: arr }] });
-          }else{
+            c.setOption({ tooltip: {}, xAxis: { type: 'category', data: labels }, yAxis: { type: 'value' }, series: [{ type: 'bar', data: arr }] });
+          } else {
             dwEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>';
           }
         }
       }
-    }catch{}
+    } catch { }
   }
 
   // Restore from snapshot if available
   const snap = snapGet('overview');
-  if(snap){
+  if (snap) {
     updateUI(snap);
     statusEl.textContent = 'Restored from cache';
     // If critical KPIs missing in snapshot, do an immediate fresh run; else refresh in background
@@ -825,17 +1081,17 @@ async function loadOverview(){
     // Do not auto-refresh; user actions (Load/Refresh) will fetch and update cache
   }
 
-  async function run(fetchFresh = false){
+  async function run(fetchFresh = false) {
     const q = buildQuery();
     let bizUrl = `/api/v1/metrics/business?${q}`;
     let seoUrl = `/api/v1/analytics/seo?${q}`;
     let jnUrl = `/api/v1/analytics/journey?${q}`;
     const tzOff = new Date().getTimezoneOffset();
     let actUrl = `/api/v1/events/activity?${q}&tz_offset_minutes=${encodeURIComponent(tzOff)}`;
-    if(fetchFresh){
+    if (fetchFresh) {
       const arr = [bizUrl, seoUrl, jnUrl, actUrl].map(withBypass);
-      arr.forEach(({clean})=>{ httpCache.delete(cacheKey(clean)); lsDel(cacheKey(clean)); });
-      [bizUrl, seoUrl, jnUrl, actUrl] = arr.map(x=>x.fresh);
+      arr.forEach(({ clean }) => { httpCache.delete(cacheKey(clean)); lsDel(cacheKey(clean)); });
+      [bizUrl, seoUrl, jnUrl, actUrl] = arr.map(x => x.fresh);
     }
     statusEl.textContent = 'Loading…';
     const business = await safeGet(bizUrl);
@@ -844,26 +1100,26 @@ async function loadOverview(){
     const activity = await safeGet(actUrl);
     // Fetch recent sessions to build user activity histograms
     let recent = null;
-    try{
+    try {
       let recUrl = '/api/v1/events/sessions/recent?limit=500';
-      if(fetchFresh){
+      if (fetchFresh) {
         const b = withBypass(recUrl);
         httpCache.delete(cacheKey(b.clean));
         lsDel(cacheKey(b.clean));
         recUrl = b.fresh;
         recent = await safeGet(recUrl);
-        console.debug('Recent sessions (fresh) fetched', { count: Array.isArray(recent?.items)? recent.items.length : (Array.isArray(recent?.sessions)? recent.sessions.length : 0) });
-      }else{
+        console.debug('Recent sessions (fresh) fetched', { count: Array.isArray(recent?.items) ? recent.items.length : (Array.isArray(recent?.sessions) ? recent.sessions.length : 0) });
+      } else {
         recent = await getWithTTL(recUrl, 600000);
-        console.debug('Recent sessions (ttl) fetched', { count: Array.isArray(recent?.items)? recent.items.length : (Array.isArray(recent?.sessions)? recent.sessions.length : 0) });
+        console.debug('Recent sessions (ttl) fetched', { count: Array.isArray(recent?.items) ? recent.items.length : (Array.isArray(recent?.sessions) ? recent.sessions.length : 0) });
       }
-    }catch{}
+    } catch { }
     // Guard: require SEO to succeed for charts; continue if business/journey fail
-    if(seo?.error){
+    if (seo?.error) {
       statusEl.textContent = `Error: ${seo?.error}`;
       showToast('Overview load failed (SEO). Using cached data if available.', 'error');
       const snapErr = snapGet('overview');
-      if(snapErr) updateUI(snapErr);
+      if (snapErr) updateUI(snapErr);
       return;
     }
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
@@ -879,49 +1135,49 @@ async function loadOverview(){
     // Derive conversion rate and purchases from journey funnel when missing
     let derivedCR = null;
     let derivedPurchases = null;
-    try{
+    try {
       const jf = journey && journey.funnel;
-      if(jf){
-        if(Array.isArray(jf.steps)){
-          const views = jf.steps.find(s=>/(view|views)/i.test(String(s.name||s.step||'')));
-          const purch = jf.steps.find(s=>/purchase/i.test(String(s.name||s.step||'')));
+      if (jf) {
+        if (Array.isArray(jf.steps)) {
+          const views = jf.steps.find(s => /(view|views)/i.test(String(s.name || s.step || '')));
+          const purch = jf.steps.find(s => /purchase/i.test(String(s.name || s.step || '')));
           const v = (views?.value ?? views?.count ?? 0);
           const p = (purch?.value ?? purch?.count ?? 0);
           derivedCR = v ? (p / v) : 0;
           derivedPurchases = Number(p) || 0;
-        }else if(typeof jf === 'object'){
+        } else if (typeof jf === 'object') {
           const v = Number(jf.Views ?? jf.views ?? jf.view ?? 0) || 0;
           const p = Number(jf.Purchase ?? jf.purchase ?? 0) || 0;
           derivedCR = v ? (p / v) : 0;
           derivedPurchases = Number(p) || 0;
         }
       }
-    }catch{}
+    } catch { }
 
     // Derive sessions from SEO timeseries if needed
     let derivedSessions = 0;
-    try{
-      if(Array.isArray(seo?.timeseries)){
-        for(const r of seo.timeseries){
+    try {
+      if (Array.isArray(seo?.timeseries)) {
+        for (const r of seo.timeseries) {
           const a = Number(r.seo ?? r.SEO ?? 0) || 0;
           const b = Number(r.direct ?? r.Direct ?? 0) || 0;
           const c = Number(r.social ?? r.Social ?? 0) || 0;
           derivedSessions += a + b + c;
         }
       }
-    }catch{}
+    } catch { }
 
     // Traffic trend fallback from seo.timeseries when needed
     let trafficTrend = seo.traffic_trend;
-    if(!trafficTrend && Array.isArray(seo?.timeseries)){
-      const categories = seo.timeseries.map(r=> r.date || r.time || '');
-      const build = (k)=> seo.timeseries.map(r=> Number(r[k] ?? r[k?.toUpperCase()] ?? 0) || 0);
+    if (!trafficTrend && Array.isArray(seo?.timeseries)) {
+      const categories = seo.timeseries.map(r => r.date || r.time || '');
+      const build = (k) => seo.timeseries.map(r => Number(r[k] ?? r[k?.toUpperCase()] ?? 0) || 0);
       trafficTrend = {
         categories,
         series: [
-          { name:'SEO', type:'line', data: build('seo') },
-          { name:'Direct', type:'line', data: build('direct') },
-          { name:'Social', type:'line', data: build('social') },
+          { name: 'SEO', type: 'line', data: build('seo') },
+          { name: 'Direct', type: 'line', data: build('direct') },
+          { name: 'Social', type: 'line', data: build('social') },
         ]
       };
     }
@@ -938,7 +1194,7 @@ async function loadOverview(){
     // Compute AOV: prefer business.orders/purchases, fallback to derivedPurchases from journey
     const orders = Number(business.orders ?? business.purchases ?? 0) || 0;
     const effOrders = orders > 0 ? orders : (Number.isFinite(derivedPurchases) ? derivedPurchases : 0);
-    const aovVal = (Number(revenueVal) > 0 && effOrders > 0) ? (Number(revenueVal)/effOrders) : 0;
+    const aovVal = (Number(revenueVal) > 0 && effOrders > 0) ? (Number(revenueVal) / effOrders) : 0;
 
     const data = {
       total_sessions: (Number.isFinite(totalSessions) && totalSessions > 0)
@@ -957,85 +1213,85 @@ async function loadOverview(){
     };
 
     // Prefer server-side activity histograms aligned to filter window
-    try{
+    try {
       const hh = Array.isArray(activity?.hourly) ? activity.hourly : null;
       const dd = Array.isArray(activity?.dow) ? activity.dow : null;
-      if(hh && hh.length === 24) data.activity_hourly = hh;
-      if(dd && dd.length === 7) data.activity_dow = dd;
+      if (hh && hh.length === 24) data.activity_hourly = hh;
+      if (dd && dd.length === 7) data.activity_dow = dd;
       // Prefer server-provided by_date and peak_day; override snapshot/trend
-      if(Array.isArray(activity?.by_date)) data.by_date = activity.by_date;
-      if(activity?.peak_day) data.peak_day_label = String(activity.peak_day);
+      if (Array.isArray(activity?.by_date)) data.by_date = activity.by_date;
+      if (activity?.peak_day) data.peak_day_label = String(activity.peak_day);
       // Always recompute peak hour from hourly if present
-      if(Array.isArray(data.activity_hourly) && data.activity_hourly.length===24){
-        let idx=0,best=-1; for(let i=0;i<24;i++){ const v=Number(data.activity_hourly[i]||0); if(v>best){ best=v; idx=i; } }
-        data.peak_hour_users_label = String(idx).padStart(2,'0')+':00';
+      if (Array.isArray(data.activity_hourly) && data.activity_hourly.length === 24) {
+        let idx = 0, best = -1; for (let i = 0; i < 24; i++) { const v = Number(data.activity_hourly[i] || 0); if (v > best) { best = v; idx = i; } }
+        data.peak_hour_users_label = String(idx).padStart(2, '0') + ':00';
       }
-    }catch{}
+    } catch { }
 
     // Build activity histograms from recent sessions (fallback-only when API histograms missing)
-    try{
+    try {
       // Chỉ dùng fallback nếu API không trả về histogram đầy đủ
       const hasApiHourly = Array.isArray(data.activity_hourly) && data.activity_hourly.length === 24;
       const hasApiDow = Array.isArray(data.activity_dow) && data.activity_dow.length === 7;
-      if(!hasApiHourly || !hasApiDow){
+      if (!hasApiHourly || !hasApiDow) {
         const items = Array.isArray(recent?.items) ? recent.items : (Array.isArray(recent?.sessions) ? recent.sessions : []);
-        if(items && items.length){
+        if (items && items.length) {
           console.debug('Building activity histograms from recent sessions (fallback)', { sample: items[0] });
           const hourly = Array(24).fill(0);
           const dow = Array(7).fill(0);
-          for(const s of items){
+          for (const s of items) {
             const raw = s.first_event_at || s.last_event_at || s.last_event || s.start_time || s.end_time || s.ts || null;
-            if(raw == null) continue;
+            if (raw == null) continue;
             let d;
-            if(typeof raw === 'number'){
-              const ms = raw > 1e12 ? raw : raw*1000;
+            if (typeof raw === 'number') {
+              const ms = raw > 1e12 ? raw : raw * 1000;
               d = new Date(ms);
-            }else if(typeof raw === 'string' && /^\d+$/.test(raw)){
+            } else if (typeof raw === 'string' && /^\d+$/.test(raw)) {
               const num = Number(raw);
-              const ms = num > 1e12 ? num : num*1000;
+              const ms = num > 1e12 ? num : num * 1000;
               d = new Date(ms);
-            }else{
+            } else {
               d = new Date(raw);
             }
-            if(isFinite(d.getTime())){
+            if (isFinite(d.getTime())) {
               hourly[d.getHours()] += 1;
               dow[d.getDay()] += 1;
             }
           }
-          if(!hasApiHourly && hourly.some(v=>v>0)) data.activity_hourly = hourly;
-          if(!hasApiDow && dow.some(v=>v>0)) data.activity_dow = dow;
-          console.debug('Histogram fallback built', { hourlyNonZero: hourly.filter(v=>v>0).length, dow, peakHour: data.peak_hour_users_label });
+          if (!hasApiHourly && hourly.some(v => v > 0)) data.activity_hourly = hourly;
+          if (!hasApiDow && dow.some(v => v > 0)) data.activity_dow = dow;
+          console.debug('Histogram fallback built', { hourlyNonZero: hourly.filter(v => v > 0).length, dow, peakHour: data.peak_hour_users_label });
           // Nếu đang dùng fallback (không có peak từ API) thì tính peak hour từ histogram fallback
-          if(!data.peak_hour_users_label && hourly.some(v=>v>0)){
-            let idx = 0; let best=-1; for(let i=0;i<24;i++){ if(hourly[i]>best){ best=hourly[i]; idx=i; } }
-            data.peak_hour_users_label = String(idx).padStart(2,'0')+':00';
+          if (!data.peak_hour_users_label && hourly.some(v => v > 0)) {
+            let idx = 0; let best = -1; for (let i = 0; i < 24; i++) { if (hourly[i] > best) { best = hourly[i]; idx = i; } }
+            data.peak_hour_users_label = String(idx).padStart(2, '0') + ':00';
           }
         }
       }
-    }catch{}
+    } catch { }
 
     // Compute peaks from traffic trend chỉ khi chưa có dữ liệu từ activity API
-    try{
-      if(!data.peak_day && !data.peak_day_label && !data.peak_hour && !data.peak_hour_users_label){
+    try {
+      if (!data.peak_day && !data.peak_day_label && !data.peak_hour && !data.peak_hour_users_label) {
         const tt = data.traffic_trend;
         const cats = Array.isArray(tt?.categories) ? tt.categories : [];
         const series = Array.isArray(tt?.series) ? tt.series : [];
-        if(cats.length && series.length){
-          const sums = cats.map((_,i)=> series.reduce((acc,s)=> acc + (Number(s?.data?.[i] ?? 0) || 0), 0));
+        if (cats.length && series.length) {
+          const sums = cats.map((_, i) => series.reduce((acc, s) => acc + (Number(s?.data?.[i] ?? 0) || 0), 0));
           // Peak Day (by sessions)
           let peakDayIdx = -1, peakDayVal = -1;
-          for(let i=0;i<sums.length;i++){ if(sums[i] > peakDayVal){ peakDayVal = sums[i]; peakDayIdx = i; } }
-          if(peakDayIdx >= 0){ data.peak_day_label = String(cats[peakDayIdx]); }
+          for (let i = 0; i < sums.length; i++) { if (sums[i] > peakDayVal) { peakDayVal = sums[i]; peakDayIdx = i; } }
+          if (peakDayIdx >= 0) { data.peak_day_label = String(cats[peakDayIdx]); }
           // Peak Hour (Users proxy): only if category includes hour info (e.g., contains ':')
-          const hasHour = cats.some(c=>/\d{1,2}:\d{2}/.test(String(c)) || /T\d{2}:\d{2}/.test(String(c)));
-          if(hasHour){
+          const hasHour = cats.some(c => /\d{1,2}:\d{2}/.test(String(c)) || /T\d{2}:\d{2}/.test(String(c)));
+          if (hasHour) {
             let peakHourIdx = -1, peakHourVal = -1;
-            for(let i=0;i<sums.length;i++){ if(sums[i] > peakHourVal){ peakHourVal = sums[i]; peakHourIdx = i; } }
-            if(peakHourIdx >= 0){ data.peak_hour_users_label = String(cats[peakHourIdx]); }
+            for (let i = 0; i < sums.length; i++) { if (sums[i] > peakHourVal) { peakHourVal = sums[i]; peakHourIdx = i; } }
+            if (peakHourIdx >= 0) { data.peak_hour_users_label = String(cats[peakHourIdx]); }
           }
         }
       }
-    }catch{}
+    } catch { }
 
     // Save snapshot only if fresh or not yet cached
     snapUpdate('overview', data);
@@ -1046,12 +1302,12 @@ async function loadOverview(){
   el('#ov-refresh').addEventListener('click', () => { clearSnapshotForTabCurrentFilter('overview'); run(true); });
 
   // Auto-fetch on first visit if there is no snapshot
-  if(!snap){
+  if (!snap) {
     await run(false);
   }
 }
 
-async function renderCart(){
+async function renderCart() {
   view.innerHTML = `
     <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:8px">
       <button id="cart-load" class="tab">Load</button>
@@ -1065,28 +1321,28 @@ async function renderCart(){
   `;
   const statusEl = el('#cart-status');
   // Restore snapshot
-  (function(){
+  (function () {
     const snap = snapGet('cart');
-    if(!snap) return;
+    if (!snap) return;
     // Abandonment chart
     const channels = (snap.channels && Object.keys(snap.channels)) || [];
-    const abData = channels.map(c=> typeof snap.channels?.[c]?.abandonment_rate === 'number' ? Math.round(snap.channels[c].abandonment_rate*1000)/10 : null);
+    const abData = channels.map(c => typeof snap.channels?.[c]?.abandonment_rate === 'number' ? Math.round(snap.channels[c].abandonment_rate * 1000) / 10 : null);
     const abEl = el('#chart-ab');
-    if(abEl && abData.length){ const ab = echarts.init(abEl); ab.setOption({ tooltip:{ trigger:'axis' }, legend:{ data:['Abandonment %'] }, xAxis:{ type:'category', data: channels }, yAxis:{ type:'value', axisLabel:{ formatter:'{value}%' } }, series:[{ name:'Abandonment %', type:'bar', data: abData }] }); }
+    if (abEl && abData.length) { const ab = echarts.init(abEl); ab.setOption({ tooltip: { trigger: 'axis' }, legend: { data: ['Abandonment %'] }, xAxis: { type: 'category', data: channels }, yAxis: { type: 'value', axisLabel: { formatter: '{value}%' } }, series: [{ name: 'Abandonment %', type: 'bar', data: abData }] }); }
     // Size distribution
-    const distEl = el('#chart-dist'); const distCats=['1','2','3','4','5+'];
-    if(Array.isArray(snap.size_distribution)){
-      const map = new Map(snap.size_distribution.map(r=>[String(r.size), r.count]));
-      const distData = distCats.map(k=>map.get(k) ?? 0);
-      if(distEl){ const chart = echarts.init(distEl); chart.setOption({ tooltip:{}, xAxis:{ type:'category', data: distCats }, yAxis:{ type:'value' }, series:[{ type:'line', data: distData }] }); }
+    const distEl = el('#chart-dist'); const distCats = ['1', '2', '3', '4', '5+'];
+    if (Array.isArray(snap.size_distribution)) {
+      const map = new Map(snap.size_distribution.map(r => [String(r.size), r.count]));
+      const distData = distCats.map(k => map.get(k) ?? 0);
+      if (distEl) { const chart = echarts.init(distEl); chart.setOption({ tooltip: {}, xAxis: { type: 'category', data: distCats }, yAxis: { type: 'value' }, series: [{ type: 'line', data: distData }] }); }
     }
     statusEl.textContent = 'Restored from cache';
   })();
-  async function run(fetchFresh=false){
+  async function run(fetchFresh = false) {
     const q = buildQuery();
     let urlA = `/api/v1/analytics/cart?${q}`;
     let urlT = `/api/v1/cart/trends?${q}`;
-    if(fetchFresh){ const a = withBypass(urlA), b = withBypass(urlT); [a,b].forEach(({clean})=>{ httpCache.delete(cacheKey(clean)); lsDel(cacheKey(clean)); }); urlA = a.fresh; urlT = b.fresh; }
+    if (fetchFresh) { const a = withBypass(urlA), b = withBypass(urlT);[a, b].forEach(({ clean }) => { httpCache.delete(cacheKey(clean)); lsDel(cacheKey(clean)); }); urlA = a.fresh; urlT = b.fresh; }
     statusEl.textContent = 'Loading…';
     const analysis = await safeGet(urlA);
     const trends = await safeGet(urlT);
@@ -1094,53 +1350,53 @@ async function renderCart(){
     // Save snapshot for Cart (fresh only or if missing)
     snapUpdate('cart', { channels: analysis?.channels ?? {}, size_distribution: analysis?.size_distribution ?? [] });
 
-  // Abandonment by channel
-  const channels = (analysis.channels && Object.keys(analysis.channels)) || [];
-  const abData = channels.map(c => {
-    const v = analysis.channels?.[c]?.abandonment_rate;
-    return typeof v === 'number' ? Math.round(v*1000)/10 : null;
-  });
-  const abEl = el('#chart-ab');
-  if(abEl && abData.length){
-    const ab = echarts.init(abEl);
-    ab.setOption({
-      tooltip: { trigger:'axis' },
-      legend: { data:['Abandonment %'] },
-      xAxis: { type:'category', data: channels },
-      yAxis: { type:'value', axisLabel:{ formatter: '{value}%' } },
-      series: [{ name:'Abandonment %', type:'bar', data: abData }]
+    // Abandonment by channel
+    const channels = (analysis.channels && Object.keys(analysis.channels)) || [];
+    const abData = channels.map(c => {
+      const v = analysis.channels?.[c]?.abandonment_rate;
+      return typeof v === 'number' ? Math.round(v * 1000) / 10 : null;
     });
-  } else if(abEl) { abEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
+    const abEl = el('#chart-ab');
+    if (abEl && abData.length) {
+      const ab = echarts.init(abEl);
+      ab.setOption({
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['Abandonment %'] },
+        xAxis: { type: 'category', data: channels },
+        yAxis: { type: 'value', axisLabel: { formatter: '{value}%' } },
+        series: [{ name: 'Abandonment %', type: 'bar', data: abData }]
+      });
+    } else if (abEl) { abEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
 
-  // Cart size distribution
-  const distEl = el('#chart-dist');
-  const distCats = ['1','2','3','4','5+'];
-  let distData = [];
-  if(analysis.size_distribution && Array.isArray(analysis.size_distribution)){
-    // Expect array of {size,count}
-    const map = new Map();
-    for(const r of analysis.size_distribution){
-      map.set(String(r.size), r.count);
+    // Cart size distribution
+    const distEl = el('#chart-dist');
+    const distCats = ['1', '2', '3', '4', '5+'];
+    let distData = [];
+    if (analysis.size_distribution && Array.isArray(analysis.size_distribution)) {
+      // Expect array of {size,count}
+      const map = new Map();
+      for (const r of analysis.size_distribution) {
+        map.set(String(r.size), r.count);
+      }
+      distData = distCats.map(k => map.get(k) ?? 0);
     }
-    distData = distCats.map(k=>map.get(k) ?? 0);
+    if (distEl && distData.length) {
+      const distChart = echarts.init(distEl);
+      distChart.setOption({
+        tooltip: {},
+        xAxis: { type: 'category', data: distCats },
+        yAxis: { type: 'value' },
+        series: [{ type: 'line', data: distData }]
+      });
+    } else if (distEl) { distEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
   }
-  if(distEl && distData.length){
-    const distChart = echarts.init(distEl);
-    distChart.setOption({
-      tooltip: {},
-      xAxis: { type:'category', data: distCats },
-      yAxis: { type:'value' },
-      series: [{ type:'line', data: distData }]
-    });
-  } else if(distEl) { distEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
-  }
-  el('#cart-load').addEventListener('click', ()=>{ clearSnapshotForTabCurrentFilter('cart'); run(true); });
-  el('#cart-refresh').addEventListener('click', ()=>{ clearSnapshotForTabCurrentFilter('cart'); run(true); });
+  el('#cart-load').addEventListener('click', () => { clearSnapshotForTabCurrentFilter('cart'); run(true); });
+  el('#cart-refresh').addEventListener('click', () => { clearSnapshotForTabCurrentFilter('cart'); run(true); });
   // Auto-fetch on first visit if there is no snapshot yet
-  if(!snapGet('cart')){ await run(false); }
+  if (!snapGet('cart')) { await run(false); }
 }
 
-async function renderJourney(){
+async function renderJourney() {
   view.innerHTML = `
     <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:8px">
       <button id="jn-load" type="button" class="tab">Load</button>
@@ -1154,181 +1410,181 @@ async function renderJourney(){
   `;
   const statusEl = el('#jn-status');
   // Restore snapshot
-  (function(){
-    const snap = snapGet('journey'); if(!snap) return;
+  (function () {
+    const snap = snapGet('journey'); if (!snap) return;
     // Funnel
-    let funnelData=[]; if(snap.funnel && Array.isArray(snap.funnel.steps)) funnelData = snap.funnel.steps.map(s=>({ name:s.name||s.step||'', value:s.value||s.count||0 })); else if(snap.funnel && typeof snap.funnel==='object') funnelData = Object.entries(snap.funnel).map(([name,value])=>({ name, value }));
-    const funnelEl = el('#chart-funnel'); if(funnelEl && funnelData.length){ const chart=echarts.init(funnelEl); chart.setOption({ tooltip:{ trigger:'item' }, series:[{ type:'funnel', data:funnelData }] }); }
+    let funnelData = []; if (snap.funnel && Array.isArray(snap.funnel.steps)) funnelData = snap.funnel.steps.map(s => ({ name: s.name || s.step || '', value: s.value || s.count || 0 })); else if (snap.funnel && typeof snap.funnel === 'object') funnelData = Object.entries(snap.funnel).map(([name, value]) => ({ name, value }));
+    const funnelEl = el('#chart-funnel'); if (funnelEl && funnelData.length) { const chart = echarts.init(funnelEl); chart.setOption({ tooltip: { trigger: 'item' }, series: [{ type: 'funnel', data: funnelData }] }); }
     // Sankey
-    let nodes=[], links=[]; if(snap.paths?.links){ links=snap.paths.links; nodes = snap.paths.nodes || Array.from(new Set(links.flatMap(l=>[l.source,l.target]))); }
+    let nodes = [], links = []; if (snap.paths?.links) { links = snap.paths.links; nodes = snap.paths.nodes || Array.from(new Set(links.flatMap(l => [l.source, l.target]))); }
     // If snapshot lacks links, synthesize from funnel steps as a fallback
-    if((!links || !links.length) && snap.funnel){
-      try{
-        let steps=[];
-        if(Array.isArray(snap.funnel.steps)) steps = snap.funnel.steps.map(s=>({ name:s.name||s.step||'', value:s.value||s.count||0 }));
-        else if(typeof snap.funnel==='object') steps = Object.entries(snap.funnel).map(([name,value])=>({ name, value }));
-        steps = steps.filter(s=>s.name);
-        const syn=[]; for(let i=0;i<steps.length-1;i++){ const a=steps[i], b=steps[i+1]; const v = isFinite(b.value) && b.value>0 ? b.value : Math.max(0, Math.min(a.value||0, b.value||0)); syn.push({ source:a.name, target:b.name, value:v }); }
-        if(syn.length){ links = syn; nodes = Array.from(new Set(syn.flatMap(l=>[l.source,l.target]))); }
-      }catch{}
+    if ((!links || !links.length) && snap.funnel) {
+      try {
+        let steps = [];
+        if (Array.isArray(snap.funnel.steps)) steps = snap.funnel.steps.map(s => ({ name: s.name || s.step || '', value: s.value || s.count || 0 }));
+        else if (typeof snap.funnel === 'object') steps = Object.entries(snap.funnel).map(([name, value]) => ({ name, value }));
+        steps = steps.filter(s => s.name);
+        const syn = []; for (let i = 0; i < steps.length - 1; i++) { const a = steps[i], b = steps[i + 1]; const v = isFinite(b.value) && b.value > 0 ? b.value : Math.max(0, Math.min(a.value || 0, b.value || 0)); syn.push({ source: a.name, target: b.name, value: v }); }
+        if (syn.length) { links = syn; nodes = Array.from(new Set(syn.flatMap(l => [l.source, l.target]))); }
+      } catch { }
     }
     // Enforce DAG and limit edges for snapshot render
-    if(Array.isArray(links) && links.length){
-      const stageOf = (label)=>{
-        const s = String(label||'').toLowerCase();
-        if(/purchase|order|success|complete/.test(s)) return 3;
-        if(/checkout|payment|pay/.test(s)) return 2;
-        if(/add\s*to\s*cart|cart/.test(s)) return 1;
-        if(/view|landing|home|list|product/.test(s)) return 0;
+    if (Array.isArray(links) && links.length) {
+      const stageOf = (label) => {
+        const s = String(label || '').toLowerCase();
+        if (/purchase|order|success|complete/.test(s)) return 3;
+        if (/checkout|payment|pay/.test(s)) return 2;
+        if (/add\s*to\s*cart|cart/.test(s)) return 1;
+        if (/view|landing|home|list|product/.test(s)) return 0;
         return 4;
       };
       const seen = new Set();
-      links = links.filter(l=>{
-        if(!l || !l.source || !l.target) return false;
+      links = links.filter(l => {
+        if (!l || !l.source || !l.target) return false;
         const a = String(l.source), b = String(l.target);
-        if(a === b) return false;
+        if (a === b) return false;
         const sa = stageOf(a), sb = stageOf(b);
-        if(!(sa < sb)) return false;
-        const key = a+"->"+b;
-        if(seen.has(key)) return false;
+        if (!(sa < sb)) return false;
+        const key = a + "->" + b;
+        if (seen.has(key)) return false;
         seen.add(key); return true;
       });
-      if(links.length > 100){ links = links.slice().sort((a,b)=>(b.value||0)-(a.value||0)).slice(0,100); }
-      nodes = Array.from(new Set(links.flatMap(l=>[l.source,l.target])));
+      if (links.length > 100) { links = links.slice().sort((a, b) => (b.value || 0) - (a.value || 0)).slice(0, 100); }
+      nodes = Array.from(new Set(links.flatMap(l => [l.source, l.target])));
     }
-    const sankeyEl = el('#chart-sankey'); if(sankeyEl && nodes.length && links.length){
-      const currHash = JSON.stringify({nodes,links});
+    const sankeyEl = el('#chart-sankey'); if (sankeyEl && nodes.length && links.length) {
+      const currHash = JSON.stringify({ nodes, links });
       const prev = (echarts.getInstanceByDom && echarts.getInstanceByDom(sankeyEl)) || null;
-      if(!prev || window.__jnSankeyHash !== currHash){
-        if(prev){ prev.dispose(); }
-        const sankey=echarts.init(sankeyEl);
-        sankey.setOption({ animation:false, tooltip:{}, series:[{ type:'sankey', data:nodes.map(n=>({ name:n })), links }] });
+      if (!prev || window.__jnSankeyHash !== currHash) {
+        if (prev) { prev.dispose(); }
+        const sankey = echarts.init(sankeyEl);
+        sankey.setOption({ animation: false, tooltip: {}, series: [{ type: 'sankey', data: nodes.map(n => ({ name: n })), links }] });
         window.__jnSankeyHash = currHash;
-        requestAnimationFrame(()=>{ try{ sankey.resize(); }catch{} });
+        requestAnimationFrame(() => { try { sankey.resize(); } catch { } });
       }
     }
     statusEl.textContent = 'Restored from cache';
     // Do not auto-refresh; user decides when to fetch new data via Load/Refresh
   })();
-  async function run(fetchFresh=false){
+  async function run(fetchFresh = false) {
     const q = buildQuery();
     let url = `/api/v1/analytics/journey?${q}`;
-    if(fetchFresh){ const b = withBypass(url); httpCache.delete(cacheKey(b.clean)); lsDel(cacheKey(b.clean)); url = b.fresh; }
+    if (fetchFresh) { const b = withBypass(url); httpCache.delete(cacheKey(b.clean)); lsDel(cacheKey(b.clean)); url = b.fresh; }
     statusEl.textContent = 'Loading…';
     let journey = null;
-    try{
+    try {
       journey = fetchFresh ? (await safeGet(url)) : (await getWithTTL(url, 600000));
-    }catch(e){ console.debug('Journey fetch error', e); }
+    } catch (e) { console.debug('Journey fetch error', e); }
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
     // Do not persist raw API shape; we'll persist processed nodes/links below
 
-  // Funnel data
-  let funnelData = [];
-  if(journey){
-    // common shapes: journey.funnel.steps = [{name,value}] or journey.funnel = {Landing: n, ...}
-    if(journey.funnel && Array.isArray(journey.funnel.steps)){
-      funnelData = journey.funnel.steps.map(s=>({ name: s.name || s.step || '', value: s.value || s.count || 0 }));
-    }else if(journey.funnel && typeof journey.funnel === 'object'){
-      funnelData = Object.entries(journey.funnel).map(([name, value])=>({ name, value }));
-    }
-  }
-  const funnelEl = el('#chart-funnel');
-  if(funnelEl && funnelData.length){
-    const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(funnelEl);
-    if(prev){ prev.dispose(); }
-    const funnel = echarts.init(funnelEl);
-    funnel.setOption({
-      tooltip: { trigger: 'item' },
-      series: [{ type: 'funnel', data: funnelData }]
-    });
-    requestAnimationFrame(()=>{ try{ funnel.resize(); }catch{} });
-  } else if(funnelEl) { funnelEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
-
-  // Sankey data
-  let nodes = [];
-  let links = [];
-  if(journey){
-    // Prefer paths if present
-    if(journey.paths){
-      if(Array.isArray(journey.paths.links)){
-        links = journey.paths.links;
-        // Limit to Top 100 edges by value
-        if(links.length > 100){ links = links.slice().sort((a,b)=>(b.value||0)-(a.value||0)).slice(0,100); }
-        // Recompute nodes from limited links
-        nodes = Array.from(new Set(links.flatMap(l=>[l.source,l.target])));
-      }else if(Array.isArray(journey.paths)){
-        links = journey.paths;
-        if(links.length > 100){ links = links.slice().sort((a,b)=>(b.value||0)-(a.value||0)).slice(0,100); }
-        nodes = Array.from(new Set(links.flatMap(l=>[l.source,l.target])));
+    // Funnel data
+    let funnelData = [];
+    if (journey) {
+      // common shapes: journey.funnel.steps = [{name,value}] or journey.funnel = {Landing: n, ...}
+      if (journey.funnel && Array.isArray(journey.funnel.steps)) {
+        funnelData = journey.funnel.steps.map(s => ({ name: s.name || s.step || '', value: s.value || s.count || 0 }));
+      } else if (journey.funnel && typeof journey.funnel === 'object') {
+        funnelData = Object.entries(journey.funnel).map(([name, value]) => ({ name, value }));
       }
     }
-    // Fallback to top_paths (array of links) if paths missing
-    if(!links.length && Array.isArray(journey.top_paths) && journey.top_paths.length){
-      links = journey.top_paths;
-      if(links.length > 100){ links = links.slice().sort((a,b)=>(b.value||0)-(a.value||0)).slice(0,100); }
-      nodes = Array.from(new Set(links.flatMap(l=>[l.source,l.target])));
-    }
-  }
-  // Final fallback: synthesize links from funnel steps when API links are missing
-  if(!links.length && Array.isArray(funnelData) && funnelData.length > 1){
-    try{
-      const steps = funnelData
-        .map(s=>({ name: String(s.name||'').trim()||'Step', value: Number(s.value||0) }))
-        .filter(s=>s.name && isFinite(s.value));
-      const syn = [];
-      for(let i=0;i<steps.length-1;i++){
-        const a = steps[i];
-        const b = steps[i+1];
-        const v = isFinite(b.value) && b.value>0 ? b.value : Math.max(0, Math.min(a.value||0, b.value||0));
-        syn.push({ source: a.name, target: b.name, value: v });
-      }
-      if(syn.length){
-        links = syn;
-        nodes = Array.from(new Set(links.flatMap(l=>[l.source,l.target])));
-      }
-    }catch{}
-  }
-  // Persist latest payload ALWAYS to ensure old cache does not reappear on tab switch
-  try{
-    const payload = { funnel: journey?.funnel ?? null, paths: { nodes, links } };
-    if(fetchFresh){ snapSet('journey', payload); }
-    else { snapUpdate('journey', payload); }
-  }catch{}
-  const sankeyEl = el('#chart-sankey');
-  if(sankeyEl && nodes.length && links.length){
-    const currHash = JSON.stringify({nodes,links});
-    const prev = (echarts.getInstanceByDom && echarts.getInstanceByDom(sankeyEl)) || null;
-    if(!prev || window.__jnSankeyHash !== currHash){
-      if(prev){ prev.dispose(); }
-      sankeyEl.innerHTML = '';
-      const sankey = echarts.init(sankeyEl);
-      sankey.setOption({
-        animation:false,
-        tooltip: {},
-        series: [{ type: 'sankey', data: nodes.map(n=>({ name:n })), links }]
+    const funnelEl = el('#chart-funnel');
+    if (funnelEl && funnelData.length) {
+      const prev = echarts.getInstanceByDom && echarts.getInstanceByDom(funnelEl);
+      if (prev) { prev.dispose(); }
+      const funnel = echarts.init(funnelEl);
+      funnel.setOption({
+        tooltip: { trigger: 'item' },
+        series: [{ type: 'funnel', data: funnelData }]
       });
-      window.__jnSankeyHash = currHash;
-      requestAnimationFrame(()=>{ try{ sankey.resize(); }catch{} });
-      console.debug('Journey Sankey rendered', { nodeCount: nodes.length, linkCount: links.length });
+      requestAnimationFrame(() => { try { funnel.resize(); } catch { } });
+    } else if (funnelEl) { funnelEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
+
+    // Sankey data
+    let nodes = [];
+    let links = [];
+    if (journey) {
+      // Prefer paths if present
+      if (journey.paths) {
+        if (Array.isArray(journey.paths.links)) {
+          links = journey.paths.links;
+          // Limit to Top 100 edges by value
+          if (links.length > 100) { links = links.slice().sort((a, b) => (b.value || 0) - (a.value || 0)).slice(0, 100); }
+          // Recompute nodes from limited links
+          nodes = Array.from(new Set(links.flatMap(l => [l.source, l.target])));
+        } else if (Array.isArray(journey.paths)) {
+          links = journey.paths;
+          if (links.length > 100) { links = links.slice().sort((a, b) => (b.value || 0) - (a.value || 0)).slice(0, 100); }
+          nodes = Array.from(new Set(links.flatMap(l => [l.source, l.target])));
+        }
+      }
+      // Fallback to top_paths (array of links) if paths missing
+      if (!links.length && Array.isArray(journey.top_paths) && journey.top_paths.length) {
+        links = journey.top_paths;
+        if (links.length > 100) { links = links.slice().sort((a, b) => (b.value || 0) - (a.value || 0)).slice(0, 100); }
+        nodes = Array.from(new Set(links.flatMap(l => [l.source, l.target])));
+      }
     }
-  } else if(sankeyEl) { sankeyEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
-  if(!(nodes.length && links.length)){
-    console.debug('Journey Sankey empty', { nodes, links });
-    statusEl.textContent = 'No path data';
-  }
+    // Final fallback: synthesize links from funnel steps when API links are missing
+    if (!links.length && Array.isArray(funnelData) && funnelData.length > 1) {
+      try {
+        const steps = funnelData
+          .map(s => ({ name: String(s.name || '').trim() || 'Step', value: Number(s.value || 0) }))
+          .filter(s => s.name && isFinite(s.value));
+        const syn = [];
+        for (let i = 0; i < steps.length - 1; i++) {
+          const a = steps[i];
+          const b = steps[i + 1];
+          const v = isFinite(b.value) && b.value > 0 ? b.value : Math.max(0, Math.min(a.value || 0, b.value || 0));
+          syn.push({ source: a.name, target: b.name, value: v });
+        }
+        if (syn.length) {
+          links = syn;
+          nodes = Array.from(new Set(links.flatMap(l => [l.source, l.target])));
+        }
+      } catch { }
+    }
+    // Persist latest payload ALWAYS to ensure old cache does not reappear on tab switch
+    try {
+      const payload = { funnel: journey?.funnel ?? null, paths: { nodes, links } };
+      if (fetchFresh) { snapSet('journey', payload); }
+      else { snapUpdate('journey', payload); }
+    } catch { }
+    const sankeyEl = el('#chart-sankey');
+    if (sankeyEl && nodes.length && links.length) {
+      const currHash = JSON.stringify({ nodes, links });
+      const prev = (echarts.getInstanceByDom && echarts.getInstanceByDom(sankeyEl)) || null;
+      if (!prev || window.__jnSankeyHash !== currHash) {
+        if (prev) { prev.dispose(); }
+        sankeyEl.innerHTML = '';
+        const sankey = echarts.init(sankeyEl);
+        sankey.setOption({
+          animation: false,
+          tooltip: {},
+          series: [{ type: 'sankey', data: nodes.map(n => ({ name: n })), links }]
+        });
+        window.__jnSankeyHash = currHash;
+        requestAnimationFrame(() => { try { sankey.resize(); } catch { } });
+        console.debug('Journey Sankey rendered', { nodeCount: nodes.length, linkCount: links.length });
+      }
+    } else if (sankeyEl) { sankeyEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
+    if (!(nodes.length && links.length)) {
+      console.debug('Journey Sankey empty', { nodes, links });
+      statusEl.textContent = 'No path data';
+    }
   }
   // Ensure buttons are clickable
   const jnLoadBtn = el('#jn-load');
   const jnRefBtn = el('#jn-refresh');
-  const runDeb = debounce((fresh)=>run(fresh), 700);
-  if(jnLoadBtn){
+  const runDeb = debounce((fresh) => run(fresh), 700);
+  if (jnLoadBtn) {
     jnLoadBtn.disabled = false; jnLoadBtn.style.pointerEvents = 'auto'; jnLoadBtn.style.cursor = 'pointer'; jnLoadBtn.style.zIndex = 10; jnLoadBtn.style.position = 'relative';
-    const handler=()=>{ console.debug('Journey: Load clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('journey'); runDeb(true); };
+    const handler = () => { console.debug('Journey: Load clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('journey'); runDeb(true); };
     jnLoadBtn.addEventListener('click', handler, { capture: true });
   }
-  if(jnRefBtn){
+  if (jnRefBtn) {
     jnRefBtn.disabled = false; jnRefBtn.style.pointerEvents = 'auto'; jnRefBtn.style.cursor = 'pointer'; jnRefBtn.style.zIndex = 10; jnRefBtn.style.position = 'relative';
-    const handler=()=>{ console.debug('Journey: Refresh clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('journey'); runDeb(true); };
+    const handler = () => { console.debug('Journey: Refresh clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('journey'); runDeb(true); };
     jnRefBtn.addEventListener('click', handler, { capture: true });
   }
   // Do not auto-fetch; show cache only until user clicks Load/Refresh
@@ -1336,7 +1592,7 @@ async function renderJourney(){
   window.journeyRun = run;
 }
 
-async function renderReco(){
+async function renderReco() {
   view.innerHTML = `
     <div class="card">
       <h3>Recommendations</h3>
@@ -1369,53 +1625,53 @@ async function renderReco(){
   const runBtn = el('#reco-run');
   const grid = el('#reco-grid');
 
-  function skeleton(){
-    grid.innerHTML = Array.from({length: 6}, ()=>`<div class="card skel" style="height:120px"></div>`).join('');
+  function skeleton() {
+    grid.innerHTML = Array.from({ length: 6 }, () => `<div class="card skel" style="height:120px"></div>`).join('');
   }
 
   const productCache = new Map(); // pid -> product doc
 
-  async function renderItems(items){
-    if(!Array.isArray(items) || !items.length){
+  async function renderItems(items) {
+    if (!Array.isArray(items) || !items.length) {
       grid.innerHTML = `<div class="muted" style="padding:8px">Không có gợi ý.</div>`;
       return;
     }
 
     // Thu thập danh sách product_id duy nhất để enrich tên, category, giá
     const ids = new Set();
-    for(const it of items){
+    for (const it of items) {
       const pid = it.product_id || it.productId || it.id;
-      if(pid) ids.add(String(pid));
+      if (pid) ids.add(String(pid));
     }
 
-    try{
+    try {
       const fetches = [];
-      for(const pid of ids){
-        if(productCache.has(pid)) continue;
-        fetches.push((async ()=>{
-          try{
+      for (const pid of ids) {
+        if (productCache.has(pid)) continue;
+        fetches.push((async () => {
+          try {
             const prod = await safeGet(`/api/product/${encodeURIComponent(pid)}`);
-            if(prod && prod._id){ productCache.set(pid, prod); }
-          }catch{
+            if (prod && prod._id) { productCache.set(pid, prod); }
+          } catch {
             // best-effort: nếu fail thì cứ để cache trống, UI sẽ fallback sang id
           }
         })());
       }
-      if(fetches.length){ await Promise.all(fetches); }
-    }catch{}
+      if (fetches.length) { await Promise.all(fetches); }
+    } catch { }
 
-    grid.innerHTML = items.map(it=>{
+    grid.innerHTML = items.map(it => {
       const pid = String(it.product_id || it.productId || it.id || '');
       const prod = productCache.get(pid) || null;
       const title = prod?.name || it.title || it.name || it.product_name || pid;
       const category = prod?.category || it.category || '';
       // Ưu tiên hiện relevance/confidence nếu có, fallback sang score
       let scoreText = '';
-      if(typeof it.relevance_score === 'number'){
+      if (typeof it.relevance_score === 'number') {
         scoreText = `Relevance: ${it.relevance_score.toFixed(1)}`;
-      }else if(typeof it.confidence_score === 'number'){
+      } else if (typeof it.confidence_score === 'number') {
         scoreText = `Confidence: ${it.confidence_score.toFixed(2)}`;
-      }else if(typeof it.score === 'number'){
+      } else if (typeof it.score === 'number') {
         scoreText = `Score: ${it.score.toFixed(3)}`;
       }
       const priceVal = prod?.price ?? it.price;
@@ -1430,14 +1686,14 @@ async function renderReco(){
     }).join('');
   }
 
-  async function load(){
-    try{
+  async function load() {
+    try {
       skeleton();
       const limit = Number(limitSel.value || '10');
       let data = [];
-      if(modeSel.value === 'personalized'){
+      if (modeSel.value === 'personalized') {
         const uid = userIn.value.trim();
-        const q = new URLSearchParams(); if(uid) q.set('user_id', uid); q.set('limit', String(limit));
+        const q = new URLSearchParams(); if (uid) q.set('user_id', uid); q.set('limit', String(limit));
         const res = await safeGet(`/api/v1/recommendations/personalized?${q.toString()}`);
         data = Array.isArray(res) ? res : (res.items || []);
         // Save snapshot for personalized: only store recommendations array from first entry
@@ -1445,7 +1701,7 @@ async function renderReco(){
         snapMaybe('reco:personalized', { user_id: uid || null, items: recs });
         await renderItems(recs);
         return;
-      }else{
+      } else {
         const tf = timeSel.value;
         const q = new URLSearchParams({ timeframe: tf, limit: String(limit) });
         const res = await safeGet(`/api/v1/recommendations/trending?${q.toString()}`);
@@ -1454,18 +1710,18 @@ async function renderReco(){
         snapMaybe(`reco:trending:${tf}`, { items: data });
       }
       await renderItems(data);
-    }catch(e){
+    } catch (e) {
       showToast('Recommendation load failed', 'error');
     }
   }
 
-  modeSel.addEventListener('change', ()=>{
+  modeSel.addEventListener('change', () => {
     const trending = modeSel.value === 'trending';
     timeSel.style.display = trending ? '' : 'none';
     userIn.style.display = trending ? 'none' : '';
   });
   // Ensure we clear all reco snapshots (both personalized and trending variants)
-  runBtn.addEventListener('click', ()=>{
+  runBtn.addEventListener('click', () => {
     clearSnapshotsForTab('reco:personalized');
     clearSnapshotsForTab('reco:trending');
     load();
@@ -1474,23 +1730,23 @@ async function renderReco(){
   // initial state
   timeSel.style.display = 'none';
   // Restore snapshot without network
-  (async function(){
+  (async function () {
     const mode = 'personalized';
     const snapP = snapGet('reco:personalized');
-    if(snapP && Array.isArray(snapP.items) && snapP.items.length){
+    if (snapP && Array.isArray(snapP.items) && snapP.items.length) {
       await renderItems(snapP.items);
       return;
     }
     const snapT = snapGet('reco:trending:day');
-    if(snapT && Array.isArray(snapT.items)) await renderItems(snapT.items);
+    if (snapT && Array.isArray(snapT.items)) await renderItems(snapT.items);
   })();
   // Auto-fetch on first visit if there is no snapshot for either mode
-  if(!(snapGet('reco:personalized')?.items?.length) && !(snapGet('reco:trending:day')?.items?.length)){
+  if (!(snapGet('reco:personalized')?.items?.length) && !(snapGet('reco:trending:day')?.items?.length)) {
     await load();
   }
 }
 
-async function renderSEO(){
+async function renderSEO() {
   view.innerHTML = `
     <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:8px">
       <button id="seo-load" class="tab">Load</button>
@@ -1504,70 +1760,70 @@ async function renderSEO(){
   `;
   const statusEl = el('#seo-status');
   // Restore snapshot
-  (function(){
-    const snap = snapGet('seo'); if(!snap) return;
+  (function () {
+    const snap = snapGet('seo'); if (!snap) return;
     // Donut
-    const donutEl = el('#chart-donut'); let dist=[]; if(snap.sources?.distribution){ dist = Object.entries(snap.sources.distribution).map(([name,value])=>({ name, value })); }
-    if(donutEl && dist.length){ const donut=echarts.init(donutEl); donut.setOption({ tooltip:{ trigger:'item' }, series:[{ type:'pie', radius:['40%','70%'], data: dist }] }); }
+    const donutEl = el('#chart-donut'); let dist = []; if (snap.sources?.distribution) { dist = Object.entries(snap.sources.distribution).map(([name, value]) => ({ name, value })); }
+    if (donutEl && dist.length) { const donut = echarts.init(donutEl); donut.setOption({ tooltip: { trigger: 'item' }, series: [{ type: 'pie', radius: ['40%', '70%'], data: dist }] }); }
     // Trend
-    const trafficEl = el('#chart-traffic'); if(trafficEl && Array.isArray(snap.timeseries)){ const categories = snap.timeseries.map(r=> r.date || r.time || r.t || ''); const build = k=> snap.timeseries.map(r=> r[k] ?? r[k?.toUpperCase()] ?? 0); const series=[{ name:'SEO', type:'line', data: build('seo') },{ name:'Direct', type:'line', data: build('direct') },{ name:'Social', type:'line', data: build('social') }]; const traffic=echarts.init(trafficEl); traffic.setOption({ tooltip:{ trigger:'axis' }, legend:{ data: series.map(s=>s.name) }, xAxis:{ type:'category', data: categories }, yAxis:{ type:'value' }, series }); }
+    const trafficEl = el('#chart-traffic'); if (trafficEl && Array.isArray(snap.timeseries)) { const categories = snap.timeseries.map(r => r.date || r.time || r.t || ''); const build = k => snap.timeseries.map(r => r[k] ?? r[k?.toUpperCase()] ?? 0); const series = [{ name: 'SEO', type: 'line', data: build('seo') }, { name: 'Direct', type: 'line', data: build('direct') }, { name: 'Social', type: 'line', data: build('social') }]; const traffic = echarts.init(trafficEl); traffic.setOption({ tooltip: { trigger: 'axis' }, legend: { data: series.map(s => s.name) }, xAxis: { type: 'category', data: categories }, yAxis: { type: 'value' }, series }); }
     statusEl.textContent = 'Restored from cache';
   })();
-  async function run(fetchFresh=false){
+  async function run(fetchFresh = false) {
     const q = buildQuery();
     let url = `/api/v1/analytics/seo?${q}`;
-    if(fetchFresh){ const b = withBypass(url); httpCache.delete(cacheKey(b.clean)); lsDel(cacheKey(b.clean)); url = b.fresh; }
+    if (fetchFresh) { const b = withBypass(url); httpCache.delete(cacheKey(b.clean)); lsDel(cacheKey(b.clean)); url = b.fresh; }
     statusEl.textContent = 'Loading…';
     const seo = await safeGet(url);
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
     // Save snapshot for SEO (fresh only or if missing)
     snapUpdate('seo', seo || {});
 
-  // Distribution
-  const donutEl = el('#chart-donut');
-  let dist = [];
-  if(seo && seo.sources && seo.sources.distribution){
-    dist = Object.entries(seo.sources.distribution).map(([name, value])=>({ name, value }));
-  }
-  if(donutEl && dist.length){
-    const donut = echarts.init(donutEl);
-    donut.setOption({
-      tooltip: { trigger:'item' },
-      series: [{ type:'pie', radius:['40%','70%'], data: dist }]
-    });
-  } else if(donutEl) { donutEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
+    // Distribution
+    const donutEl = el('#chart-donut');
+    let dist = [];
+    if (seo && seo.sources && seo.sources.distribution) {
+      dist = Object.entries(seo.sources.distribution).map(([name, value]) => ({ name, value }));
+    }
+    if (donutEl && dist.length) {
+      const donut = echarts.init(donutEl);
+      donut.setOption({
+        tooltip: { trigger: 'item' },
+        series: [{ type: 'pie', radius: ['40%', '70%'], data: dist }]
+      });
+    } else if (donutEl) { donutEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
 
-  // Trend
-  const trafficEl = el('#chart-traffic');
-  let series = [];
-  let categories = [];
-  if(Array.isArray(seo?.timeseries)){
-    categories = seo.timeseries.map(r=> r.date || r.time || r.t || '');
-    const build = (key) => seo.timeseries.map(r=> r[key] ?? r[key?.toUpperCase()] ?? 0);
-    series = [
-      { name:'SEO', type:'line', data: build('seo') },
-      { name:'Direct', type:'line', data: build('direct') },
-      { name:'Social', type:'line', data: build('social') },
-    ];
+    // Trend
+    const trafficEl = el('#chart-traffic');
+    let series = [];
+    let categories = [];
+    if (Array.isArray(seo?.timeseries)) {
+      categories = seo.timeseries.map(r => r.date || r.time || r.t || '');
+      const build = (key) => seo.timeseries.map(r => r[key] ?? r[key?.toUpperCase()] ?? 0);
+      series = [
+        { name: 'SEO', type: 'line', data: build('seo') },
+        { name: 'Direct', type: 'line', data: build('direct') },
+        { name: 'Social', type: 'line', data: build('social') },
+      ];
+    }
+    if (trafficEl && categories.length && series.length) {
+      const traffic = echarts.init(trafficEl);
+      traffic.setOption({
+        tooltip: { trigger: 'axis' },
+        legend: { data: series.map(s => s.name) },
+        xAxis: { type: 'category', data: categories },
+        yAxis: { type: 'value' },
+        series
+      });
+    } else if (trafficEl) { trafficEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
   }
-  if(trafficEl && categories.length && series.length){
-    const traffic = echarts.init(trafficEl);
-    traffic.setOption({
-      tooltip: { trigger:'axis' },
-      legend: { data: series.map(s=>s.name) },
-      xAxis: { type:'category', data: categories },
-      yAxis: { type:'value' },
-      series
-    });
-  } else if(trafficEl) { trafficEl.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu.</div>'; }
-  }
-  el('#seo-load').addEventListener('click', ()=>{ clearSnapshotForTabCurrentFilter('seo'); run(true); });
-  el('#seo-refresh').addEventListener('click', ()=>{ clearSnapshotForTabCurrentFilter('seo'); run(true); });
+  el('#seo-load').addEventListener('click', () => { clearSnapshotForTabCurrentFilter('seo'); run(true); });
+  el('#seo-refresh').addEventListener('click', () => { clearSnapshotForTabCurrentFilter('seo'); run(true); });
   // Auto-fetch on first visit if there is no snapshot yet
-  if(!snapGet('seo')){ await run(false); }
+  if (!snapGet('seo')) { await run(false); }
 }
 
-async function renderRetention(){
+async function renderRetention() {
   view.innerHTML = `
     <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:8px">
       <button id="ret-load" class="tab">Load</button>
@@ -1581,135 +1837,135 @@ async function renderRetention(){
   `;
   const statusEl = el('#ret-status');
   // Restore snapshot
-  (function(){
-    const snap = snapGet('retention'); if(!snap) return;
-    const labels = []; const retVals=[]; const churnVals=[];
-    if(Array.isArray(snap.timeseries)){
-      for(const r of snap.timeseries){ labels.push(r.date || r.t || r.period || ''); retVals.push(typeof r.retention==='number'? Math.round(r.retention*1000)/10 : (r.retention ?? 0)); churnVals.push(typeof r.churn==='number'? Math.round(r.churn*1000)/10 : (r.churn ?? 0)); }
-      const retEl = el('#chart-ret'); if(retEl){ const chart=echarts.init(retEl); chart.setOption({ tooltip:{ trigger:'axis' }, legend:{ data:['Retention %','Churn %'] }, xAxis:{ type:'category', data: labels }, yAxis:{ type:'value', axisLabel:{ formatter:'{value}%' } }, series:[{ name:'Retention %', type:'line', data: retVals }, { name:'Churn %', type:'line', data: churnVals }] }); }
+  (function () {
+    const snap = snapGet('retention'); if (!snap) return;
+    const labels = []; const retVals = []; const churnVals = [];
+    if (Array.isArray(snap.timeseries)) {
+      for (const r of snap.timeseries) { labels.push(r.date || r.t || r.period || ''); retVals.push(typeof r.retention === 'number' ? Math.round(r.retention * 1000) / 10 : (r.retention ?? 0)); churnVals.push(typeof r.churn === 'number' ? Math.round(r.churn * 1000) / 10 : (r.churn ?? 0)); }
+      const retEl = el('#chart-ret'); if (retEl) { const chart = echarts.init(retEl); chart.setOption({ tooltip: { trigger: 'axis' }, legend: { data: ['Retention %', 'Churn %'] }, xAxis: { type: 'category', data: labels }, yAxis: { type: 'value', axisLabel: { formatter: '{value}%' } }, series: [{ name: 'Retention %', type: 'line', data: retVals }, { name: 'Churn %', type: 'line', data: churnVals }] }); }
     }
     // Render cohort table from snapshot
     const cohortDiv = el('#cohort-table');
-    if(cohortDiv){
+    if (cohortDiv) {
       let cohort = Array.isArray(snap.cohort) ? snap.cohort : [];
-      if(cohort.length){
-        try{ cohort = cohort.sort((a,b)=> String(a.cohort).localeCompare(String(b.cohort))).slice(-12); }catch{}
+      if (cohort.length) {
+        try { cohort = cohort.sort((a, b) => String(a.cohort).localeCompare(String(b.cohort))).slice(-12); } catch { }
         const monthCount = Math.max(...cohort.map(c => Array.isArray(c.months) ? c.months.length : 0));
-        const header = ['Cohort','Size', ...Array.from({length: monthCount}, (_,i)=>`M+${i}`)];
+        const header = ['Cohort', 'Size', ...Array.from({ length: monthCount }, (_, i) => `M+${i}`)];
         cohortDiv.innerHTML = `
           <table style="width:100%;border-collapse:collapse">
-            <thead><tr style="text-align:left;border-bottom:1px solid #e5e7eb">${header.map(h=>`<th style=\"padding:6px\">${h}</th>`).join('')}</tr></thead>
+            <thead><tr style="text-align:left;border-bottom:1px solid #e5e7eb">${header.map(h => `<th style=\"padding:6px\">${h}</th>`).join('')}</tr></thead>
             <tbody>
               ${cohort.map(row => `
                 <tr style=\"border-bottom:1px solid #e5e7eb\">
-                  <td style=\"padding:6px\">${row.cohort||''}</td>
-                  <td style=\"padding:6px\">${row.size??''}</td>
-                  ${Array.from({length: monthCount}, (_,i)=>{
-                    const v = (row.months||[])[i];
-                    const pct = (typeof v === 'number' && isFinite(v)) ? (Math.round(v*1000)/10)+'%' : '';
-                    return `<td style=\"padding:6px\">${pct}</td>`;
-                  }).join('')}
+                  <td style=\"padding:6px\">${row.cohort || ''}</td>
+                  <td style=\"padding:6px\">${row.size ?? ''}</td>
+                  ${Array.from({ length: monthCount }, (_, i) => {
+          const v = (row.months || [])[i];
+          const pct = (typeof v === 'number' && isFinite(v)) ? (Math.round(v * 1000) / 10) + '%' : '';
+          return `<td style=\"padding:6px\">${pct}</td>`;
+        }).join('')}
                 </tr>`).join('')}
             </tbody>
           </table>
         `;
-      }else{
+      } else {
         cohortDiv.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu cohort.</div>';
       }
     }
     statusEl.textContent = 'Restored from cache';
   })();
-  async function run(fetchFresh=false){
+  async function run(fetchFresh = false) {
     const q = buildQuery();
     let urlA = `/api/v1/analytics/retention?${q}`;
     let urlB = `/api/v1/analyses/retention?${q}`;
-    if(fetchFresh){ const a = withBypass(urlA), b = withBypass(urlB); [a,b].forEach(({clean})=>{ httpCache.delete(cacheKey(clean)); lsDel(cacheKey(clean)); }); urlA = a.fresh; urlB = b.fresh; }
+    if (fetchFresh) { const a = withBypass(urlA), b = withBypass(urlB);[a, b].forEach(({ clean }) => { httpCache.delete(cacheKey(clean)); lsDel(cacheKey(clean)); }); urlA = a.fresh; urlB = b.fresh; }
     // Prefer analytics/retention; analyses/retention as fallback
     let retention = fetchFresh ? (await safeGet(urlA)) : (await getWithTTL(urlA, 600000));
-    if(retention && retention.error) {
+    if (retention && retention.error) {
       retention = fetchFresh ? (await safeGet(urlB)) : (await getWithTTL(urlB, 600000));
     }
     statusEl.textContent = `Updated ${new Date().toLocaleString()}`;
     // Save snapshot for Retention (fresh only or if missing)
     snapUpdate('retention', retention || {});
-  const labels = [];
-  const retVals = [];
-  const churnVals = [];
-  if(Array.isArray(retention?.timeseries)){
-    for(const r of retention.timeseries){
-      labels.push(r.date || r.t || r.period || '');
-      retVals.push(typeof r.retention === 'number' ? Math.round(r.retention*1000)/10 : (r.retention ?? 0));
-      churnVals.push(typeof r.churn === 'number' ? Math.round(r.churn*1000)/10 : (r.churn ?? 0));
+    const labels = [];
+    const retVals = [];
+    const churnVals = [];
+    if (Array.isArray(retention?.timeseries)) {
+      for (const r of retention.timeseries) {
+        labels.push(r.date || r.t || r.period || '');
+        retVals.push(typeof r.retention === 'number' ? Math.round(r.retention * 1000) / 10 : (r.retention ?? 0));
+        churnVals.push(typeof r.churn === 'number' ? Math.round(r.churn * 1000) / 10 : (r.churn ?? 0));
+      }
+    } else {
+      // fallback demo data
+      labels.push('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun');
+      retVals.push(68, 66, 64, 65, 67, 69);
+      churnVals.push(32, 34, 36, 35, 33, 31);
     }
-  }else{
-    // fallback demo data
-    labels.push('Jan','Feb','Mar','Apr','May','Jun');
-    retVals.push(68,66,64,65,67,69);
-    churnVals.push(32,34,36,35,33,31);
-  }
-  const retEl = el('#chart-ret');
-  if(!retEl) return;
-  const ret = echarts.init(retEl);
-  ret.setOption({
-    tooltip: { trigger:'axis' },
-    legend: { data:['Retention %','Churn %'] },
-    xAxis: { type:'category', data: labels },
-    yAxis: { type:'value', axisLabel:{ formatter: '{value}%' } },
-    series: [
-      { name:'Retention %', type:'line', data: retVals },
-      { name:'Churn %', type:'line', data: churnVals },
-    ]
-  });
+    const retEl = el('#chart-ret');
+    if (!retEl) return;
+    const ret = echarts.init(retEl);
+    ret.setOption({
+      tooltip: { trigger: 'axis' },
+      legend: { data: ['Retention %', 'Churn %'] },
+      xAxis: { type: 'category', data: labels },
+      yAxis: { type: 'value', axisLabel: { formatter: '{value}%' } },
+      series: [
+        { name: 'Retention %', type: 'line', data: retVals },
+        { name: 'Churn %', type: 'line', data: churnVals },
+      ]
+    });
 
-  // Render cohort table
-  const cohortDiv = el('#cohort-table');
-  if(cohortDiv){
-    let cohort = Array.isArray(retention?.cohort) ? retention.cohort : [];
-    if(cohort.length){
-      // Keep only the 12 most recent cohorts (by cohort label like 'YYYY-MM')
-      try{
-        cohort = cohort.sort((a,b)=> String(a.cohort).localeCompare(String(b.cohort))).slice(-12);
-      }catch{}
-      const monthCount = Math.max(...cohort.map(c => Array.isArray(c.months) ? c.months.length : 0));
-      const header = ['Cohort','Size', ...Array.from({length: monthCount}, (_,i)=>`M+${i}`)];
-      cohortDiv.innerHTML = `
+    // Render cohort table
+    const cohortDiv = el('#cohort-table');
+    if (cohortDiv) {
+      let cohort = Array.isArray(retention?.cohort) ? retention.cohort : [];
+      if (cohort.length) {
+        // Keep only the 12 most recent cohorts (by cohort label like 'YYYY-MM')
+        try {
+          cohort = cohort.sort((a, b) => String(a.cohort).localeCompare(String(b.cohort))).slice(-12);
+        } catch { }
+        const monthCount = Math.max(...cohort.map(c => Array.isArray(c.months) ? c.months.length : 0));
+        const header = ['Cohort', 'Size', ...Array.from({ length: monthCount }, (_, i) => `M+${i}`)];
+        cohortDiv.innerHTML = `
         <table style="width:100%;border-collapse:collapse">
-          <thead><tr style="text-align:left;border-bottom:1px solid #e5e7eb">${header.map(h=>`<th style="padding:6px">${h}</th>`).join('')}</tr></thead>
+          <thead><tr style="text-align:left;border-bottom:1px solid #e5e7eb">${header.map(h => `<th style="padding:6px">${h}</th>`).join('')}</tr></thead>
           <tbody>
             ${cohort.map(row => `
               <tr style="border-bottom:1px solid #e5e7eb">
-                <td style="padding:6px">${row.cohort||''}</td>
-                <td style="padding:6px">${row.size??''}</td>
-                ${Array.from({length: monthCount}, (_,i)=>{
-                  const v = (row.months||[])[i];
-                  const pct = (typeof v === 'number' && isFinite(v)) ? (Math.round(v*1000)/10)+'%' : '';
-                  return `<td style="padding:6px">${pct}</td>`;
-                }).join('')}
+                <td style="padding:6px">${row.cohort || ''}</td>
+                <td style="padding:6px">${row.size ?? ''}</td>
+                ${Array.from({ length: monthCount }, (_, i) => {
+          const v = (row.months || [])[i];
+          const pct = (typeof v === 'number' && isFinite(v)) ? (Math.round(v * 1000) / 10) + '%' : '';
+          return `<td style="padding:6px">${pct}</td>`;
+        }).join('')}
               </tr>`).join('')}
           </tbody>
         </table>
       `;
-    }else{
-      cohortDiv.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu cohort.</div>';
+      } else {
+        cohortDiv.innerHTML = '<div class="muted" style="padding:12px">Không có dữ liệu cohort.</div>';
+      }
     }
-  }
   }
   const retLoadBtn = el('#ret-load');
   const retRefBtn = el('#ret-refresh');
-  const runRetDeb = debounce((fresh)=>run(fresh), 700);
-  if(retLoadBtn){
+  const runRetDeb = debounce((fresh) => run(fresh), 700);
+  if (retLoadBtn) {
     retLoadBtn.disabled = false; retLoadBtn.style.pointerEvents = 'auto'; retLoadBtn.style.cursor = 'pointer';
-    retLoadBtn.addEventListener('click', ()=>{ console.debug('Retention: Load clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('retention'); runRetDeb(true); });
+    retLoadBtn.addEventListener('click', () => { console.debug('Retention: Load clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('retention'); runRetDeb(true); });
   }
-  if(retRefBtn){
+  if (retRefBtn) {
     retRefBtn.disabled = false; retRefBtn.style.pointerEvents = 'auto'; retRefBtn.style.cursor = 'pointer';
-    retRefBtn.addEventListener('click', ()=>{ console.debug('Retention: Refresh clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('retention'); runRetDeb(true); });
+    retRefBtn.addEventListener('click', () => { console.debug('Retention: Refresh clicked'); statusEl.textContent = 'Loading…'; clearSnapshotForTabCurrentFilter('retention'); runRetDeb(true); });
   }
   // Auto-fetch on first visit if there is no snapshot yet
-  if(!snapGet('retention')){ await run(false); }
+  if (!snapGet('retention')) { await run(false); }
 }
 
-async function renderOrchestrator(){
+async function renderOrchestrator() {
   view.innerHTML = `
     <div class="card">
       <h3>Orchestrator</h3>
@@ -1756,10 +2012,10 @@ async function renderOrchestrator(){
   const detailPre = el('#orch-detail');
 
   // Restore snapshot if available to avoid empty UI while fetching
-  (function(){
-    try{
+  (function () {
+    try {
       const snap = snapGet('orchestrator');
-      if(!snap) return;
+      if (!snap) return;
       const s = snap.status || {};
       const h = snap.history || {};
       const lastRun = snap.last_run || null;
@@ -1770,90 +2026,90 @@ async function renderOrchestrator(){
       // Module details
       let mods = Array.isArray(s.modules) ? s.modules : [];
       // If status lacks modules, prefer latest run payload
-      if((!mods || !mods.length) && lastRun && lastRun.results){
-        try{
+      if ((!mods || !mods.length) && lastRun && lastRun.results) {
+        try {
           const results = lastRun.results || {};
-          const rows = Object.keys(results).map(name=>{
+          const rows = Object.keys(results).map(name => {
             const it = results[name] || {};
             const exec = Number(it.execution_time_seconds || it.execution_time || 0);
             const status = it.status || it.outcome || 'done';
             return { name, status, execution_time: exec };
           });
           mods = rows;
-        }catch{}
+        } catch { }
       }
-      if(Array.isArray(mods) && mods.length){
+      if (Array.isArray(mods) && mods.length) {
         modulesDiv.innerHTML = `
           <table style="width:100%;border-collapse:collapse">
             <thead><tr style="text-align:left;border-bottom:1px solid #e5e7eb"><th style="padding:6px">Module</th><th style="padding:6px">Status</th><th style="padding:6px">Exec Time (s)</th></tr></thead>
             <tbody>
-              ${mods.map(m=>`<tr style=\"border-bottom:1px solid #e5e7eb\"><td style=\"padding:6px\">${m.name || ''}</td><td style=\"padding:6px\">${m.status || ''}</td><td style=\"padding:6px\">${m.execution_time != null ? Number(m.execution_time).toFixed(2) : ''}</td></tr>`).join('')}
+              ${mods.map(m => `<tr style=\"border-bottom:1px solid #e5e7eb\"><td style=\"padding:6px\">${m.name || ''}</td><td style=\"padding:6px\">${m.status || ''}</td><td style=\"padding:6px\">${m.execution_time != null ? Number(m.execution_time).toFixed(2) : ''}</td></tr>`).join('')}
             </tbody>
           </table>
         `;
       }
       // History
-      if(Array.isArray(h?.items)){
+      if (Array.isArray(h?.items)) {
         historyDiv.innerHTML = `
           <table style="width:100%;border-collapse:collapse">
             <thead><tr style="text-align:left;border-bottom:1px solid #e5e7eb"><th style="padding:6px">Time</th><th style="padding:6px">Status</th><th style="padding:6px">Duration</th><th style="padding:6px">Workers</th><th style="padding:6px">User</th></tr></thead>
             <tbody>
-              ${h.items.map(it=>`<tr data-ts="${it.ts || ''}" style="cursor:pointer;border-bottom:1px solid #e5e7eb"><td style="padding:6px">${it.ts || it.end_time || ''}</td><td style="padding:6px">${it.status || ''}</td><td style="padding:6px">${it.duration_seconds ?? ''}</td><td style="padding:6px">${it.max_workers ?? ''}</td><td style="padding:6px">${it.username ?? ''}</td></tr>`).join('')}
+              ${h.items.map(it => `<tr data-ts="${it.ts || ''}" style="cursor:pointer;border-bottom:1px solid #e5e7eb"><td style="padding:6px">${it.ts || it.end_time || ''}</td><td style="padding:6px">${it.status || ''}</td><td style="padding:6px">${it.duration_seconds ?? ''}</td><td style="padding:6px">${it.max_workers ?? ''}</td><td style="padding:6px">${it.username ?? ''}</td></tr>`).join('')}
             </tbody>
           </table>
         `;
       }
-    }catch{}
+    } catch { }
   })();
 
-  async function loadStatus(){
+  async function loadStatus() {
     const s = await safeGet('/api/v1/analytics/orchestrator/status');
     statusPre.textContent = JSON.stringify(s, null, 2);
     const errs = s.errors || {};
     errorsPre.textContent = Object.keys(errs).length ? JSON.stringify(errs, null, 2) : '(no errors)';
     // Render module details
     const mods = Array.isArray(s.modules) ? s.modules : [];
-    if(mods.length){
+    if (mods.length) {
       modulesDiv.innerHTML = `
         <table style="width:100%;border-collapse:collapse">
           <thead><tr style="text-align:left;border-bottom:1px solid #e5e7eb"><th style="padding:6px">Module</th><th style="padding:6px">Status</th><th style="padding:6px">Exec Time (s)</th></tr></thead>
           <tbody>
-            ${mods.map(m=>`<tr style=\"border-bottom:1px solid #e5e7eb\"><td style=\"padding:6px\">${m.name || ''}</td><td style=\"padding:6px\">${m.status || ''}</td><td style=\"padding:6px\">${m.execution_time != null ? Number(m.execution_time).toFixed(2) : ''}</td></tr>`).join('')}
+            ${mods.map(m => `<tr style=\"border-bottom:1px solid #e5e7eb\"><td style=\"padding:6px\">${m.name || ''}</td><td style=\"padding:6px\">${m.status || ''}</td><td style=\"padding:6px\">${m.execution_time != null ? Number(m.execution_time).toFixed(2) : ''}</td></tr>`).join('')}
           </tbody>
         </table>
       `;
-    }else{
+    } else {
       modulesDiv.innerHTML = '<div class="muted" style="padding:6px">No module details available.</div>';
     }
     const h = await safeGet('/api/v1/analytics/orchestrator/history?limit=20');
-    if(Array.isArray(h?.items)){
+    if (Array.isArray(h?.items)) {
       historyDiv.innerHTML = `
         <table style="width:100%;border-collapse:collapse">
           <thead><tr style="text-align:left;border-bottom:1px solid #e5e7eb"><th style="padding:6px">Time</th><th style="padding:6px">Status</th><th style="padding:6px">Duration</th><th style="padding:6px">Workers</th><th style="padding:6px">User</th></tr></thead>
           <tbody>
-            ${h.items.map(it=>`<tr data-ts="${it.ts || ''}" style="cursor:pointer;border-bottom:1px solid #e5e7eb"><td style="padding:6px">${it.ts || it.end_time || ''}</td><td style="padding:6px">${it.status || ''}</td><td style="padding:6px">${it.duration_seconds ?? ''}</td><td style="padding:6px">${it.max_workers ?? ''}</td><td style="padding:6px">${it.username ?? ''}</td></tr>`).join('')}
+            ${h.items.map(it => `<tr data-ts="${it.ts || ''}" style="cursor:pointer;border-bottom:1px solid #e5e7eb"><td style="padding:6px">${it.ts || it.end_time || ''}</td><td style="padding:6px">${it.status || ''}</td><td style="padding:6px">${it.duration_seconds ?? ''}</td><td style="padding:6px">${it.max_workers ?? ''}</td><td style="padding:6px">${it.username ?? ''}</td></tr>`).join('')}
           </tbody>
         </table>
       `;
       // attach click to load detail
-      historyDiv.querySelector('tbody')?.addEventListener('click', async (e)=>{
+      historyDiv.querySelector('tbody')?.addEventListener('click', async (e) => {
         const tr = e.target.closest('tr[data-ts]');
-        if(!tr) return;
+        if (!tr) return;
         const ts = tr.getAttribute('data-ts');
-        if(!ts) return;
+        if (!ts) return;
         detailPre.textContent = 'Loading…';
         const doc = await safeGet(`/api/v1/analytics/orchestrator/history/item?ts=${encodeURIComponent(ts)}`);
         detailPre.textContent = JSON.stringify(doc, null, 2);
       });
     }
     // Persist latest status+history snapshot
-    try{ snapUpdate('orchestrator', { status: s, history: h, last_run: (snapGet('orchestrator')||{}).last_run || null }); }catch{}
+    try { snapUpdate('orchestrator', { status: s, history: h, last_run: (snapGet('orchestrator') || {}).last_run || null }); } catch { }
   }
 
-  async function run(){
+  async function run() {
     msg.textContent = 'Running…';
     const p = new URLSearchParams();
-    const u = userIn.value.trim(); if(u) p.set('username', u);
+    const u = userIn.value.trim(); if (u) p.set('username', u);
     p.set('max_workers', maxSel.value);
     const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
     const res = await fetch(`/api/v1/analytics/orchestrator/run?${p.toString()}&_ts=${Date.now()}`, {
@@ -1863,46 +2119,46 @@ async function renderOrchestrator(){
         ...(token ? { 'Authorization': `Bearer ${token}` } : {})
       }
     });
-    const json = await res.json().catch(()=>({}));
+    const json = await res.json().catch(() => ({}));
     msg.textContent = res.ok ? 'Completed' : 'Error';
     statusPre.textContent = JSON.stringify(json, null, 2);
     const errs = json.errors || {};
     errorsPre.textContent = Object.keys(errs).length ? JSON.stringify(errs, null, 2) : '(no errors)';
     // Render module details from the run response if available
-    try{
+    try {
       const results = json.results || {};
-      const rows = Object.keys(results).map(name=>{
+      const rows = Object.keys(results).map(name => {
         const it = results[name] || {};
         const exec = Number(it.execution_time_seconds || it.execution_time || 0);
         const status = it.status || it.outcome || 'done';
         return { name, status, execution_time: exec };
       });
-      if(rows.length){
+      if (rows.length) {
         modulesDiv.innerHTML = `
           <table style="width:100%;border-collapse:collapse">
             <thead><tr style="text-align:left;border-bottom:1px solid #e5e7eb"><th style="padding:6px">Module</th><th style="padding:6px">Status</th><th style="padding:6px">Exec Time (s)</th></tr></thead>
             <tbody>
-              ${rows.map(m=>`<tr style=\"border-bottom:1px solid #e5e7eb\"><td style=\"padding:6px\">${m.name}</td><td style=\"padding:6px\">${m.status}</td><td style=\"padding:6px\">${isFinite(m.execution_time)?m.execution_time.toFixed(2):''}</td></tr>`).join('')}
+              ${rows.map(m => `<tr style=\"border-bottom:1px solid #e5e7eb\"><td style=\"padding:6px\">${m.name}</td><td style=\"padding:6px\">${m.status}</td><td style=\"padding:6px\">${isFinite(m.execution_time) ? m.execution_time.toFixed(2) : ''}</td></tr>`).join('')}
             </tbody>
           </table>
         `;
       }
-    }catch{}
+    } catch { }
     // Persist last run payload to snapshot so UI restores immediately after tab switch
-    try{
+    try {
       const prev = snapGet('orchestrator') || {};
-      snapUpdate('orchestrator', { ...(prev||{}), last_run: json });
-    }catch{}
+      snapUpdate('orchestrator', { ...(prev || {}), last_run: json });
+    } catch { }
     // Auto-refresh latest status + modules + history
     await loadStatus();
   }
 
-  runBtn.addEventListener('click', ()=>{ clearSnapshotsForTab('orchestrator'); run(); });
-  refBtn.addEventListener('click', ()=>{ clearSnapshotsForTab('orchestrator'); loadStatus(); });
+  runBtn.addEventListener('click', () => { clearSnapshotsForTab('orchestrator'); run(); });
+  refBtn.addEventListener('click', () => { clearSnapshotsForTab('orchestrator'); loadStatus(); });
   await loadStatus();
 }
 
-async function renderRaw(){
+async function renderRaw() {
   view.innerHTML = `
     <div class="card">
       <h3>Raw Data - Recent Sessions</h3>
@@ -1952,12 +2208,12 @@ async function renderRaw(){
 
   let allItems = [];
 
-  function renderRows(){
+  function renderRows() {
     const q = String(userQ.value || '').trim().toLowerCase();
     rowsEl.innerHTML = '';
-    const items = q ? allItems.filter(s => String(s.user_id||'').toLowerCase().includes(q)) : allItems;
+    const items = q ? allItems.filter(s => String(s.user_id || '').toLowerCase().includes(q)) : allItems;
     statusEl.textContent = `${items.length} sessions` + (q ? ` • filtered` : '');
-    for(const s of items){
+    for (const s of items) {
       const tr = document.createElement('tr');
       tr.style.borderBottom = '1px solid #e5e7eb';
       tr.innerHTML = `
@@ -1971,15 +2227,15 @@ async function renderRaw(){
     }
   }
 
-  async function loadSessions(fetchFresh=false){
+  async function loadSessions(fetchFresh = false) {
     statusEl.textContent = 'Loading…';
     rowsEl.innerHTML = '';
     const limit = Math.min(500, Number(limitSel.value || '50'));
     const params = new URLSearchParams({ limit: String(limit) });
     const q = String(userQ.value || '').trim();
-    if(q) params.set('user', q);
+    if (q) params.set('user', q);
     let url = `/api/v1/events/sessions/recent?${params.toString()}`;
-    if(fetchFresh){
+    if (fetchFresh) {
       httpCache.delete(url);
     }
     const data = await safeGet(url);
@@ -1987,24 +2243,24 @@ async function renderRaw(){
     renderRows();
   }
 
-  function toCSV(rows){
-    if(!Array.isArray(rows) || !rows.length) return '';
-    const cols = Array.from(new Set(rows.flatMap(r=>Object.keys(r||{}))));
-    const esc = v => '"' + String(v ?? '').replace(/"/g,'""') + '"';
+  function toCSV(rows) {
+    if (!Array.isArray(rows) || !rows.length) return '';
+    const cols = Array.from(new Set(rows.flatMap(r => Object.keys(r || {}))));
+    const esc = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
     const header = cols.map(esc).join(',');
-    const body = rows.map(r=> cols.map(c=>esc(r[c])).join(',')).join('\n');
+    const body = rows.map(r => cols.map(c => esc(r[c])).join(',')).join('\n');
     return header + '\n' + body;
   }
 
-  function download(filename, content){
-    const blob = new Blob([content], {type:'text/csv;charset=utf-8;'});
+  function download(filename, content) {
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = filename; a.click();
     URL.revokeObjectURL(url);
   }
 
-  async function loadDetail(sessionId){
+  async function loadDetail(sessionId) {
     detailEl.textContent = 'Loading…';
     const sum = await safeGet(`/api/v1/events/sessions/${encodeURIComponent(sessionId)}/summary`);
     const events = sum.events || [];
@@ -2017,30 +2273,29 @@ async function renderRaw(){
       <div style="margin:8px 0">
         <button id="raw-export" class="tab">Export CSV</button>
       </div>
-      <pre style="max-height:360px;overflow:auto;background:#0b1020;color:#d1d5db;padding:8px;border-radius:8px">${
-        JSON.stringify(sum, null, 2)
+      <pre style="max-height:360px;overflow:auto;background:#0b1020;color:#d1d5db;padding:8px;border-radius:8px">${JSON.stringify(sum, null, 2)
       }</pre>
     `;
     const exportBtn = el('#raw-export');
-    exportBtn?.addEventListener('click', ()=>{
+    exportBtn?.addEventListener('click', () => {
       const csv = toCSV(events);
       download(`session_${meta.session_id}.csv`, csv);
     });
   }
 
-  rowsEl.addEventListener('click', (e)=>{
+  rowsEl.addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-sid]');
-    if(!btn) return;
+    if (!btn) return;
     loadDetail(btn.dataset.sid);
   });
-  reloadBtn.addEventListener('click', ()=>loadSessions(true));
-  limitSel.addEventListener('change', ()=>loadSessions(true));
-  userQ.addEventListener('input', debounce(()=>loadSessions(true), 300));
+  reloadBtn.addEventListener('click', () => loadSessions(true));
+  limitSel.addEventListener('change', () => loadSessions(true));
+  userQ.addEventListener('input', debounce(() => loadSessions(true), 300));
 
   await loadSessions();
 }
-async function render(){
-  switch(state.tab){
+async function render() {
+  switch (state.tab) {
     case 'overview': await loadOverview(); break;
     case 'cart': await renderCart(); break;
     case 'journey': await renderJourney(); break;
@@ -2055,34 +2310,34 @@ async function render(){
   }
 }
 
-function initNav(){
+function initNav() {
   const nav = document.getElementById('nav');
-  nav.addEventListener('click', (e)=>{
+  nav.addEventListener('click', (e) => {
     const btn = e.target.closest('.tab');
-    if(!btn) return;
+    if (!btn) return;
     setActiveTab(btn.dataset.tab);
   });
   // default active (render will be called after filters and migration)
   setActiveTab('overview');
 }
 
-function initFilters(){
+function initFilters() {
   const fTime = el('#f-time');
   const fFrom = el('#f-from');
   const fTo = el('#f-to');
   const fSeg = el('#f-segment');
   const fCh = el('#f-channel');
 
-  function apply(){
+  function apply() {
     state.filters.range = fTime.value;
     state.filters.from = fFrom.value || null;
     state.filters.to = fTo.value || null;
     state.filters.segment = fSeg.value;
     state.filters.channel = fCh.value;
     let applyTimer = null;
-    function applyDebounced(){
-      if(applyTimer){ clearTimeout(applyTimer); }
-      applyTimer = setTimeout(()=>{
+    function applyDebounced() {
+      if (applyTimer) { clearTimeout(applyTimer); }
+      applyTimer = setTimeout(() => {
         applyTimer = null;
         state.filters.range = fTime.value;
         state.filters.from = fFrom.value || null;
@@ -2097,28 +2352,28 @@ function initFilters(){
     applyDebounced();
   }
 
-  fTime.addEventListener('change', ()=>{
+  fTime.addEventListener('change', () => {
     const custom = fTime.value === 'custom';
     fFrom.style.display = custom ? '' : 'none';
     fTo.style.display = custom ? '' : 'none';
     apply();
   });
-  [fFrom, fTo, fSeg, fCh].forEach(elm=>elm.addEventListener('change', apply));
+  [fFrom, fTo, fSeg, fCh].forEach(elm => elm.addEventListener('change', apply));
 }
 
-function guardAuth(){
+function guardAuth() {
   const token = localStorage.getItem('token');
   const userStr = localStorage.getItem('user');
-  try{
-    if(!token || !userStr) throw new Error('unauth');
+  try {
+    if (!token || !userStr) throw new Error('unauth');
     const user = JSON.parse(userStr);
-    if((user.role || 'user') !== 'admin') throw new Error('not-admin');
-  }catch{
+    if ((user.role || 'user') !== 'admin') throw new Error('not-admin');
+  } catch {
     window.location.replace('/auth');
   }
 }
 
-function init(){
+function init() {
   guardAuth();
   // Initialize filters first so filterSig() is ready
   initFilters();
@@ -2127,16 +2382,16 @@ function init(){
   // Now init navigation and render
   initNav();
   // Clear Cache button: clear dashboard caches while preserving auth
-  try{
+  try {
     const btn = document.getElementById('btn-clear-cache');
-    btn?.addEventListener('click', ()=>{
+    btn?.addEventListener('click', () => {
       const LS_NS = 'spa_cache_v1:'; const SNAP_NS = 'spa_snap_v1:';
       const keys = Object.keys(localStorage);
-      for(const k of keys){ if(k.startsWith(LS_NS) || k.startsWith(SNAP_NS)) localStorage.removeItem(k); }
-      try{ if(window.httpCache && typeof window.httpCache.clear==='function') window.httpCache.clear(); }catch{}
+      for (const k of keys) { if (k.startsWith(LS_NS) || k.startsWith(SNAP_NS)) localStorage.removeItem(k); }
+      try { if (window.httpCache && typeof window.httpCache.clear === 'function') window.httpCache.clear(); } catch { }
       showToast('Cleared dashboard cache');
     });
-  }catch{}
+  } catch { }
 }
 
 window.addEventListener('DOMContentLoaded', init);

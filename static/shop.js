@@ -1003,6 +1003,13 @@ const Shop = (() => {
     const shipping = subtotal > 0 ? 5.00 : 0.00;
     const total = subtotal + tax + shipping;
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = fmtPrice(v); };
+
+    // Google Pay API Request
+    const baseRequest = {
+      apiVersion: 2,
+      apiVersionMinor: 0
+    };
+
     set('checkoutSubtotal', subtotal);
     set('checkoutTax', tax);
     set('checkoutShipping', shipping);
@@ -1043,6 +1050,22 @@ const Shop = (() => {
               body: JSON.stringify({ session_id })
             });
           }
+
+          // Google Pay tokenization specification
+          const tokenizationSpecification = {
+            type: 'PAYMENT_GATEWAY',
+            parameters: {
+              'gateway': 'ninepay',
+              'gatewayMerchantId': '9pay'
+            }
+          };
+
+          // Momo, Apple Pay, Google Pay payment
+          if (payment_method === "google_pay") {
+            // Payment Logic 
+          }
+
+
         } catch { }
       } catch { }
       // 3) Clear local cart and (again) ensure server cart is cleared

@@ -5,19 +5,19 @@
 
 /* ====== CSS VARIABLES ====== */
 :root {
-  /* Colors - Primary Palette */
-  --primary-50: #eff6ff;
-  --primary-100: #dbeafe;
-  --primary-200: #bfdbfe;
-  --primary-300: #93c5fd;
-  --primary-400: #60a5fa;
-  --primary-500: #3b82f6;
-  --primary-600: #2563eb;
-  --primary-700: #1d4ed8;
-  --primary-800: #1e40af;
-  --primary-900: #1e3a8a;
+  /* Colors - Primary Palette (Amber/Gold) */
+  --primary-50: #fffbeb;
+  --primary-100: #fef3c7;
+  --primary-200: #fde68a;
+  --primary-300: #fcd34d;
+  --primary-400: #fbbf24;
+  --primary-500: #f59e0b;
+  --primary-600: #d97706;
+  --primary-700: #b45309;
+  --primary-800: #92400e;
+  --primary-900: #78350f;
   
-  /* Colors - Secondary (Purple/Violet) */
+  /* Colors - Secondary (Deep Purple/Violet) */
   --secondary-50: #faf5ff;
   --secondary-100: #f3e8ff;
   --secondary-200: #e9d5ff;
@@ -29,15 +29,15 @@
   --secondary-800: #6b21a8;
   --secondary-900: #581c87;
   
-  /* Colors - Accent (Pink) */
-  --accent-500: #ec4899;
-  --accent-600: #db2777;
+  /* Colors - Accent (Rose Gold) */
+  --accent-500: #f97316;
+  --accent-600: #ea580c;
   
   /* Semantic Colors */
   --success: #10b981;
   --error: #ef4444;
   --warning: #f59e0b;
-  --info: #3b82f6;
+  --info: #a855f7;
   
   /* Neutral Colors (Dark Theme) */
   --gray-50: #f9fafb;
@@ -85,7 +85,7 @@
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.6);
   --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
-  --shadow-glow: 0 0 20px rgba(59, 130, 246, 0.4);
+  --shadow-glow: 0 0 20px rgba(245, 158, 11, 0.5);
   
   /* Spacing Scale */
   --space-1: 0.25rem;  /* 4px */
@@ -175,9 +175,9 @@ body {
   color: var(--text-primary);
   background-color: var(--bg-primary);
   background-image: 
-    radial-gradient(at 40% 20%, rgba(59, 130, 246, 0.15) 0px, transparent 50%),
+    radial-gradient(at 40% 20%, rgba(245, 158, 11, 0.12) 0px, transparent 50%),
     radial-gradient(at 80% 0%, rgba(168, 85, 247, 0.15) 0px, transparent 50%),
-    radial-gradient(at 0% 50%, rgba(59, 130, 246, 0.1) 0px, transparent 50%);
+    radial-gradient(at 0% 50%, rgba(217, 119, 6, 0.08) 0px, transparent 50%);
   min-height: 100vh;
 }
 
@@ -194,7 +194,7 @@ a {
 }
 
 a:hover {
-  color: var(--primary-300);
+  color: var(--primary-500);
 }
 
 button {
@@ -359,7 +359,7 @@ input, textarea, select {
 .search-input-pro:focus {
   outline: none;
   border-color: var(--primary-500);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
   background: var(--surface-glass-hover);
 }
 
@@ -508,7 +508,7 @@ input, textarea, select {
 
 .btn-pro-warning:hover {
   background: linear-gradient(135deg, #f97316, #ea580c);
-  box-shadow: var(--shadow-lg), 0 0 20px rgba(249, 115, 22, 0.4);
+  box-shadow: var(--shadow-lg), 0 0 20px rgba(245, 158, 11, 0.5);
   transform: translateY(-2px);
 }
 

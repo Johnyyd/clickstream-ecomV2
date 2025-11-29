@@ -56,6 +56,10 @@
               <option value="credit_card">Credit Card</option>
               <option value="paypal">PayPal</option>
               <option value="apple_pay">Apple Pay</option>
+              <option value="momo">Momo</option>
+              <option value="cash">Cash</option>
+              <option value="google_pay">Google Pay</option>
+
             </select>
           </div>
 
@@ -84,6 +88,10 @@
     Shop.initNav();
     Shop.initCheckoutPage();
   </script>
+  <script async
+      src="https://pay.google.com/gp/p/js/pay.js"
+      onload="onGooglePayLoaded()">
+    </script>
 </body>
 
 </html>

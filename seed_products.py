@@ -597,6 +597,7 @@ def seed_more_products():
         {"name": "Epoxy Resin Kit 1L", "category": "diy", "price": 55, "tags": ["craft", "resin-art"]},
         {"name": "Soldering Iron Kit", "category": "diy", "price": 40, "tags": ["electronics", "repair"]},
         {"name": "Wood Glue Strong", "category": "diy", "price": 15, "tags": ["repair", "furniture"]},
+        
 ]
 
     

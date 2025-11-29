@@ -152,7 +152,7 @@ async def analyze_ml_results(ml_results: Dict, api_key: Optional[str] = None) ->
                             "X-Title": "Clickstream Dashboard",
                         },
                         json={
-                            "model": "openai/gpt-oss-20b:free",
+                            "model": "x-ai/grok-4.1-fast:free",
                             "messages": [
                                 {"role": "system", "content": prompt},
                                 {

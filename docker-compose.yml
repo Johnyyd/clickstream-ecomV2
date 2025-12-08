@@ -39,6 +39,7 @@ services:
       MONGO_URI: mongodb://mongo:27017
       MONGO_DB: clickstream
       USE_SPARK: "false"
+      TZ: Asia/Ho_Chi_Minh
     depends_on:
       mongo:
         condition: service_healthy

@@ -1,25 +1,28 @@
 """
 OpenRouter AI service
 """
+
 import httpx
 from typing import Dict, Optional
 from app.core.config import settings
 import logging
+
 
 async def analyze_user_behavior(user_id: str, api_key: str, db) -> Dict:
     """
     Analyze user behavior patterns using OpenRouter AI
     """
     user_data = await db.events.get_user_events(user_id)
-    
+
     async with httpx.AsyncClient() as client:
         response = await client.post(
             f"{settings.OPENROUTER_API_URL}",
             headers={"Authorization": f"Bearer {api_key}"},
-            json={"user_data": user_data}
+            json={"user_data": user_data},
         )
         response.raise_for_status()
         return response.json()
+
 
 async def analyze_ml_results(ml_results: Dict, api_key: Optional[str] = None) -> Dict:
     """
@@ -35,7 +38,10 @@ async def analyze_ml_results(ml_results: Dict, api_key: Optional[str] = None) ->
         Dict containing a 'insights' narrative and optional 'highlights' bullets
     """
     try:
-        base_url = getattr(settings, "OPENROUTER_API_URL", None) or "https://openrouter.ai/api/v1"
+        base_url = (
+            getattr(settings, "OPENROUTER_API_URL", None)
+            or "https://openrouter.ai/api/v1"
+        )
 
         raw_key = api_key
         if not raw_key:
@@ -50,7 +56,12 @@ async def analyze_ml_results(ml_results: Dict, api_key: Optional[str] = None) ->
         key = raw_key
 
         logger = logging.getLogger(__name__)
-        logger.info("analyze_ml_results: base_url=%s, key_present=%s, api_key_arg=%s", base_url, bool(key), bool(api_key))
+        logger.info(
+            "analyze_ml_results: base_url=%s, key_present=%s, api_key_arg=%s",
+            base_url,
+            bool(key),
+            bool(api_key),
+        )
 
         if base_url and key:
             # System-style prompt: phân tích chuyên sâu dữ liệu analytics cho quản trị viên e‑commerce (tiếng Việt)
@@ -139,7 +150,8 @@ async def analyze_ml_results(ml_results: Dict, api_key: Optional[str] = None) ->
                 "- 'recommendations': 5–10 hành động ưu tiên (impact cao, cụ thể, có thể thực thi), có thể đánh dấu mức độ ưu tiên ngầm (vd: bắt đầu bằng 'Ưu tiên'). Nếu có module 'cart' hoặc 'ml_prediction' thì phải có ÍT NHẤT 1 recommendation gắn với mỗi module này, ví dụ: '(module cart.channels)', '(module ml_prediction.overview)'.\n"
                 "- LUÔN ưu tiên dùng số liệu thực từ JSON (tỉ lệ %, top‑N, so sánh). KHÔNG được bịa số hoặc suy diễn vượt quá dữ liệu.\n"
                 "- Nếu thiếu dữ liệu cho một phần, hãy bỏ qua phần đó hoặc ghi rõ là không đủ dữ liệu thay vì đoán.\n"
-                "- Chỉ trả về JSON đúng schema trên, KHÔNG kèm thêm text ngoài JSON.")
+                "- Chỉ trả về JSON đúng schema trên, KHÔNG kèm thêm text ngoài JSON."
+            )
             try:
                 import json as _json
 
@@ -152,12 +164,14 @@ async def analyze_ml_results(ml_results: Dict, api_key: Optional[str] = None) ->
                             "X-Title": "Clickstream Dashboard",
                         },
                         json={
-                            "model": "x-ai/grok-4.1-fast:free",
+                            "model": "mistralai/mistral-7b-instruct:free",
                             "messages": [
                                 {"role": "system", "content": prompt},
                                 {
                                     "role": "user",
-                                    "content": _json.dumps(ml_results or {}, ensure_ascii=False),
+                                    "content": _json.dumps(
+                                        ml_results or {}, ensure_ascii=False
+                                    ),
                                 },
                             ],
                             "response_format": {"type": "json_object"},
@@ -184,7 +198,11 @@ async def analyze_ml_results(ml_results: Dict, api_key: Optional[str] = None) ->
 
                     if isinstance(parsed, dict):
                         parsed.setdefault("source", "openrouter")
-                        return {"status": "ok", "parsed": parsed, "source": "openrouter"}
+                        return {
+                            "status": "ok",
+                            "parsed": parsed,
+                            "source": "openrouter",
+                        }
 
                     if isinstance(data, dict):
                         data.setdefault("source", "openrouter")
@@ -194,7 +212,11 @@ async def analyze_ml_results(ml_results: Dict, api_key: Optional[str] = None) ->
             except Exception as e:
                 logger.exception("OpenRouter insights-ml call failed: %s", e)
         else:
-            logger.info("analyze_ml_results: skipping OpenRouter, missing config (base_url=%s, key_is_none=%s)", base_url, key is None)
+            logger.info(
+                "analyze_ml_results: skipping OpenRouter, missing config (base_url=%s, key_is_none=%s)",
+                base_url,
+                key is None,
+            )
 
         # Fallback: compute concrete insights locally (no OpenRouter)
         def _num(x):
@@ -233,11 +255,13 @@ async def analyze_ml_results(ml_results: Dict, api_key: Optional[str] = None) ->
 
         drop_insights = []  # strings
         if len(funnel_steps) >= 2:
-            for i in range(len(funnel_steps)-1):
+            for i in range(len(funnel_steps) - 1):
                 a, av = funnel_steps[i]
-                b, bv = funnel_steps[i+1]
-                rate = (1 - (bv/av)) if av > 0 else 0
-                drop_insights.append((rate, f"Drop from {a} to {b}: {round(rate*100,2)}%"))
+                b, bv = funnel_steps[i + 1]
+                rate = (1 - (bv / av)) if av > 0 else 0
+                drop_insights.append(
+                    (rate, f"Drop from {a} to {b}: {round(rate*100,2)}%")
+                )
             drop_insights.sort(key=lambda x: x[0], reverse=True)
         top_drop = drop_insights[0][1] if drop_insights else None
 
@@ -247,7 +271,12 @@ async def analyze_ml_results(ml_results: Dict, api_key: Optional[str] = None) ->
             dist = ((seo.get("sources") or {}).get("distribution")) or {}
             if isinstance(dist, dict):
                 total = sum(_num(v) for v in dist.values()) or 1
-                top_sources = [f"{k}: {round((_num(v)/total)*100,2)}%" for k, v in sorted(dist.items(), key=lambda kv: _num(kv[1]), reverse=True)[:5]]
+                top_sources = [
+                    f"{k}: {round((_num(v)/total)*100,2)}%"
+                    for k, v in sorted(
+                        dist.items(), key=lambda kv: _num(kv[1]), reverse=True
+                    )[:5]
+                ]
         except Exception:
             top_sources = []
 
@@ -259,7 +288,7 @@ async def analyze_ml_results(ml_results: Dict, api_key: Optional[str] = None) ->
                 last = ts[-1]
                 ret = _num(last.get("retained") or 0)
                 ch = _num(last.get("churned") or 0)
-                total = ret + ch if (ret+ch) > 0 else 1
+                total = ret + ch if (ret + ch) > 0 else 1
                 ret_notes.append(f"Latest retention: {round((ret/total)*100,2)}%")
         except Exception:
             pass
@@ -283,27 +312,38 @@ async def analyze_ml_results(ml_results: Dict, api_key: Optional[str] = None) ->
         # Recommendations heuristics
         recs = []
         if top_drop:
-            recs.append("Investigate top drop-off path; fix UX or messaging at that step")
+            recs.append(
+                "Investigate top drop-off path; fix UX or messaging at that step"
+            )
         if top_sources:
-            recs.append("Double down on top channels; A/B landing pages for weaker sources")
+            recs.append(
+                "Double down on top channels; A/B landing pages for weaker sources"
+            )
         if not revenue and sessions > 0 and cr == 0:
             recs.append("No conversions with traffic; verify tracking or checkout flow")
 
         summary_bits = []
-        if sessions: summary_bits.append(f"Sessions {int(sessions):,}")
-        if users: summary_bits.append(f"Users {int(users):,}")
-        if cr: summary_bits.append(f"CR {round(cr*100,2)}%")
-        if revenue: summary_bits.append(f"Revenue ${round(revenue,2):,.2f}")
-        if top_drop: summary_bits.append(top_drop)
+        if sessions:
+            summary_bits.append(f"Sessions {int(sessions):,}")
+        if users:
+            summary_bits.append(f"Users {int(users):,}")
+        if cr:
+            summary_bits.append(f"CR {round(cr*100,2)}%")
+        if revenue:
+            summary_bits.append(f"Revenue ${round(revenue,2):,.2f}")
+        if top_drop:
+            summary_bits.append(top_drop)
 
         parsed = {
             "executive_summary": "; ".join(summary_bits) or "No ML results available",
             "key_insights": insights or ["Insufficient data"],
-            "recommendations": recs or ["Collect more data to generate actionable recommendations"],
+            "recommendations": recs
+            or ["Collect more data to generate actionable recommendations"],
         }
         return {"status": "ok", "parsed": parsed, "source": "local_fallback"}
     except Exception as e:
         return {"error": str(e), "insights": "Failed to generate LLM insights"}
+
 
 async def generate_recommendations(user_id: str, api_key: str, db) -> Dict:
     """
@@ -311,18 +351,16 @@ async def generate_recommendations(user_id: str, api_key: str, db) -> Dict:
     """
     user_data = await db.events.get_user_events(user_id)
     product_data = await db.products.get_all()
-    
+
     async with httpx.AsyncClient() as client:
         response = await client.post(
             f"{settings.OPENROUTER_API_URL}/recommend",
             headers={"Authorization": f"Bearer {api_key}"},
-            json={
-                "user_data": user_data,
-                "products": product_data
-            }
+            json={"user_data": user_data, "products": product_data},
         )
         response.raise_for_status()
         return response.json()
+
 
 async def get_insights(user_id: str, api_key: str, db) -> Dict:
     """
@@ -330,15 +368,12 @@ async def get_insights(user_id: str, api_key: str, db) -> Dict:
     """
     user_data = await db.events.get_user_events(user_id)
     session_data = await db.events.get_user_sessions(user_id)
-    
+
     async with httpx.AsyncClient() as client:
         response = await client.post(
             f"{settings.OPENROUTER_API_URL}/insights",
             headers={"Authorization": f"Bearer {api_key}"},
-            json={
-                "user_data": user_data,
-                "sessions": session_data
-            }
+            json={"user_data": user_data, "sessions": session_data},
         )
         response.raise_for_status()
         return response.json()

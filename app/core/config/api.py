@@ -23,7 +23,7 @@ class APIConfig(BaseModel):
 
     # HDFS Settings
     HDFS_HOST: str = Field(
-        "172.19.67.26",
+        "192.168.10.11",
         description="HDFS namenode host"
     )
     HDFS_PORT: int = Field(

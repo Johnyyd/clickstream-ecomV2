@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
     # CORS Settings
     CORS_ORIGINS: List[str] = Field(
-        default=["http://localhost:3000", "https://app.example.com"],
+        default=["http://localhost:8000", "https://app.example.com"],
         description="Allowed CORS origins"
     )
     CORS_METHODS: List[str] = Field(

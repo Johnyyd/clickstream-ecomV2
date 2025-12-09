@@ -63,18 +63,18 @@ export function displayAnalysisResults(analysis, container) {
 function createSummarySection(analysis) {
   const section = document.createElement('div');
   section.className = 'analysis-section summary-section';
-  
+
   const title = document.createElement('h2');
-  title.textContent = 'Analysis Summary';
+  title.innerHTML = 'Analysis Summary / <span style="font-weight:400; font-size:0.8em; color:var(--muted);">Tóm tắt phân tích</span>';
   title.className = 'section-title';
-  
+
   const summary = document.createElement('div');
   summary.className = 'summary-content';
-  
+
   // Get basic metrics
   const basicMetrics = analysis.detailed_metrics?.basic_metrics || {};
   const sparkSummary = analysis.spark_summary || {};
-  
+
   const metrics = [
     {
       label: 'Total Events',
@@ -93,27 +93,27 @@ function createSummarySection(analysis) {
     },
     {
       label: 'Avg. Session Duration',
-      value: basicMetrics.avg_session_duration_seconds 
-        ? `${Math.round(basicMetrics.avg_session_duration_seconds / 60 * 10) / 10} mins` 
+      value: basicMetrics.avg_session_duration_seconds
+        ? `${Math.round(basicMetrics.avg_session_duration_seconds / 60 * 10) / 10} mins`
         : 'N/A',
       icon: '⏱️'
     },
     {
       label: 'Pages/Session',
-      value: basicMetrics.avg_pages_per_session 
-        ? basicMetrics.avg_pages_per_session.toFixed(1) 
+      value: basicMetrics.avg_pages_per_session
+        ? basicMetrics.avg_pages_per_session.toFixed(1)
         : 'N/A',
       icon: '📄'
     },
     {
       label: 'Bounce Rate',
-      value: basicMetrics.bounce_rate !== undefined 
-        ? `${(basicMetrics.bounce_rate * 100).toFixed(1)}%` 
+      value: basicMetrics.bounce_rate !== undefined
+        ? `${(basicMetrics.bounce_rate * 100).toFixed(1)}%`
         : 'N/A',
       icon: '↩️'
     }
   ];
-  
+
   // Create metric cards
   metrics.forEach(metric => {
     const metricEl = document.createElement('div');
@@ -125,7 +125,7 @@ function createSummarySection(analysis) {
     `;
     summary.appendChild(metricEl);
   });
-  
+
   // Add key insights if available
   if (analysis.insights?.key_findings?.length) {
     const insightsEl = document.createElement('div');
@@ -133,14 +133,14 @@ function createSummarySection(analysis) {
     insightsEl.innerHTML = `
       <h3>Key Findings</h3>
       <ul>
-        ${analysis.insights.key_findings.map(finding => 
-          `<li>${finding}</li>`
-        ).join('')}
+        ${analysis.insights.key_findings.map(finding =>
+      `<li>${finding}</li>`
+    ).join('')}
       </ul>
     `;
     summary.appendChild(insightsEl);
   }
-  
+
   section.appendChild(title);
   section.appendChild(summary);
   return section;
@@ -150,17 +150,17 @@ function createSummarySection(analysis) {
 function createMetricsSection(analysis) {
   const metrics = analysis.detailed_metrics;
   if (!metrics) return null;
-  
+
   const section = document.createElement('div');
   section.className = 'analysis-section metrics-section';
-  
+
   const title = document.createElement('h2');
   title.textContent = 'Detailed Metrics';
   title.className = 'section-title';
-  
+
   const grid = document.createElement('div');
   grid.className = 'metrics-grid';
-  
+
   // Add event metrics
   if (metrics.event_analysis?.event_types) {
     Object.entries(metrics.event_analysis.event_types).forEach(([type, count]) => {
@@ -173,7 +173,7 @@ function createMetricsSection(analysis) {
       grid.appendChild(card);
     });
   }
-  
+
   section.appendChild(title);
   section.appendChild(grid);
   return section;
@@ -183,55 +183,60 @@ function createMetricsSection(analysis) {
 function createFunnelSection(analysis) {
   const funnel = analysis.detailed_metrics?.funnel_analysis;
   if (!funnel) return null;
-  
+
   const section = document.createElement('div');
   section.className = 'analysis-section funnel-section';
-  
+
   const title = document.createElement('h2');
-  title.textContent = 'Conversion Funnel';
+  title.innerHTML = 'Conversion Funnel / <span style="font-weight:400; font-size:0.8em; color:var(--muted);">Phễu chuyển đổi</span>';
   title.className = 'section-title';
-  
+
+  const subtitle = document.createElement('div');
+  subtitle.style.cssText = 'font-size: 13px; color: var(--muted); margin-bottom: 20px;';
+  subtitle.textContent = 'Track user drop-off between steps / Theo dõi tỷ lệ người dùng rời bỏ giữa các bước';
+
   const container = document.createElement('div');
   container.className = 'funnel-container';
-  
+
   // Add each stage of the funnel
   Object.entries(funnel).forEach(([stageName, stageData]) => {
     if (typeof stageData !== 'object') return;
-    
+
     const stageEl = document.createElement('div');
     stageEl.className = 'funnel-stage';
-    
+
     const header = document.createElement('div');
     header.className = 'funnel-header';
-    
+
     const title = document.createElement('div');
     title.className = 'funnel-title';
     title.textContent = stageName.replace(/_/g, ' ');
-    
+
     const conversion = document.createElement('div');
     conversion.className = 'funnel-conversion';
-    conversion.textContent = stageData.conversion 
-      ? `${(stageData.conversion * 100).toFixed(1)}%` 
+    conversion.textContent = stageData.conversion
+      ? `${(stageData.conversion * 100).toFixed(1)}%`
       : '';
-    
+
     header.appendChild(title);
     header.appendChild(conversion);
-    
+
     const bar = document.createElement('div');
     bar.className = 'funnel-bar';
-    
+
     const progress = document.createElement('div');
     progress.className = 'funnel-progress';
     progress.style.width = stageData.conversion ? `${stageData.conversion * 100}%` : '0%';
-    
+
     bar.appendChild(progress);
-    
+
     stageEl.appendChild(header);
     stageEl.appendChild(bar);
     container.appendChild(stageEl);
   });
-  
+
   section.appendChild(title);
+  section.appendChild(subtitle);
   section.appendChild(container);
   return section;
 }
@@ -240,19 +245,19 @@ function createFunnelSection(analysis) {
 function createPagesAndEventsSection(analysis) {
   const pages = analysis.detailed_metrics?.page_analysis?.top_pages;
   const events = analysis.detailed_metrics?.event_analysis?.top_event_types;
-  
+
   if (!pages?.length && !events?.length) return null;
-  
+
   const section = document.createElement('div');
   section.className = 'analysis-section pages-events-section';
-  
+
   const title = document.createElement('h2');
-  title.textContent = 'Top Pages & Events';
+  title.innerHTML = 'Top Pages & Events / <span style="font-weight:400; font-size:0.8em; color:var(--muted);">Các trang & Sự kiện hàng đầu</span>';
   title.className = 'section-title';
-  
+
   const content = document.createElement('div');
   content.className = 'pages-events-content';
-  
+
   // Add top pages
   if (pages?.length) {
     const pagesSection = document.createElement('div');
@@ -278,7 +283,7 @@ function createPagesAndEventsSection(analysis) {
     `;
     content.appendChild(pagesSection);
   }
-  
+
   // Add top events
   if (events?.length) {
     const eventsSection = document.createElement('div');
@@ -304,7 +309,7 @@ function createPagesAndEventsSection(analysis) {
     `;
     content.appendChild(eventsSection);
   }
-  
+
   section.appendChild(title);
   section.appendChild(content);
   return section;
@@ -314,17 +319,17 @@ function createPagesAndEventsSection(analysis) {
 function createTimeAnalysisSection(analysis) {
   const timeData = analysis.detailed_metrics?.time_analysis;
   if (!timeData) return null;
-  
+
   const section = document.createElement('div');
   section.className = 'analysis-section time-analysis-section';
-  
+
   const title = document.createElement('h2');
-  title.textContent = 'Time Analysis';
+  title.innerHTML = 'Time Analysis / <span style="font-weight:400; font-size:0.8em; color:var(--muted);">Phân tích theo thời gian</span>';
   title.className = 'section-title';
-  
+
   const content = document.createElement('div');
   content.className = 'time-analysis-content';
-  
+
   // Peak metrics summary
   const peakMetrics = document.createElement('div');
   peakMetrics.className = 'metrics-grid';
@@ -341,36 +346,36 @@ function createTimeAnalysisSection(analysis) {
     </div>
   `;
   content.appendChild(peakMetrics);
-  
+
   // Add hourly distribution
   if (timeData.hourly_distribution) {
     const hours = Object.entries(timeData.hourly_distribution)
       .sort(([a], [b]) => parseInt(a) - parseInt(b));
-    
+
     if (hours.length > 0) {
       const maxCount = Math.max(...hours.map(([_, count]) => count));
-      
+
       const hourlySection = document.createElement('div');
       hourlySection.className = 'data-section';
       hourlySection.innerHTML = `
         <h3>Hourly Distribution</h3>
         <div class="hourly-chart">
           ${hours.map(([hour, count]) => {
-            const height = (count / maxCount * 100) || 0;
-            return `
+        const height = (count / maxCount * 100) || 0;
+        return `
               <div class="hourly-bar-container">
                 <div class="hourly-bar" style="height: ${height}%"></div>
                 <div class="hour-label">${hour}:00</div>
                 <div class="count-label">${count}</div>
               </div>
             `;
-          }).join('')}
+      }).join('')}
         </div>
       `;
       content.appendChild(hourlySection);
     }
   }
-  
+
   // Add daily distribution
   if (timeData.daily_distribution) {
     const days = Object.entries(timeData.daily_distribution)
@@ -378,31 +383,31 @@ function createTimeAnalysisSection(analysis) {
         const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
         return dayOrder.indexOf(a) - dayOrder.indexOf(b);
       });
-    
+
     if (days.length > 0) {
       const maxCount = Math.max(...days.map(([_, count]) => count));
-      
+
       const dailySection = document.createElement('div');
       dailySection.className = 'data-section';
       dailySection.innerHTML = `
         <h3>Daily Distribution</h3>
         <div class="daily-chart">
           ${days.map(([day, count]) => {
-            const height = (count / maxCount * 100) || 0;
-            return `
+        const height = (count / maxCount * 100) || 0;
+        return `
               <div class="daily-bar-container">
                 <div class="daily-bar" style="height: ${height}%"></div>
                 <div class="day-label">${day.substring(0, 3)}</div>
                 <div class="count-label">${count}</div>
               </div>
             `;
-          }).join('')}
+      }).join('')}
         </div>
       `;
       content.appendChild(dailySection);
     }
   }
-  
+
   section.appendChild(title);
   section.appendChild(content);
   return section;
@@ -412,19 +417,19 @@ function createTimeAnalysisSection(analysis) {
 function createSessionAnalysisSection(analysis) {
   const sessionData = analysis.detailed_metrics?.session_analysis;
   if (!sessionData?.session_metrics) return null;
-  
+
   const section = document.createElement('div');
   section.className = 'analysis-section session-analysis-section';
-  
+
   const title = document.createElement('h2');
   title.textContent = 'Session Analysis';
   title.className = 'section-title';
-  
+
   const metrics = [
     {
       label: 'Avg. Session Duration',
-      value: sessionData.avg_session_duration 
-        ? `${Math.round(sessionData.avg_session_duration / 60 * 10) / 10} mins` 
+      value: sessionData.avg_session_duration
+        ? `${Math.round(sessionData.avg_session_duration / 60 * 10) / 10} mins`
         : 'N/A',
       icon: '⏱️'
     },
@@ -439,10 +444,10 @@ function createSessionAnalysisSection(analysis) {
       icon: '🔄'
     }
   ];
-  
+
   const metricsEl = document.createElement('div');
   metricsEl.className = 'metrics-grid';
-  
+
   metrics.forEach(metric => {
     const card = document.createElement('div');
     card.className = 'metric-card';
@@ -452,7 +457,7 @@ function createSessionAnalysisSection(analysis) {
     `;
     metricsEl.appendChild(card);
   });
-  
+
   section.appendChild(title);
   section.appendChild(metricsEl);
   return section;
@@ -509,22 +514,22 @@ function createSparkSummarySection(analysis) {
 // Create AI insights and recommendations section
 function createAIInsightsSection(analysis) {
   const insights = analysis.insights || {};
-  const hasInsights = insights.recommendations?.length || 
-                     insights.alerts?.length ||
-                     analysis.openrouter_output?.parsed?.recommendations?.length;
-  
+  const hasInsights = insights.recommendations?.length ||
+    insights.alerts?.length ||
+    analysis.openrouter_output?.parsed?.recommendations?.length;
+
   if (!hasInsights) return null;
-  
+
   const section = document.createElement('div');
   section.className = 'analysis-section ai-insights-section';
-  
+
   const title = document.createElement('h2');
   title.textContent = 'AI Insights & Recommendations';
   title.className = 'section-title';
-  
+
   const content = document.createElement('div');
   content.className = 'ai-insights-content';
-  
+
   // Add recommendations
   if (insights.recommendations?.length) {
     const recsEl = document.createElement('div');
@@ -532,14 +537,14 @@ function createAIInsightsSection(analysis) {
     recsEl.innerHTML = `
       <h3>Recommendations</h3>
       <ul>
-        ${insights.recommendations.map(rec => 
-          `<li>${rec}</li>`
-        ).join('')}
+        ${insights.recommendations.map(rec =>
+      `<li>${rec}</li>`
+    ).join('')}
       </ul>
     `;
     content.appendChild(recsEl);
   }
-  
+
   // Add alerts
   if (insights.alerts?.length) {
     const alertsEl = document.createElement('div');
@@ -547,14 +552,14 @@ function createAIInsightsSection(analysis) {
     alertsEl.innerHTML = `
       <h3>Alerts</h3>
       <ul>
-        ${insights.alerts.map(alert => 
-          `<li>⚠️ ${alert}</li>`
-        ).join('')}
+        ${insights.alerts.map(alert =>
+      `<li>⚠️ ${alert}</li>`
+    ).join('')}
       </ul>
     `;
     content.appendChild(alertsEl);
   }
-  
+
   // Add OpenRouter recommendations if available
   const openRouterRecs = analysis.openrouter_output?.parsed?.recommendations_for_user;
   if (openRouterRecs?.length) {
@@ -563,14 +568,14 @@ function createAIInsightsSection(analysis) {
     openRouterEl.innerHTML = `
       <h3>Personalized Recommendations</h3>
       <ul>
-        ${openRouterRecs.map(rec => 
-          `<li>💡 ${rec}</li>`
-        ).join('')}
+        ${openRouterRecs.map(rec =>
+      `<li>💡 ${rec}</li>`
+    ).join('')}
       </ul>
     `;
     content.appendChild(openRouterEl);
   }
-  
+
   section.appendChild(title);
   section.appendChild(content);
   return section;
@@ -900,22 +905,22 @@ const styles = `
 function createLLMSection(analysis) {
   const llm = analysis.llm_insights || analysis.openrouter_output;
   if (!llm) return null;
-  
+
   const section = document.createElement('div');
   section.className = 'analysis-section llm-analysis-section';
   section.id = 'llm-analysis';
-  
+
   const header = document.createElement('h2');
   header.className = 'section-header';
   header.innerHTML = '🤖 AI-Powered Analysis';
   section.appendChild(header);
-  
+
   const llmContainer = document.createElement('div');
   llmContainer.className = 'llm-container';
-  
+
   // Use the new llmDisplay module
   displayLLMAnalysis(llm, llmContainer);
-  
+
   section.appendChild(llmContainer);
   return section;
 }

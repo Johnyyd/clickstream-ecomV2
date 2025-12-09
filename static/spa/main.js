@@ -67,9 +67,9 @@ async function renderLLM() {
           <div><div class="muted">AOV</div><div id="llm-kpi-aov" class="kpi-value">—</div></div>
         </div>
       </div>
-      <div class="card"><h3>Funnel (LLM view)</h3><div class="chart" id="llm-chart-funnel"></div></div>
-      <div class="card"><h3>SEO Distribution</h3><div class="chart" id="llm-chart-seo"></div></div>
-      <div class="card"><h3>Retention</h3><div class="chart" id="llm-chart-ret"></div></div>
+      <div class="card"><h3>Funnel (LLM view) / Phễu (Góc nhìn LLM)</h3><div class="chart" id="llm-chart-funnel"></div></div>
+      <div class="card"><h3>SEO Distribution / Phân phối SEO</h3><div class="chart" id="llm-chart-seo"></div></div>
+      <div class="card"><h3>Retention / Giữ chân</h3><div class="chart" id="llm-chart-ret"></div></div>
       <div class="card" style="grid-column: 1 / -1"><h3>Data Quality</h3>
         <div id="llm-dq" class="muted"></div>
       </div>
@@ -273,8 +273,8 @@ async function renderML() {
     } catch { }
     const score = n ? (avg / n) : Number(data.avg_probability ?? 0);
     const aucScore = Number(data.auc_score || 0);
-    const title = `Conversion Prediction Model`;
-    const subtitle = `Avg Likelihood: ${fmt((score || 0) * 100, 2)}%` + (aucScore ? ` • AUC Score: ${fmt(aucScore, 3)}` : '');
+    const title = `Conversion Prediction / Dự đoán chuyển đổi`;
+    const subtitle = `Avg Likelihood / Khả năng TB: ${fmt((score || 0) * 100, 2)}%` + (aucScore ? ` • AUC: ${fmt(aucScore, 3)}` : '');
 
     // Feature importance bar if available
     let cats = [], vals = [];
@@ -299,8 +299,8 @@ async function renderML() {
             const p = params[0];
             return `<div style="padding:8px">
               <strong>${p.name}</strong><br/>
-              Importance: <strong>${fmt(p.value, 4)}</strong><br/>
-              <span style="color:#666;font-size:11px">Higher values indicate stronger influence on conversion</span>
+              Importance / Độ quan trọng: <strong>${fmt(p.value, 4)}</strong><br/>
+              <span style="color:#666;font-size:11px">Influence on conversion / Ảnh hưởng đến chuyển đổi</span>
             </div>`;
           }
         },
@@ -346,9 +346,9 @@ async function renderML() {
         tooltip: {
           formatter: function (params) {
             return `<div style="padding:8px">
-              <strong>Conversion Likelihood</strong><br/>
+              <strong>Conversion Likelihood / Khả năng chuyển đổi</strong><br/>
               Score: <strong>${params.value}%</strong><br/>
-              <span style="color:#666;font-size:11px">Probability that a user will complete a purchase</span>
+              <span style="color:#666;font-size:11px">Probability of purchase / Xác suất mua hàng</span>
             </div>`;
           }
         },
@@ -386,8 +386,8 @@ async function renderML() {
     } catch { }
 
     const chart = echarts.init(elp);
-    const title = `Purchase Probability Model`;
-    const subtitle = `Avg Purchase Prob: ${fmt((score || 0) * 100, 2)}%` + (aucScore ? ` • AUC: ${fmt(aucScore, 3)}` : '');
+    const title = `Purchase Probability / Xác suất mua hàng`;
+    const subtitle = `Avg Prob / Xác suất TB: ${fmt((score || 0) * 100, 2)}%` + (aucScore ? ` • AUC: ${fmt(aucScore, 3)}` : '');
 
     if (cats.length) {
       chart.setOption({
@@ -401,8 +401,8 @@ async function renderML() {
             const p = params[0];
             return `<div style="padding:8px">
               <strong>${p.name}</strong><br/>
-              Coefficient: <strong>${fmt(p.value, 4)}</strong><br/>
-              <span style="color:#666;font-size:11px">Impact on purchase probability (absolute value)</span>
+              Coefficient / Hệ số: <strong>${fmt(p.value, 4)}</strong><br/>
+              <span style="color:#666;font-size:11px">Impact (absolute) / Tác động (giá trị tuyệt đối)</span>
             </div>`;
           }
         },
@@ -447,9 +447,9 @@ async function renderML() {
         tooltip: {
           formatter: function (params) {
             return `<div style="padding:8px">
-              <strong>Purchase Probability</strong><br/>
+              <strong>Purchase Probability / Xác suất mua hàng</strong><br/>
               Score: <strong>${params.value}%</strong><br/>
-              <span style="color:#666;font-size:11px">Likelihood of user making a purchase</span>
+              <span style="color:#666;font-size:11px">Likelihood of purchase / Khả năng mua hàng</span>
             </div>`;
           }
         },
@@ -486,8 +486,8 @@ async function renderML() {
     if (cats.length) {
       chart.setOption({
         title: [
-          { text: 'User Segmentation (K-Means Clustering)', left: 'center', top: 10, textStyle: { fontSize: 14, fontWeight: 'bold' } },
-          { text: `Total Users: ${totalUsers.toLocaleString()} across ${cats.length} segments`, left: 'center', top: 30, textStyle: { fontSize: 11, color: '#666' } }
+          { text: 'User Segmentation / Phân khúc người dùng', left: 'center', top: 10, textStyle: { fontSize: 14, fontWeight: 'bold' } },
+          { text: `Total / Tổng: ${totalUsers.toLocaleString()} users • ${cats.length} segments`, left: 'center', top: 30, textStyle: { fontSize: 11, color: '#666' } }
         ],
         tooltip: {
           trigger: 'axis',
@@ -504,7 +504,7 @@ async function renderML() {
               Users: <strong>${users.toLocaleString()}</strong> (${pct}%)<br/>
               Avg Events: <strong>${fmt(events, 1)}</strong><br/>
               Conversion Rate: <strong>${fmt(conv, 1)}%</strong><br/>
-              <span style="color:#666;font-size:11px">User behavior segment based on activity patterns</span>
+              <span style="color:#666;font-size:11px">User behavior segment / Phân nhóm hành vi khách hàng</span>
             </div>`;
           }
         },
@@ -532,7 +532,7 @@ async function renderML() {
           },
           {
             type: 'value',
-            name: 'Metrics',
+            name: 'Metrics / Chỉ số',
             nameLocation: 'middle',
             nameGap: 45,
             position: 'right'
@@ -581,7 +581,7 @@ async function renderML() {
       chart.setOption({
         title: {
           text: 'No segmentation data available',
-          subtext: 'Run user segmentation analysis to see clusters',
+          subtext: 'Run user segmentation analysis to see clusters / Chạy phân tích để xem các nhóm',
           left: 'center',
           top: 'middle',
           textStyle: { fontSize: 14, color: '#666' },
@@ -917,20 +917,20 @@ async function loadOverview() {
       <div class="card"><h3>Revenue</h3><div class="kpi-value" id="ov-rev">—</div></div>
     </div>
     <div class="grid" style="grid-template-columns: 1fr 1fr; margin-top:12px;">
-      <div class="card"><h3>Traffic Sources Trend</h3><div class="chart" id="chart-trend"></div></div>
-      <div class="card"><h3>User Segmentation</h3><div class="chart" id="chart-seg"></div></div>
-      <div class="card" style="grid-column: 1 / -1"><h3>Peaks</h3>
+      <div class="card"><h3>Traffic Sources Trend / Xu hướng nguồn truy cập</h3><div class="chart" id="chart-trend"></div></div>
+      <div class="card"><h3>User Segmentation / Phân khúc người dùng</h3><div class="chart" id="chart-seg"></div></div>
+      <div class="card" style="grid-column: 1 / -1"><h3>Peaks / Đỉnh điểm</h3>
         <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center">
-          <div>Peak Day: <b id="ov-peak-day" class="muted">—</b></div>
-          <div>Peak Hour (Users): <b id="ov-peak-hour" class="muted">—</b></div>
+          <div>Peak Day / Ngày cao điểm: <b id="ov-peak-day" class="muted">—</b></div>
+          <div>Peak Hour / Giờ cao điểm (Users): <b id="ov-peak-hour" class="muted">—</b></div>
         </div>
         <div id="ov-peak-extra" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px">
-          <div><div class="muted" style="margin-bottom:4px">Top Hours</div><ul id="ov-peak-hours-list" style="margin:0;padding-left:18px"></ul></div>
-          <div><div class="muted" style="margin-bottom:4px">Top Days</div><ul id="ov-peak-days-list" style="margin:0;padding-left:18px"></ul></div>
+          <div><div class="muted" style="margin-bottom:4px">Top Hours / Giờ phổ biến</div><ul id="ov-peak-hours-list" style="margin:0;padding-left:18px"></ul></div>
+          <div><div class="muted" style="margin-bottom:4px">Top Days / Ngày phổ biến</div><ul id="ov-peak-days-list" style="margin:0;padding-left:18px"></ul></div>
         </div>
       </div>
-      <div class="card"><h3>User Activity by Hour</h3><div class="chart" id="chart-hr"></div></div>
-      <div class="card"><h3>User Activity by Day</h3><div class="chart" id="chart-dow"></div></div>
+      <div class="card"><h3>User Activity by Hour / Hoạt động theo giờ</h3><div class="chart" id="chart-hr"></div></div>
+      <div class="card"><h3>User Activity by Day / Hoạt động theo ngày</h3><div class="chart" id="chart-dow"></div></div>
     </div>
   `;
   const statusEl = el('#ov-status');
@@ -1350,8 +1350,8 @@ async function renderCart() {
       <span id="cart-status" class="muted"></span>
     </div>
     <div class="grid" style="grid-template-columns: 1fr 1fr;">
-      <div class="card"><h3>Abandonment by Channel</h3><div class="chart" id="chart-ab"></div></div>
-      <div class="card"><h3>Cart Size Distribution</h3><div class="chart" id="chart-dist"></div></div>
+      <div class="card"><h3>Abandonment by Channel / Tỷ lệ bỏ giỏ theo kênh</h3><div class="chart" id="chart-ab"></div></div>
+      <div class="card"><h3>Cart Size Distribution / Phân phối kích thước giỏ hàng</h3><div class="chart" id="chart-dist"></div></div>
     </div>
   `;
   const statusEl = el('#cart-status');
@@ -1445,8 +1445,8 @@ async function renderJourney() {
       <span id="jn-status" class="muted"></span>
     </div>
     <div class="grid" style="grid-template-columns: 2fr 1fr;">
-      <div class="card"><h3>Funnel</h3><div class="chart" id="chart-funnel"></div></div>
-      <div class="card"><h3>Top Paths (Sankey)</h3><div class="chart" id="chart-sankey"></div></div>
+      <div class="card"><h3>Funnel / Phễu chuyển đổi</h3><div class="chart" id="chart-funnel"></div></div>
+      <div class="card"><h3>Top Paths (Sankey) / Luồng hành trình phổ biến</h3><div class="chart" id="chart-sankey"></div></div>
     </div>
   `;
   const statusEl = el('#jn-status');
@@ -1962,8 +1962,8 @@ async function renderSEO() {
       <span id="seo-status" class="muted"></span>
     </div>
     <div class="grid" style="grid-template-columns: 1fr 1fr;">
-      <div class="card"><h3>Traffic Source Distribution</h3><div class="chart" id="chart-donut"></div></div>
-      <div class="card"><h3>Traffic Trend</h3><div class="chart" id="chart-traffic"></div></div>
+      <div class="card"><h3>Traffic Source Distribution / Phân phối nguồn truy cập</h3><div class="chart" id="chart-donut"></div></div>
+      <div class="card"><h3>Traffic Trend / Xu hướng lưu lượng</h3><div class="chart" id="chart-traffic"></div></div>
     </div>
   `;
   const statusEl = el('#seo-status');
@@ -2197,8 +2197,8 @@ async function renderRetention() {
       <span id="ret-status" class="muted"></span>
     </div>
     <div class="grid" style="grid-template-columns: 1fr 1fr;">
-      <div class="card"><h3>Retention / Churn</h3><div class="chart" id="chart-ret"></div></div>
-      <div class="card"><h3>Cohort</h3><div id="cohort-table" style="max-height:320px;overflow:auto"></div></div>
+      <div class="card"><h3>Retention & Churn / Tỷ lệ giữ chân & rời bỏ</h3><div class="chart" id="chart-ret"></div></div>
+      <div class="card"><h3>Cohort Analysis / Phân tích tổ hợp</h3><div id="cohort-table" style="max-height:320px;overflow:auto"></div></div>
     </div>
   `;
   const statusEl = el('#ret-status');

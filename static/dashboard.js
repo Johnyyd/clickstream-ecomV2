@@ -81,7 +81,7 @@ function clearStoredAnalysisAndML() {
 async function loadLatestAnalysisFromServer() {
   try {
     if (!token) return;
-    const listResp = await fetch('/api/analyses', { headers: { 'Authorization': 'Bearer ' + token }});
+    const listResp = await fetch('/api/analyses', { headers: { 'Authorization': 'Bearer ' + token } });
     if (!listResp.ok) return;
     const list = await listResp.json();
     if (!Array.isArray(list) || list.length === 0) return;
@@ -89,7 +89,7 @@ async function loadLatestAnalysisFromServer() {
     const latest = list[0];
     let analysisDoc = latest;
     if (!latest.results || Object.keys(latest.results).length === 0 || !latest.llm_insights) {
-      const detailResp = await fetch(`/api/analyses/${latest._id}`, { headers: { 'Authorization': 'Bearer ' + token }});
+      const detailResp = await fetch(`/api/analyses/${latest._id}`, { headers: { 'Authorization': 'Bearer ' + token } });
       if (detailResp.ok) analysisDoc = await detailResp.json();
     }
     if (analysisDoc && analysisDoc.results) {
@@ -127,7 +127,7 @@ function loadStoredAnalysisAndMLToUI() {
     }
 
     // Try to load common ML algorithms and display them if present
-    const mlAlgos = ['K-Means Clustering','Decision Tree','FP-Growth Patterns','Logistic Regression'];
+    const mlAlgos = ['K-Means Clustering', 'Decision Tree', 'FP-Growth Patterns', 'Logistic Regression'];
     for (const algo of mlAlgos) {
       const ml = loadMLResultFromStorage(algo);
       if (ml) {
@@ -193,7 +193,7 @@ function ensureMetricsPanel() {
       </details>
     `;
     controls.appendChild(panel);
-    
+
     // Add event listeners for time range buttons
     const timeRangeButtons = panel.querySelectorAll('.time-range-btn');
     timeRangeButtons.forEach(btn => {
@@ -209,9 +209,9 @@ function ensureMetricsPanel() {
 function changeTimeRange(rangeKey) {
   const range = TIME_RANGES[rangeKey];
   if (!range) return;
-  
+
   currentTimeRange = range.minutes;
-  
+
   // Update active button
   const panel = document.getElementById('rt-metrics');
   if (panel) {
@@ -222,57 +222,57 @@ function changeTimeRange(rangeKey) {
         btn.classList.remove('active');
       }
     });
-    
+
     // Update titles
     const title = panel.querySelector('#rt-title');
     const chartTitle = panel.querySelector('#rt-chart-title');
     const pagesTitle = panel.querySelector('#rt-pages-title');
     const summaryLabel = panel.querySelector('.metric-label');
-    
+
     const shortLabel = rangeKey.replace('min', 'p').replace('hour', 'h').replace('day', 'd');
-    
+
     if (title) title.textContent = `Real-time Metrics (last ${range.label})`;
-    if (chartTitle) chartTitle.textContent = `Events per minute (last ${range.label})`;
-    if (pagesTitle) pagesTitle.textContent = `Top pages (${shortLabel})`;
+    if (chartTitle) chartTitle.textContent = `Events per minute / Sự kiện mỗi phút (last ${range.label})`;
+    if (pagesTitle) pagesTitle.textContent = `Top pages / Trang xem nhiều (${shortLabel})`;
   }
-  
+
   // Fetch new data
   console.log(`[changeTimeRange] Switching to ${rangeKey} (${range.minutes} minutes)`);
   pollMetricsOnce();
 }
 
-window.showChartTooltip = function(event, timeStr, dateStr, count) {
+window.showChartTooltip = function (event, timeStr, dateStr, count) {
   const tooltip = document.getElementById('chart-tooltip');
   if (!tooltip) return;
-  
+
   document.getElementById('tooltip-time').textContent = `🕐 ${timeStr}`;
   document.getElementById('tooltip-date').textContent = dateStr;
   document.getElementById('tooltip-count').textContent = `📊 ${count} events`;
-  
+
   tooltip.style.display = 'block';
-  
+
   // Position tooltip near mouse with smart positioning to avoid overflow
   const container = tooltip.parentElement;
   const rect = container.getBoundingClientRect();
   let x = event.clientX - rect.left + 15;
   let y = event.clientY - rect.top - 15;
-  
+
   // Adjust if tooltip would overflow right edge
   const tooltipWidth = tooltip.offsetWidth;
   if (x + tooltipWidth > container.offsetWidth) {
     x = event.clientX - rect.left - tooltipWidth - 15;
   }
-  
+
   // Adjust if tooltip would overflow top edge
   if (y < 0) {
     y = event.clientY - rect.top + 15;
   }
-  
+
   tooltip.style.left = `${x}px`;
   tooltip.style.top = `${y}px`;
 };
 
-window.hideChartTooltip = function() {
+window.hideChartTooltip = function () {
   const tooltip = document.getElementById('chart-tooltip');
   if (tooltip) tooltip.style.display = 'none';
 };
@@ -300,12 +300,12 @@ function renderAggregates(data) {
   const panel = ensureMetricsPanel();
   const items = (data && data.items) || [];
   console.log('[renderAggregates] Received items:', items.length);
-  
+
   // Use pre-aggregated data from API if available (more efficient)
   // Otherwise fall back to computing from items (backward compatibility)
   let byPage = data.by_page || {};
   let byEvent = data.by_event || {};
-  
+
   // Fallback: compute from items if not pre-aggregated
   if (!data.by_page && items.length > 0 && items[0].page !== undefined) {
     byPage = {};
@@ -315,14 +315,14 @@ function renderAggregates(data) {
       if (r.page) byPage[r.page] = (byPage[r.page] || 0) + (r.count || 0);
     }
   }
-  
+
   // Build minute map from aggregated items
   const byMinute = new Map();
   let total = 0;
-  
+
   for (const r of items) {
     total += (r.count || 0);
-    
+
     // Parse window_end - handle both ISO string and Date object
     let end = null;
     if (r.window_end) {
@@ -337,18 +337,18 @@ function renderAggregates(data) {
         console.warn('[renderAggregates] Unknown window_end format:', r.window_end);
       }
     }
-    
+
     if (end && !isNaN(end.getTime())) {
-      const key = `${end.getUTCFullYear()}-${String(end.getUTCMonth()+1).padStart(2,'0')}-${String(end.getUTCDate()).padStart(2,'0')} ${String(end.getUTCHours()).padStart(2,'0')}:${String(end.getUTCMinutes()).padStart(2,'0')}`;
+      const key = `${end.getUTCFullYear()}-${String(end.getUTCMonth() + 1).padStart(2, '0')}-${String(end.getUTCDate()).padStart(2, '0')} ${String(end.getUTCHours()).padStart(2, '0')}:${String(end.getUTCMinutes()).padStart(2, '0')}`;
       // Items are already aggregated by minute, so just set directly
       byMinute.set(key, r.count || 0);
     }
   }
-  
+
   console.log('[renderAggregates] byMinute Map size:', byMinute.size, 'Total events:', total);
-  const topEvent = Object.entries(byEvent).sort((a,b)=>b[1]-a[1])[0] || ['',0];
-  const topPage = Object.entries(byPage).sort((a,b)=>b[1]-a[1])[0] || ['',0];
-  
+  const topEvent = Object.entries(byEvent).sort((a, b) => b[1] - a[1])[0] || ['', 0];
+  const topPage = Object.entries(byPage).sort((a, b) => b[1] - a[1])[0] || ['', 0];
+
   // Get current time range label
   let timeLabel = '1h';
   for (const [key, range] of Object.entries(TIME_RANGES)) {
@@ -357,12 +357,12 @@ function renderAggregates(data) {
       break;
     }
   }
-  
+
   const grid = panel.querySelector('#rt-summary');
   grid.innerHTML = `
-    <div class="metric-card"><div class="metric-value">${total}</div><div class="metric-label">Events (${timeLabel})</div></div>
-    <div class="metric-card"><div class="metric-value">${topEvent[0]||'-'}: ${topEvent[1]||0}</div><div class="metric-label">Top Event</div></div>
-    <div class="metric-card"><div class="metric-value">${topPage[0]||'-'}: ${topPage[1]||0}</div><div class="metric-label">Top Page</div></div>
+    <div class="metric-card"><div class="metric-value">${total}</div><div class="metric-label">Events / Sự kiện (${timeLabel})</div></div>
+    <div class="metric-card"><div class="metric-value">${topEvent[0] || '-'}: ${topEvent[1] || 0}</div><div class="metric-label">Top Event / Sự kiện chính</div></div>
+    <div class="metric-card"><div class="metric-value">${topPage[0] || '-'}: ${topPage[1] || 0}</div><div class="metric-label">Top Page / Trang chính</div></div>
   `;
   const raw = panel.querySelector('#rt-raw');
   raw.textContent = JSON.stringify(items.slice(-50), null, 2);
@@ -392,73 +392,73 @@ function renderLineChartSVG(byMinuteMap) {
   const labels = [];
   const timeLabels = []; // Store Date objects for X-axis labels
   const values = [];
-  
+
   // Determine number of data points and interval
   const minutes = currentTimeRange;
   let dataPoints = minutes;
   let intervalMinutes = 1;
-  
+
   // For longer periods, aggregate data points
   if (minutes > 180) {
     dataPoints = 120; // Max 120 points on chart
     intervalMinutes = Math.ceil(minutes / dataPoints);
   }
-  
+
   for (let i = dataPoints - 1; i >= 0; i--) {
     const t = new Date(now.getTime() - i * intervalMinutes * 60000);
-    const key = `${t.getUTCFullYear()}-${String(t.getUTCMonth()+1).padStart(2,'0')}-${String(t.getUTCDate()).padStart(2,'0')} ${String(t.getUTCHours()).padStart(2,'0')}:${String(t.getUTCMinutes()).padStart(2,'0')}`;
+    const key = `${t.getUTCFullYear()} -${String(t.getUTCMonth() + 1).padStart(2, '0')} -${String(t.getUTCDate()).padStart(2, '0')} ${String(t.getUTCHours()).padStart(2, '0')}:${String(t.getUTCMinutes()).padStart(2, '0')} `;
     labels.push(key);
     timeLabels.push(t);
     const val = byMinuteMap.get(key) || 0;
     values.push(val);
   }
-  
+
   const nonZeroCount = values.filter(v => v > 0).length;
   const totalEvents = values.reduce((sum, v) => sum + v, 0);
   console.log(`[renderLineChartSVG] ${nonZeroCount}/${dataPoints} data points with events, ${totalEvents} total events`);
-  
+
   const width = 600, height = 180, pad = 24, bottomPad = 40; // Extra space for X-axis labels
   const maxV = Math.max(1, ...values);
-  
+
   const chartHeight = height - bottomPad;
   const pts = values.map((v, idx) => {
-    const x = pad + (idx/(values.length-1))*(width-2*pad);
-    const y = pad + (1 - (v/maxV))*(chartHeight-pad);
+    const x = pad + (idx / (values.length - 1)) * (width - 2 * pad);
+    const y = pad + (1 - (v / maxV)) * (chartHeight - pad);
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
-  
+
   // Y-axis ticks
   const ticks = [0, 0.25, 0.5, 0.75, 1].map(fr => {
-    const y = pad + (1-fr)*(chartHeight-pad);
-    const val = Math.round(maxV*fr);
-    return `<line x1=\"${pad}\" y1=\"${y}\" x2=\"${width-pad}\" y2=\"${y}\" stroke=\"#233046\" stroke-width=\"1\" />
-            <text x=\"${pad-4}\" y=\"${y+3}\" fill=\"#98a5b5\" font-size=\"10\" text-anchor=\"end\">${val}</text>`;
+    const y = pad + (1 - fr) * (chartHeight - pad);
+    const val = Math.round(maxV * fr);
+    return `<line x1=\"${pad}\" y1=\"${y}\" x2=\"${width - pad}\" y2=\"${y}\" stroke=\"#233046\" stroke-width=\"1\" />
+            <text x=\"${pad - 4}\" y=\"${y + 3}\" fill=\"#98a5b5\" font-size=\"10\" text-anchor=\"end\">${val}</text>`;
   }).join('');
-  
+
   // X-axis time labels (show every 10 minutes + first and last)
   const xAxisLabels = [];
   for (let i = 0; i < timeLabels.length; i++) {
     if (i === 0 || i === timeLabels.length - 1 || i % 10 === 0) {
       const t = timeLabels[i];
-      const x = pad + (i/(values.length-1))*(width-2*pad);
-      const timeStr = `${String(t.getUTCHours()).padStart(2,'0')}:${String(t.getUTCMinutes()).padStart(2,'0')}`;
+      const x = pad + (i / (values.length - 1)) * (width - 2 * pad);
+      const timeStr = `${String(t.getUTCHours()).padStart(2, '0')}:${String(t.getUTCMinutes()).padStart(2, '0')}`;
       xAxisLabels.push(`<text x="${x}" y="${chartHeight + 15}" fill="#98a5b5" font-size="10" text-anchor="middle">${timeStr}</text>`);
       // Small tick mark
       xAxisLabels.push(`<line x1="${x}" y1="${chartHeight}" x2="${x}" y2="${chartHeight + 5}" stroke="#233046" stroke-width="1" />`);
     }
   }
-  
+
   // X-axis line
-  const xAxisLine = `<line x1="${pad}" y1="${chartHeight}" x2="${width-pad}" y2="${chartHeight}" stroke="#233046" stroke-width="1" />`;
-  
+  const xAxisLine = `<line x1="${pad}" y1="${chartHeight}" x2="${width - pad}" y2="${chartHeight}" stroke="#233046" stroke-width="1" />`;
+
   // Interactive data points with hover
   const interactivePoints = values.map((v, idx) => {
-    const x = pad + (idx/(values.length-1))*(width-2*pad);
-    const y = pad + (1 - (v/maxV))*(chartHeight-pad);
+    const x = pad + (idx / (values.length - 1)) * (width - 2 * pad);
+    const y = pad + (1 - (v / maxV)) * (chartHeight - pad);
     const t = timeLabels[idx];
-    const timeStr = `${String(t.getUTCHours()).padStart(2,'0')}:${String(t.getUTCMinutes()).padStart(2,'0')}`;
-    const dateStr = `${t.getUTCFullYear()}-${String(t.getUTCMonth()+1).padStart(2,'0')}-${String(t.getUTCDate()).padStart(2,'0')}`;
-    
+    const timeStr = `${String(t.getUTCHours()).padStart(2, '0')}:${String(t.getUTCMinutes()).padStart(2, '0')}`;
+    const dateStr = `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
+
     return `
       <g class="data-point-group">
         <!-- Invisible larger circle for easier hovering -->
@@ -469,7 +469,7 @@ function renderLineChartSVG(byMinuteMap) {
         <circle id="point-${idx}" cx="${x}" cy="${y}" r="4" fill="#2563eb" opacity="0" style="pointer-events:none; transition:opacity 0.2s" />
       </g>`;
   }).join('');
-  
+
   return `<svg width=\"100%\" viewBox=\"0 0 ${width} ${height}\" preserveAspectRatio=\"xMidYMid meet\">
     <rect x=\"0\" y=\"0\" width=\"${width}\" height=\"${height}\" fill=\"rgba(255,255,255,0.02)\" />
     ${ticks}
@@ -481,19 +481,19 @@ function renderLineChartSVG(byMinuteMap) {
 }
 
 function renderBarChartSVG(byPageObj) {
-  const entries = Object.entries(byPageObj).sort((a,b)=>b[1]-a[1]).slice(0,20);
+  const entries = Object.entries(byPageObj).sort((a, b) => b[1] - a[1]).slice(0, 20);
   const width = 600, barH = 18, gap = 8, pad = 24;
-  const height = pad + entries.length*(barH+gap) + pad;
-  const maxV = Math.max(1, ...entries.map(e=>e[1]));
+  const height = pad + entries.length * (barH + gap) + pad;
+  const maxV = Math.max(1, ...entries.map(e => e[1]));
   const bars = entries.map((e, i) => {
-    const label = (e[0]||'').slice(0,40);
+    const label = (e[0] || '').slice(0, 40);
     const v = e[1];
-    const w = (v/maxV)*(width-2*pad);
-    const y = pad + i*(barH+gap);
+    const w = (v / maxV) * (width - 2 * pad);
+    const y = pad + i * (barH + gap);
     return `<g>
       <rect x=\"${pad}\" y=\"${y}\" width=\"${w}\" height=\"${barH}\" fill=\"#10b981\" />
-      <text x=\"${pad+4}\" y=\"${y+barH-5}\" fill=\"#0b1220\" font-size=\"11\" >${label}</text>
-      <text x=\"${pad+w+4}\" y=\"${y+barH-5}\" fill=\"#98a5b5\" font-size=\"11\" >${v}</text>
+      <text x=\"${pad + 4}\" y=\"${y + barH - 5}\" fill=\"#0b1220\" font-size=\"11\" >${label}</text>
+      <text x=\"${pad + w + 4}\" y=\"${y + barH - 5}\" fill=\"#98a5b5\" font-size=\"11\" >${v}</text>
     </g>`;
   }).join('');
   return `<svg width=\"100%\" viewBox=\"0 0 ${width} ${height}\" preserveAspectRatio=\"xMidYMid meet\">
@@ -510,7 +510,7 @@ function renderBarChartSVG(byPageObj) {
   token = localStorage.getItem('token');
   if (token) {
     try {
-      const meResp = await fetch('/api/me', { headers: { 'Authorization': 'Bearer ' + token }});
+      const meResp = await fetch('/api/me', { headers: { 'Authorization': 'Bearer ' + token } });
       if (meResp.ok) {
         const me = await meResp.json();
         currentUserId = me.user_id || me._id || me.id || null;
@@ -518,20 +518,20 @@ function renderBarChartSVG(byPageObj) {
       } else if (meResp.status === 401) {
         window.location.href = '/auth.html?session_expired=true';
       }
-    } catch(e) {
+    } catch (e) {
       console.error('Failed to fetch user info:', e);
     }
-    
+
     // Load initial data
-  try { await checkKey(); } catch(e) {}
-  try { await loadRecommendations(); } catch(e) {}
-  try { await loadProducts(); } catch(e) {}
-  // Respect hard-reload clear flag and restore any stored analysis/ML results
-  handleClearOnLoadFlag_dashboard();
-  loadStoredAnalysisAndMLToUI();
-  // Always fetch the latest analysis from server for admins
-  await loadLatestAnalysisFromServer();
-  startMetricsPolling();
+    try { await checkKey(); } catch (e) { }
+    try { await loadRecommendations(); } catch (e) { }
+    try { await loadProducts(); } catch (e) { }
+    // Respect hard-reload clear flag and restore any stored analysis/ML results
+    handleClearOnLoadFlag_dashboard();
+    loadStoredAnalysisAndMLToUI();
+    // Always fetch the latest analysis from server for admins
+    await loadLatestAnalysisFromServer();
+    startMetricsPolling();
     ensureAutoAnalyzeButton();
     if (autoAnalyzeBtn) {
       autoAnalyzeBtn.onclick = () => {
@@ -552,14 +552,14 @@ async function loadProducts() {
       cachedProducts = data.items || [];
       console.log(`Loaded ${cachedProducts.length} products for simulation`);
     }
-  } catch(e) {
+  } catch (e) {
     console.error('Failed to load products:', e);
   }
 }
 
 simulateBtn.onclick = async () => {
   if (!token) { output.innerText = "login first"; return; }
-  
+
   // Ensure products are loaded
   if (cachedProducts.length === 0) {
     await loadProducts();
@@ -568,19 +568,19 @@ simulateBtn.onclick = async () => {
       return;
     }
   }
-  
+
   output.innerText = "Simulating realistic events...";
-  
+
   try {
     // Personas synchronized with seed_realistic_data.py
     const personas = [
-      {name: "bouncer", weight: 0.15, events: 2, browseRate: 0.8, productRate: 0.15, cartRate: 0.03, checkoutRate: 0.02},
-      {name: "browser", weight: 0.35, events: 7, browseRate: 0.5, productRate: 0.35, cartRate: 0.1, checkoutRate: 0.05},
-      {name: "shopper", weight: 0.25, events: 10, browseRate: 0.3, productRate: 0.4, cartRate: 0.2, checkoutRate: 0.1},
-      {name: "power_buyer", weight: 0.15, events: 12, browseRate: 0.2, productRate: 0.35, cartRate: 0.25, checkoutRate: 0.2},
-      {name: "returning_customer", weight: 0.10, events: 9, browseRate: 0.25, productRate: 0.4, cartRate: 0.2, checkoutRate: 0.15}
+      { name: "bouncer", weight: 0.15, events: 2, browseRate: 0.8, productRate: 0.15, cartRate: 0.03, checkoutRate: 0.02 },
+      { name: "browser", weight: 0.35, events: 7, browseRate: 0.5, productRate: 0.35, cartRate: 0.1, checkoutRate: 0.05 },
+      { name: "shopper", weight: 0.25, events: 10, browseRate: 0.3, productRate: 0.4, cartRate: 0.2, checkoutRate: 0.1 },
+      { name: "power_buyer", weight: 0.15, events: 12, browseRate: 0.2, productRate: 0.35, cartRate: 0.25, checkoutRate: 0.2 },
+      { name: "returning_customer", weight: 0.10, events: 9, browseRate: 0.25, productRate: 0.4, cartRate: 0.2, checkoutRate: 0.15 }
     ];
-    
+
     // Select persona
     const rand = Math.random();
     let cumWeight = 0;
@@ -592,25 +592,25 @@ simulateBtn.onclick = async () => {
         break;
       }
     }
-    
+
     const categories = ["computer", "phone", "shoes", "shirt", "coffee", "pants"];
     const searchTerms = ["laptop", "phone", "coffee", "shoes", "shirt", "pizza", "sushi"];
     const referrers = ["direct", "email", "social", "ads", "google", "facebook"];
     let viewedProducts = [];
     let cartItems = [];
-    
+
     // Entry point - synchronized with seed_realistic_data.py
     const entryPoints = [
-      {page: "/home", type: "pageview", props: {referrer: referrers[Math.floor(Math.random() * referrers.length)], source: "simulate"}},
-      {page: "/search", type: "search", props: {search_term: searchTerms[Math.floor(Math.random() * searchTerms.length)], referrer: "google", source: "simulate"}},
-      {page: `/category?category=${categories[Math.floor(Math.random() * categories.length)]}`, type: "pageview", props: {referrer: "social", source: "simulate"}}
+      { page: "/home", type: "pageview", props: { referrer: referrers[Math.floor(Math.random() * referrers.length)], source: "simulate" } },
+      { page: "/search", type: "search", props: { search_term: searchTerms[Math.floor(Math.random() * searchTerms.length)], referrer: "google", source: "simulate" } },
+      { page: `/category?category=${categories[Math.floor(Math.random() * categories.length)]}`, type: "pageview", props: { referrer: "social", source: "simulate" } }
     ];
     const entry = entryPoints[Math.random() < 0.6 ? 0 : (Math.random() < 0.85 ? 1 : 2)];
-    
+
     // First event with current timestamp
     const resp = await fetch('/api/ingest', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token},
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
       body: JSON.stringify({
         page: entry.page,
         event_type: entry.type,
@@ -621,19 +621,19 @@ simulateBtn.onclick = async () => {
       })
     });
     if (resp.status === 401) {
-        window.location.href = '/auth.html?session_expired=true';
-        return;
+      window.location.href = '/auth.html?session_expired=true';
+      return;
     }
-    
+
     // Generate remaining events with current timestamp for each
     for (let i = 1; i < persona.events && i < 100; i++) {
       // Use current system time for each event instead of incrementing
       // Add small delay to simulate realistic spacing (5-15 seconds)
       await new Promise(resolve => setTimeout(resolve, Math.random() * 100 + 50));
-      
+
       const currentTimestamp = Math.floor(Date.now() / 1000);
       const r = Math.random();
-      
+
       let event;
       if (r < persona.browseRate) {
         // Browse - category or search
@@ -645,7 +645,7 @@ simulateBtn.onclick = async () => {
             timestamp: currentTimestamp,
             user_id: currentUserId || undefined,
             session_id: simSessionId,
-            properties: {category: category, source: "simulate"}
+            properties: { category: category, source: "simulate" }
           };
         } else {
           const term = searchTerms[Math.floor(Math.random() * searchTerms.length)];
@@ -655,7 +655,7 @@ simulateBtn.onclick = async () => {
             timestamp: currentTimestamp,
             user_id: currentUserId || undefined,
             session_id: simSessionId,
-            properties: {search_term: term, source: "simulate"}
+            properties: { search_term: term, source: "simulate" }
           };
         }
       } else if (r < persona.browseRate + persona.productRate) {
@@ -702,7 +702,7 @@ simulateBtn.onclick = async () => {
             timestamp: currentTimestamp,
             user_id: currentUserId || undefined,
             session_id: simSessionId,
-            properties: {source: "simulate"}
+            properties: { source: "simulate" }
           };
         }
       } else {
@@ -733,7 +733,7 @@ simulateBtn.onclick = async () => {
               timestamp: currentTimestamp,
               user_id: currentUserId || undefined,
               session_id: simSessionId,
-              properties: {source: "simulate"}
+              properties: { source: "simulate" }
             };
           } else {
             const cat = categories[Math.floor(Math.random() * categories.length)];
@@ -743,15 +743,15 @@ simulateBtn.onclick = async () => {
               timestamp: currentTimestamp,
               user_id: currentUserId || undefined,
               session_id: simSessionId,
-              properties: {category: cat, source: "simulate"}
+              properties: { category: cat, source: "simulate" }
             };
           }
         }
       }
-      
+
       const resp = await fetch('/api/ingest', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token},
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
         body: JSON.stringify(event)
       });
       if (resp.status === 401) {
@@ -759,16 +759,16 @@ simulateBtn.onclick = async () => {
         return;
       }
     }
-    
+
     output.innerText = `${persona.events} realistic events ingested successfully (${persona.name} persona)`;
-    
+
     // Dispatch custom event to notify analytics modules to refresh
-    window.dispatchEvent(new CustomEvent('dataUpdated', { 
-      detail: { 
+    window.dispatchEvent(new CustomEvent('dataUpdated', {
+      detail: {
         type: 'simulate',
         events: persona.events,
-        persona: persona.name 
-      } 
+        persona: persona.name
+      }
     }));
   } catch (error) {
     console.error('Error simulating events:', error);
@@ -782,10 +782,10 @@ if (useSparkToggle) {
     useSpark = e.target.checked;
     e.target.setAttribute('aria-checked', useSpark.toString());
     updateAnalysisModeUI();
-    
+
     // Save preference to localStorage
     localStorage.setItem('useSpark', useSpark.toString());
-    
+
     // Notify screen readers of the change
     const mode = useSpark ? 'Spark' : 'Python';
     const statusMessage = `Analysis mode changed to ${mode}`;
@@ -793,7 +793,7 @@ if (useSparkToggle) {
     statusEl.setAttribute('role', 'status');
     statusEl.textContent = statusMessage;
     document.body.appendChild(statusEl);
-    
+
     // Remove the status message after it's been announced
     setTimeout(() => {
       document.body.removeChild(statusEl);
@@ -807,24 +807,24 @@ function updateAnalysisModeUI() {
   if (analysisModeText) {
     analysisModeText.textContent = `${mode} Analysis`;
     analysisModeText.setAttribute('aria-label', `Current analysis engine: ${mode}`);
-    
+
     // Update the tooltip based on the mode
-    analysisModeText.title = useSpark 
-      ? 'Using Apache Spark for large-scale data processing' 
+    analysisModeText.title = useSpark
+      ? 'Using Apache Spark for large-scale data processing'
       : 'Using Python for small to medium datasets';
   }
-  
+
   if (analysisModeBadge) {
     analysisModeBadge.textContent = mode;
     analysisModeBadge.className = `badge ${mode.toLowerCase()}`;
     analysisModeBadge.setAttribute('aria-hidden', 'true');
-    
+
     // Add tooltip to the badge
-    analysisModeBadge.title = useSpark 
-      ? 'Click to switch to Python analysis' 
+    analysisModeBadge.title = useSpark
+      ? 'Click to switch to Python analysis'
       : 'Click to switch to Spark analysis';
   }
-  
+
   // Update the analyze button text and tooltip
   if (analyzeBtn) {
     analyzeBtn.textContent = `Run ${mode} Analysis`;
@@ -845,16 +845,16 @@ function loadPreferences() {
 // Check the current analysis mode from the server
 async function checkAnalysisMode() {
   if (!token) return;
-  
+
   try {
     const resp = await fetch('/api/analysis/mode', {
       headers: { 'Authorization': 'Bearer ' + token }
     });
-    
+
     if (resp.ok) {
       const data = await resp.json();
       const serverUseSpark = data.use_spark;
-      
+
       // Update UI if it doesn't match the server
       if (serverUseSpark !== useSpark) {
         useSpark = serverUseSpark;
@@ -864,7 +864,7 @@ async function checkAnalysisMode() {
       // Clarify message to reflect server default mode, not per-run selection
       output.innerText = `Server default mode: ${serverUseSpark ? 'Spark' : 'Python'}`;
     } else if (resp.status === 401) {
-        window.location.href = '/auth.html?session_expired=true';
+      window.location.href = '/auth.html?session_expired=true';
     }
   } catch (e) {
     console.error('Failed to check analysis mode:', e);
@@ -877,7 +877,7 @@ async function checkAnalysisMode() {
 async function runAnalysis({ skipLLM = false, limit = null, useSparkFlag = null, analysisTarget = null } = {}) {
   if (!token) { output.innerText = 'login first'; return null; }
   const mode = (useSparkFlag === null ? useSpark : !!useSparkFlag) ? 'Spark' : 'Python';
-  
+
   // Determine analysis target
   let targetDesc = 'current user';
   if (analysisTarget === 'all') {
@@ -886,7 +886,7 @@ async function runAnalysis({ skipLLM = false, limit = null, useSparkFlag = null,
     const username = analysisTarget.split(':', 1)[1];
     targetDesc = `user: ${username}`;
   }
-  
+
   output.innerText = `Running ${mode} analysis for ${targetDesc}...`;
   try {
     const params = { use_spark: mode === 'Spark' };
@@ -945,8 +945,8 @@ async function runAnalysis({ skipLLM = false, limit = null, useSparkFlag = null,
     const resultsContainer = document.getElementById('results');
     displayAnalysisResults(analysis, resultsContainer);
     checkAnalysisMode();
-  // Persist analysis so a normal reload (F5) will restore it
-  try { saveAnalysisToStorage(analysis); } catch (e) { console.warn('Failed to persist analysis', e); }
+    // Persist analysis so a normal reload (F5) will restore it
+    try { saveAnalysisToStorage(analysis); } catch (e) { console.warn('Failed to persist analysis', e); }
     output.innerText = `Analysis completed with ${mode}!`;
     return analysis;
   } catch (e) {
@@ -971,14 +971,14 @@ function ensureAutoAnalyzeButton() {
 
 function startAutoAnalyze() {
   if (autoAnalyzeTimer) clearInterval(autoAnalyzeTimer);
-  
+
   // Determine current analysis target based on username field
   const getAnalysisTarget = () => {
     const usernameInput = document.getElementById('targetUsername');
     const username = usernameInput ? usernameInput.value.trim() : '';
     return username ? `username:${username}` : 'all';
   };
-  
+
   // First immediate run with skip LLM and no limit
   const target = getAnalysisTarget();
   runAnalysis({ skipLLM: true, limit: null, analysisTarget: target });
@@ -1000,12 +1000,12 @@ function stopAutoAnalyze() {
 // Check OpenRouter API key status
 async function checkKey() {
   if (!token) return;
-  
+
   try {
     const resp = await fetch('/api/openrouter/key', {
       headers: { 'Authorization': 'Bearer ' + token }
     });
-    
+
     if (resp.ok) {
       const data = await resp.json();
       if (data.exists && data.masked_key) {
@@ -1018,10 +1018,10 @@ async function checkKey() {
         return false;
       }
     } else {
-        if (resp.status === 401) {
-            window.location.href = '/auth.html?session_expired=true';
-            return;
-        }
+      if (resp.status === 401) {
+        window.location.href = '/auth.html?session_expired=true';
+        return;
+      }
       const error = await resp.json().catch(() => ({}));
       keyStatus.textContent = `❌ Error: ${error.error || 'Failed to check key'}`;
       keyStatus.className = 'key-status error';
@@ -1041,14 +1041,14 @@ async function saveKey() {
     output.innerText = 'Please login first';
     return false;
   }
-  
+
   const key = openrouterKeyInput.value.trim();
   if (!key) {
     keyStatus.textContent = '❌ Please enter an API key';
     keyStatus.className = 'key-status error';
     return false;
   }
-  
+
   try {
     const resp = await fetch('/api/openrouter/key', {
       method: 'POST',
@@ -1058,7 +1058,7 @@ async function saveKey() {
       },
       body: JSON.stringify({ api_key: key })
     });
-    
+
     if (resp.ok) {
       const data = await resp.json();
       keyStatus.textContent = '✅ API Key saved successfully';
@@ -1066,10 +1066,10 @@ async function saveKey() {
       openrouterKeyInput.value = ''; // Clear the input field
       return true;
     } else {
-        if (resp.status === 401) {
-            window.location.href = '/auth.html?session_expired=true';
-            return;
-        }
+      if (resp.status === 401) {
+        window.location.href = '/auth.html?session_expired=true';
+        return;
+      }
       const error = await resp.json().catch(() => ({}));
       keyStatus.textContent = `❌ Error: ${error.error || 'Failed to save key'}`;
       keyStatus.className = 'key-status error';
@@ -1086,19 +1086,19 @@ async function saveKey() {
 // Load product recommendations
 async function loadRecommendations() {
   if (!token) return;
-  
+
   try {
     const resp = await fetch('/api/recommendations', {
       headers: { 'Authorization': 'Bearer ' + token }
     });
-    
+
     if (resp.ok) {
       const data = await resp.json();
       const recItems = data.items || data.recommendations || [];
       if (recItems && recItems.length > 0) {
         recsEl.innerHTML = '<h3>Recommended for You</h3>';
         const ul = document.createElement('ul');
-        
+
         recItems.forEach(rec => {
           const li = document.createElement('li');
           li.innerHTML = `
@@ -1110,13 +1110,13 @@ async function loadRecommendations() {
           `;
           ul.appendChild(li);
         });
-        
+
         recsEl.appendChild(ul);
       } else {
         recsEl.innerHTML = '<p>No recommendations available. Generate some by analyzing your data!</p>';
       }
     } else if (resp.status === 401) {
-        window.location.href = '/auth.html?session_expired=true';
+      window.location.href = '/auth.html?session_expired=true';
     }
   } catch (e) {
     console.error('Error loading recommendations:', e);
@@ -1148,10 +1148,10 @@ if (useSparkToggle) {
 function ensureUsernameInput() {
   const controls = document.getElementById('controls');
   if (!controls) return;
-  
+
   // Check if already exists
   if (document.getElementById('usernameInputSection')) return;
-  
+
   const inputDiv = document.createElement('div');
   inputDiv.id = 'usernameInputSection';
   inputDiv.className = 'username-section';
@@ -1169,7 +1169,7 @@ function ensureUsernameInput() {
       />
     </div>
   `;
-  
+
   // Insert before analyze button
   const analyzeSection = controls.querySelector('.analysis-controls');
   if (analyzeSection) {
@@ -1183,9 +1183,9 @@ analyzeBtn.onclick = async () => {
   // Check if username is provided
   const usernameInput = document.getElementById('targetUsername');
   const username = usernameInput ? usernameInput.value.trim() : '';
-  
+
   let analysisTarget = null;
-  
+
   if (username) {
     // If username provided, analyze that specific user
     analysisTarget = `username:${username}`;
@@ -1193,7 +1193,7 @@ analyzeBtn.onclick = async () => {
     // If no username, analyze all users (entire database)
     analysisTarget = 'all';
   }
-  
+
   await runAnalysis({ skipLLM: false, limit: null, analysisTarget });
 };
 
@@ -1208,12 +1208,12 @@ async function runMLAlgorithm(endpoint, algorithmName) {
     output.innerText = "Please login first";
     return;
   }
-  
+
   const usernameInput = document.getElementById('targetUsername');
   const username = usernameInput ? usernameInput.value.trim() : null;
-  
+
   output.innerText = `Running ${algorithmName}...`;
-  
+
   try {
     const resp = await fetch(`/api/${endpoint}`, {
       method: 'POST',
@@ -1223,7 +1223,7 @@ async function runMLAlgorithm(endpoint, algorithmName) {
       },
       body: JSON.stringify({ username })
     });
-    
+
     // Check HTTP status first
     if (!resp.ok) {
       if (resp.status === 401) {
@@ -1236,20 +1236,20 @@ async function runMLAlgorithm(endpoint, algorithmName) {
       output.innerText = `Error: ${errorMsg}`;
       return;
     }
-    
+
     const result = await resp.json();
-    
+
     // Additional check for error in response
     if (result.error) {
       output.innerText = `Error: ${result.error}`;
       return;
     }
-    
-  // Display results
-  displayMLResults(algorithmName, result);
-  // Persist ML result so normal reload restores it
-  try { saveMLResultToStorage(algorithmName, result); } catch (e) { console.warn('Failed to persist ML result', e); }
-  output.innerText = `${algorithmName} completed successfully`;
+
+    // Display results
+    displayMLResults(algorithmName, result);
+    // Persist ML result so normal reload restores it
+    try { saveMLResultToStorage(algorithmName, result); } catch (e) { console.warn('Failed to persist ML result', e); }
+    output.innerText = `${algorithmName} completed successfully`;
   } catch (error) {
     console.error(`Error running ${algorithmName}:`, error);
     output.innerText = `Error: ${error.message}`;
@@ -1262,7 +1262,7 @@ function displayMLResults(algorithmName, result) {
     console.error('Invalid result object:', result);
     return;
   }
-  
+
   // Create or get ML results container
   let mlResultsDiv = document.getElementById('ml-results');
   if (!mlResultsDiv) {
@@ -1274,14 +1274,17 @@ function displayMLResults(algorithmName, result) {
       resultsDiv.insertBefore(mlResultsDiv, resultsDiv.firstChild);
     }
   }
-  
+
   // Build HTML based on algorithm
   let html = `<h2>🤖 ${algorithmName}</h2>`;
-  
+
   if (algorithmName === 'K-Means Clustering') {
     html += `
       <div class="ml-result-card">
         <h3>Cluster Analysis</h3>
+        <div style="font-size: 13px; color: var(--muted); margin-bottom: 16px;">
+            Visualize user groups based on behavior / Trực quan hóa các nhóm khách hàng dựa trên hành vi
+        </div>
         <div class="metrics-grid">
           <div class="metric-card">
             <div class="metric-icon">👥</div>
@@ -1303,7 +1306,7 @@ function displayMLResults(algorithmName, result) {
         <h4>Cluster Characteristics</h4>
         <div class="clusters-grid">
     `;
-    
+
     if (result.cluster_stats && typeof result.cluster_stats === 'object') {
       for (const [clusterId, stats] of Object.entries(result.cluster_stats)) {
         const clusterNames = ['🔵 Low Value', '🟢 Medium Value', '🟡 High Value'];
@@ -1320,7 +1323,7 @@ function displayMLResults(algorithmName, result) {
         `;
       }
     }
-    
+
     html += `
         </div>
       </div>
@@ -1329,6 +1332,9 @@ function displayMLResults(algorithmName, result) {
     html += `
       <div class="ml-result-card">
         <h3>Conversion Prediction Model</h3>
+        <div style="font-size: 13px; color: var(--muted); margin-bottom: 16px;">
+            Predict likelihood of conversion / Dự đoán khả năng chuyển đổi mua hàng
+        </div>
         <div class="metrics-grid">
           <div class="metric-card">
             <div class="metric-icon">🎯</div>
@@ -1350,12 +1356,12 @@ function displayMLResults(algorithmName, result) {
         <h4>Feature Importance</h4>
         <div class="feature-importance">
     `;
-    
+
     if (result.feature_importance && typeof result.feature_importance === 'object') {
       const maxImportance = Math.max(...Object.values(result.feature_importance));
       for (const [feature, importance] of Object.entries(result.feature_importance)) {
-      const percentage = (importance / maxImportance * 100);
-      html += `
+        const percentage = (importance / maxImportance * 100);
+        html += `
         <div class="feature-bar">
           <span class="feature-name">${feature}</span>
           <div class="bar-container">
@@ -1366,7 +1372,7 @@ function displayMLResults(algorithmName, result) {
       `;
       }
     }
-    
+
     html += `
         </div>
         
@@ -1382,7 +1388,7 @@ function displayMLResults(algorithmName, result) {
           </thead>
           <tbody>
     `;
-    
+
     if (result.sample_predictions && Array.isArray(result.sample_predictions)) {
       for (const sample of result.sample_predictions) {
         const match = sample.actual === sample.predicted;
@@ -1396,7 +1402,7 @@ function displayMLResults(algorithmName, result) {
         `;
       }
     }
-    
+
     html += `
           </tbody>
         </table>
@@ -1406,6 +1412,9 @@ function displayMLResults(algorithmName, result) {
     html += `
       <div class="ml-result-card">
         <h3>Frequent Navigation Patterns</h3>
+        <div style="font-size: 13px; color: var(--muted); margin-bottom: 16px;">
+            Common paths users take / Các lộ trình phổ biến mà người dùng thường đi
+        </div>
         <div class="metrics-grid">
           <div class="metric-card">
             <div class="metric-icon">📊</div>
@@ -1427,7 +1436,7 @@ function displayMLResults(algorithmName, result) {
         <h4>Top Frequent Patterns</h4>
         <div class="patterns-list">
     `;
-    
+
     if (result.top_patterns && Array.isArray(result.top_patterns)) {
       for (const pattern of result.top_patterns.slice(0, 10)) {
         html += `
@@ -1441,14 +1450,14 @@ function displayMLResults(algorithmName, result) {
         `;
       }
     }
-    
+
     html += `
         </div>
         
         <h4>Top Association Rules</h4>
         <div class="rules-list">
     `;
-    
+
     if (result.top_rules && Array.isArray(result.top_rules)) {
       for (const rule of result.top_rules.slice(0, 8)) {
         html += `
@@ -1466,7 +1475,7 @@ function displayMLResults(algorithmName, result) {
         `;
       }
     }
-    
+
     html += `
         </div>
       </div>
@@ -1475,6 +1484,9 @@ function displayMLResults(algorithmName, result) {
     html += `
       <div class="ml-result-card">
         <h3>Purchase Probability Prediction</h3>
+        <div style="font-size: 13px; color: var(--muted); margin-bottom: 16px;">
+            Estimate chance of buying / Ước tính xác suất mua hàng
+        </div>
         <div class="metrics-grid">
           <div class="metric-card">
             <div class="metric-icon">🎯</div>
@@ -1496,7 +1508,7 @@ function displayMLResults(algorithmName, result) {
         <h4>Feature Coefficients</h4>
         <div class="coefficients-list">
     `;
-    
+
     if (result.feature_coefficients && typeof result.feature_coefficients === 'object') {
       for (const [feature, coef] of Object.entries(result.feature_coefficients)) {
         const isPositive = coef > 0;
@@ -1510,7 +1522,7 @@ function displayMLResults(algorithmName, result) {
         `;
       }
     }
-    
+
     html += `
           <div class="coef-item intercept">
             <span class="coef-name">Intercept</span>
@@ -1530,7 +1542,7 @@ function displayMLResults(algorithmName, result) {
           </thead>
           <tbody>
     `;
-    
+
     if (result.sample_predictions && Array.isArray(result.sample_predictions)) {
       for (const sample of result.sample_predictions) {
         const match = sample.actual === sample.predicted;
@@ -1549,14 +1561,14 @@ function displayMLResults(algorithmName, result) {
         `;
       }
     }
-    
+
     html += `
           </tbody>
         </table>
       </div>
     `;
   }
-  
+
   mlResultsDiv.innerHTML = html;
 }
 

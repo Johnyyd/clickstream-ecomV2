@@ -3,7 +3,7 @@
  * Handles all new analytics endpoints and displays results
  */
 
-(function() {
+(function () {
     'use strict';
 
     const token = localStorage.getItem('token');
@@ -153,31 +153,31 @@
             console.warn('Failed to load stored analytics to UI', e);
         }
     }
-    
+
     // Utility: Show/hide elements
     function show(el) {
         if (typeof el === 'string') el = document.getElementById(el);
         if (el) el.classList.remove('hidden');
     }
-    
+
     function hide(el) {
         if (typeof el === 'string') el = document.getElementById(el);
         if (el) el.classList.add('hidden');
     }
-    
+
     // Utility: API fetch with auth
     async function fetchAPI(url, options = {}) {
         const headers = options.headers || {};
         headers['Authorization'] = token;
         headers['Content-Type'] = 'application/json';
-        
+
         const response = await fetch(url, { ...options, headers });
         if (!response.ok) {
             throw new Error(`API Error: ${response.status} ${response.statusText}`);
         }
         return await response.json();
     }
-    
+
     // Utility: Display status message
     function showStatus(message, isError = false) {
         const output = document.getElementById('output');
@@ -186,7 +186,7 @@
             output.style.color = isError ? '#e74c3c' : '#27ae60';
         }
     }
-    
+
     // Utility: Show empty state
     function showEmptyState(containerId, message = 'No data available') {
         const container = document.getElementById(containerId);
@@ -200,7 +200,7 @@
             `;
         }
     }
-    
+
     // Helper: Switch to specific tab
     function switchToTab(tabId) {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -208,7 +208,7 @@
         document.querySelector(`[data-tab="${tabId}"]`)?.classList.add('active');
         document.getElementById(tabId)?.classList.add('active');
     }
-    
+
     // Tab Switching Logic
     function initTabSwitching() {
         const tabButtons = document.querySelectorAll('.tab-btn');
@@ -218,7 +218,7 @@
                 switchToTab(tabId);
             });
         });
-        
+
         // Subtab switching
         const subtabButtons = document.querySelectorAll('.subtab-btn');
         subtabButtons.forEach(btn => {
@@ -226,14 +226,14 @@
                 // Get parent section
                 const parentSection = btn.closest('.analytics-section');
                 if (!parentSection) return;
-                
+
                 // Remove active from all subtabs in this section
                 parentSection.querySelectorAll('.subtab-btn').forEach(b => b.classList.remove('active'));
                 parentSection.querySelectorAll('.subtab-content').forEach(c => c.classList.remove('active'));
-                
+
                 // Add active to clicked button
                 btn.classList.add('active');
-                
+
                 // Show corresponding content
                 const subtabId = btn.getAttribute('data-subtab');
                 const subtabContent = document.getElementById(subtabId);
@@ -243,7 +243,7 @@
             });
         });
     }
-    
+
     // Utility: Show toast notification
     function showToast(message, duration = 3000) {
         // Remove existing toast if any
@@ -251,7 +251,7 @@
         if (existingToast) {
             existingToast.remove();
         }
-        
+
         const toast = document.createElement('div');
         toast.id = 'analyticsToast';
         toast.style.cssText = `
@@ -270,13 +270,13 @@
         `;
         toast.textContent = message;
         document.body.appendChild(toast);
-        
+
         setTimeout(() => {
             toast.style.animation = 'slideOutDown 0.3s ease';
             setTimeout(() => toast.remove(), 300);
         }, duration);
     }
-    
+
     // Add animation styles
     if (!document.getElementById('toastAnimations')) {
         const style = document.createElement('style');
@@ -293,7 +293,7 @@
         `;
         document.head.appendChild(style);
     }
-    
+
     // ===== SEO & Traffic Analysis =====
     async function runSEOAnalysis() {
         try {
@@ -302,27 +302,27 @@
             const uname = (document.getElementById('analyticsUsername')?.value || '').trim();
             const url = uname ? `/api/analytics/seo?username=${encodeURIComponent(uname)}` : '/api/analytics/seo';
             const result = await fetchAPI(url);
-            
+
             if (result.error) {
                 showStatus(`❌ Error: ${result.error}`, true);
                 return;
             }
-            
+
             show('comprehensiveResults');
             switchToTab('seoResults');
-            
+
             // Traffic by Source with Chart
             displayTrafficBySource(result.traffic_by_source || [], result);
-            
+
             // Landing Pages
             displayLandingPages(result.landing_pages || []);
-            
+
             // Conversion by Source
             displayConversionBySource(result.conversion_by_source || []);
-            
+
             // Hourly Traffic
             displayHourlyTraffic(result.hourly_traffic || []);
-            
+
             showStatus('✅ SEO Analysis Complete');
             // Persist SEO results so they survive a normal reload (F5)
             saveAnalytics('seo', result);
@@ -330,10 +330,10 @@
             showStatus(`❌ ${error.message}`, true);
         }
     }
-    
+
     function displayTrafficBySource(data, fullResult) {
         const container = document.getElementById('trafficBySource');
-        
+
         if (!data || data.length === 0) {
             container.innerHTML = `
                 <div class="empty-state">
@@ -344,9 +344,9 @@
             `;
             return;
         }
-        
+
         container.innerHTML = `
-            <h4>📊 Traffic by Source</h4>
+            <h4>📊 Traffic by Source / Nguồn lưu lượng</h4>
             <div id="seoChartContainer"></div>
             <div class="analytics-table-container">
             <table class="analytics-table">
@@ -371,7 +371,7 @@
             </table>
             </div>
         `;
-        
+
         // Render SEO chart if available
         if (window.MLCharts && window.MLCharts.createSEOChart && fullResult) {
             const chartContainer = document.getElementById('seoChartContainer');
@@ -380,11 +380,11 @@
             }
         }
     }
-    
+
     function displayLandingPages(data) {
         const container = document.getElementById('landingPages');
         container.innerHTML = `
-            <h4>🎯 Top Landing Pages</h4>
+            <h4>🎯 Top Landing Pages / Trang đích hàng đầu</h4>
             <div class="analytics-table-container">
             <table class="analytics-table">
                 <thead>
@@ -411,11 +411,11 @@
             </div>
         `;
     }
-    
+
     function displayConversionBySource(data) {
         const container = document.getElementById('conversionBySource');
         container.innerHTML = `
-            <h4>💰 Conversion by Source</h4>
+            <h4>💰 Conversion by Source / Chuyển đổi theo nguồn</h4>
             <div class="analytics-table-container">
             <table class="analytics-table">
                 <thead>
@@ -440,36 +440,36 @@
             </div>
         `;
     }
-    
+
     function displayHourlyTraffic(data) {
         const container = document.getElementById('hourlyTraffic');
-        
+
         // Group by hour
         const byHour = {};
         data.forEach(row => {
             if (!byHour[row.hour]) byHour[row.hour] = [];
             byHour[row.hour].push(row);
         });
-        
+
         container.innerHTML = `
-            <h4>⏰ Peak Traffic Hours</h4>
+            <h4>⏰ Peak Traffic Hours / Giờ cao điểm</h4>
             <div class="chart-container">
                 ${Object.keys(byHour).sort((a, b) => parseInt(a) - parseInt(b)).map(hour => {
-                    const total = byHour[hour].reduce((sum, r) => sum + r.sessions, 0);
-                    const maxSessions = Math.max(...Object.values(byHour).map(h => h.reduce((s, r) => s + r.sessions, 0)));
-                    const width = (total / maxSessions * 100).toFixed(1);
-                    return `
+            const total = byHour[hour].reduce((sum, r) => sum + r.sessions, 0);
+            const maxSessions = Math.max(...Object.values(byHour).map(h => h.reduce((s, r) => s + r.sessions, 0)));
+            const width = (total / maxSessions * 100).toFixed(1);
+            return `
                         <div class="bar-chart-row" scrollbar-x="true">
                             <span class="bar-label">${hour}:00</span>
                             <div class="bar-fill" style="width: ${width}%"></div>
                             <span class="bar-value">${total}</span>
                         </div>
                     `;
-                }).join('')}
+        }).join('')}
             </div>
         `;
     }
-    
+
     // ===== Cart Abandonment Analysis =====
     async function runCartAnalysis() {
         try {
@@ -478,17 +478,17 @@
             const uname = (document.getElementById('analyticsUsername')?.value || '').trim();
             const url = uname ? `/api/analytics/cart-abandonment?username=${encodeURIComponent(uname)}` : '/api/analytics/cart-abandonment';
             const result = await fetchAPI(url);
-            
+
             if (result.error) {
                 showStatus(`❌ Error: ${result.error}`, true);
                 return;
             }
-            
+
             show('comprehensiveResults');
             switchToTab('cartResults');
-            
+
             displayAbandonment(result);
-            
+
             showStatus('✅ Cart Analysis Complete');
             // Persist Cart results
             saveAnalytics('cart', result);
@@ -496,11 +496,11 @@
             showStatus(`❌ ${error.message}`, true);
         }
     }
-    
+
     function displayAbandonment(data) {
         // Abandonment Rate
         document.getElementById('abandonmentRate').innerHTML = `
-            <h4>📉 Abandonment Overview</h4>
+            <h4>📉 Abandonment Overview / Tổng quan hủy đơn</h4>
             <div class="stats-grid">
                 <div class="stat-item">
                     <div class="stat-label">Total Carts</div>
@@ -520,10 +520,10 @@
                 </div>
             </div>
         `;
-        
+
         // Cart Value Comparison
         document.getElementById('cartValueComparison').innerHTML = `
-            <h4>💵 Cart Value Analysis</h4>
+            <h4>💵 Cart Value Analysis / Phân tích giá trị giỏ hàng</h4>
             <div class="stats-grid">
                 <div class="stat-item">
                     <div class="stat-label">Avg Abandoned Value</div>
@@ -543,10 +543,10 @@
                 </div>
             </div>
         `;
-        
+
         // Most Abandoned Products
         document.getElementById('abandonedProducts').innerHTML = `
-            <h4>🎯 Most Abandoned Products</h4>
+            <h4>🎯 Most Abandoned Products / Sản phẩm bị bỏ lại nhiều nhất</h4>
             <div class="analytics-table-container">
             <table class="analytics-table">
                 <thead>
@@ -571,7 +571,7 @@
             </div>
         `;
     }
-    
+
     // ===== Retention Analysis =====
     async function runRetentionAnalysis() {
         try {
@@ -580,17 +580,17 @@
             const uname = (document.getElementById('analyticsUsername')?.value || '').trim();
             const url = uname ? `/api/analytics/retention?username=${encodeURIComponent(uname)}` : '/api/analytics/retention';
             const result = await fetchAPI(url);
-            
+
             if (result.error) {
                 showStatus(`❌ Error: ${result.error}`, true);
                 return;
             }
-            
+
             show('comprehensiveResults');
             switchToTab('retentionResults');
-            
+
             displayRetention(result);
-            
+
             showStatus('✅ Retention Analysis Complete');
             // Persist Retention results
             saveAnalytics('retention', result);
@@ -598,11 +598,11 @@
             showStatus(`❌ ${error.message}`, true);
         }
     }
-    
+
     function displayRetention(data) {
         // Cohort Table
         document.getElementById('cohortTable').innerHTML = `
-            <h4>📅 Cohort Analysis</h4>
+            <h4>📅 Cohort Analysis / Phân tích dữ liệu tổ hợp</h4>
             <div class="analytics-table-container">
             <table class="analytics-table">
                 <thead>
@@ -628,11 +628,11 @@
             </table>
             </div>
         `;
-        
+
         // Average Retention
         const avg = data.average_retention || {};
         document.getElementById('retentionMetrics').innerHTML = `
-            <h4>📊 Average Retention</h4>
+            <h4>📊 Average Retention / Tỷ lệ giữ chân trung bình</h4>
             <div class="stats-grid">
                 <div class="stat-item">
                     <div class="stat-label">Week 1</div>
@@ -648,10 +648,10 @@
                 </div>
             </div>
         `;
-        
+
         // User Segments
         document.getElementById('userSegments').innerHTML = `
-            <h4>👥 User Segments</h4>
+            <h4>👥 User Segments / Phân khúc người dùng</h4>
             <div class="analytics-table-container">
             <table class="analytics-table">
                 <thead>
@@ -672,7 +672,7 @@
             </div>
         `;
     }
-    
+
     // ===== Customer Journey Analysis =====
     async function runJourneyAnalysis() {
         try {
@@ -681,17 +681,17 @@
             const uname = (document.getElementById('analyticsUsername')?.value || '').trim();
             const url = uname ? `/api/analytics/customer-journey?username=${encodeURIComponent(uname)}` : '/api/analytics/customer-journey';
             const result = await fetchAPI(url);
-            
+
             if (result.error) {
                 showStatus(`❌ Error: ${result.error}`, true);
                 return;
             }
-            
+
             show('comprehensiveResults');
             switchToTab('journeyResults');
-            
+
             displayJourney(result);
-            
+
             showStatus('✅ Journey Analysis Complete');
             // Persist Journey results
             saveAnalytics('journey', result);
@@ -699,11 +699,11 @@
             showStatus(`❌ ${error.message}`, true);
         }
     }
-    
+
     function displayJourney(data) {
         // Conversion Paths
         document.getElementById('conversionPaths').innerHTML = `
-            <h4>✅ Successful Conversion Paths</h4>
+            <h4>✅ Successful Conversion Paths / Lộ trình chuyển đổi thành công</h4>
             <div class="path-list">
                 ${(data.conversion_paths || []).slice(0, 10).map(p => `
                     <div class="path-item">
@@ -713,10 +713,10 @@
                 `).join('')}
             </div>
         `;
-        
+
         // Drop-off Points
         document.getElementById('dropoffPoints').innerHTML = `
-            <h4>⚠️ Common Drop-off Points</h4>
+            <h4>⚠️ Common Drop-off Points / Điểm rời bỏ phổ biến</h4>
             <div class="analytics-table-container">
             <table class="analytics-table">
                 <thead>
@@ -738,11 +738,11 @@
             </table>
             </div>
         `;
-        
+
         // Path Statistics
         const stats = data.path_statistics || {};
         document.getElementById('pathStatistics').innerHTML = `
-            <h4>📊 Path Statistics</h4>
+            <h4>📊 Path Statistics / Thống kê lộ trình</h4>
             <div class="stats-grid">
                 <div class="stat-item">
                     <div class="stat-label">Avg Path Length</div>
@@ -762,10 +762,10 @@
                 </div>
             </div>
         `;
-        
+
         // Common Sequences
         document.getElementById('commonSequences').innerHTML = `
-            <h4>🔄 Common Page Sequences</h4>
+            <h4>🔄 Common Page Sequences / Chuỗi trang phổ biến</h4>
             <div class="analytics-table-container">
             <table class="analytics-table">
                 <thead>
@@ -786,14 +786,14 @@
             </div>
         `;
     }
-    
+
     // ===== Product Recommendations =====
     async function runRecommendations() {
         const container = document.getElementById('alsRecommendations');
-        
+
         try {
             lastRefreshModule = 'recommendations'; // Track last used module
-            
+
             // Show loading state
             showStatus('⭐ Getting Recommendations...');
             container.innerHTML = `
@@ -803,7 +803,7 @@
                     <p style="font-size: 0.9em; color: #7f8c8d; margin-top: 10px;">This may take a few seconds</p>
                 </div>
             `;
-            
+
             // Prefer input username, fallback to current user from /api/me
             let username = (document.getElementById('analyticsUsername')?.value || '').trim();
             if (!username) {
@@ -811,18 +811,18 @@
                 username = me.username;
             }
             const result = await fetchAPI(`/api/analytics/recommendations/${encodeURIComponent(username)}`);
-            
+
             if (result.error) {
                 showStatus(`❌ Error: ${result.error}`, true);
                 displayRecommendations(result); // Show error state
                 return;
             }
-            
+
             show('comprehensiveResults');
             switchToTab('recommendationsResults');
-            
+
             displayRecommendations(result);
-            
+
             showStatus('✅ Recommendations Generated');
             showToast('✅ Product recommendations loaded successfully');
             // Persist recommendations for reload
@@ -839,10 +839,10 @@
             `;
         }
     }
-    
+
     function displayRecommendations(data) {
         const container = document.getElementById('alsRecommendations');
-        
+
         // Handle errors
         if (data.error) {
             container.innerHTML = `
@@ -861,11 +861,11 @@
             `;
             return;
         }
-        
+
         // Admin view - show sample recommendations from all users
         if (data.admin_view) {
             const sampleRecs = data.sample_recommendations || [];
-            
+
             container.innerHTML = `
                 <div class="admin-banner">
                     <h4>👑 Admin View: Product Recommendations</h4>
@@ -907,7 +907,7 @@
                     </div>
                 `}
             `;
-            
+
             // Render ALS chart if MLCharts is available
             if (window.MLCharts && window.MLCharts.createALSChart) {
                 const chartContainer = document.getElementById('alsChartContainer');
@@ -915,13 +915,13 @@
                     window.MLCharts.createALSChart(chartContainer, data);
                 }
             }
-            
+
             return;
         }
-        
+
         // Regular user view
         const recommendations = data.recommendations || [];
-        
+
         if (recommendations.length === 0) {
             container.innerHTML = `
                 <div class="empty-state">
@@ -932,7 +932,7 @@
             `;
             return;
         }
-        
+
         container.innerHTML = `
             <h4>⭐ Personalized Recommendations</h4>
             <div class="model-info-card">
@@ -956,7 +956,7 @@
             </div>
         `;
     }
-    
+
     // ===== Run All Analytics =====
     async function runAllAnalytics() {
         try {
@@ -969,9 +969,9 @@
                     username: uname || null
                 })
             });
-            
+
             show('comprehensiveResults');
-            
+
             // Display each module's results
             if (result.results.seo) {
                 show('seoResults');
@@ -980,22 +980,22 @@
                 displayConversionBySource(result.results.seo.conversion_by_source || []);
                 displayHourlyTraffic(result.results.seo.hourly_traffic || []);
             }
-            
+
             if (result.results.cart) {
                 show('cartResults');
                 displayAbandonment(result.results.cart);
             }
-            
+
             if (result.results.retention) {
                 show('retentionResults');
                 displayRetention(result.results.retention);
             }
-            
+
             if (result.results.journey) {
                 show('journeyResults');
                 displayJourney(result.results.journey);
             }
-            
+
             showStatus('✅ All Analytics Complete');
             // Persist comprehensive result
             saveAnalytics('comprehensive', result);
@@ -1003,7 +1003,7 @@
             showStatus(`❌ ${error.message}`, true);
         }
     }
-    
+
     // ===== Event Listeners =====
     document.addEventListener('DOMContentLoaded', () => {
         // Comprehensive Analytics Buttons
@@ -1013,7 +1013,7 @@
         const retentionBtn = document.getElementById('retentionAnalyticsBtn');
         const journeyBtn = document.getElementById('journeyAnalyticsBtn');
         const recsBtn = document.getElementById('recommendationsBtn');
-        
+
         if (runAllBtn) runAllBtn.addEventListener('click', runAllAnalytics);
         if (seoBtn) seoBtn.addEventListener('click', runSEOAnalysis);
         if (cartBtn) cartBtn.addEventListener('click', runCartAnalysis);
@@ -1021,22 +1021,22 @@
         if (journeyBtn) journeyBtn.addEventListener('click', runJourneyAnalysis);
         if (recsBtn) recsBtn.addEventListener('click', runRecommendations);
     });
-    
+
     // ===== Auto-refresh when data is updated =====
     let lastRefreshModule = null;
     let refreshDebounceTimer = null;
-    
+
     window.addEventListener('dataUpdated', (event) => {
         console.log('📊 Data updated, refreshing analytics...', event.detail);
-        
+
         // Show notification
         showToast('🔄 New data detected! Refreshing analytics in 2 seconds...', 2000);
-        
+
         // Clear previous debounce timer
         if (refreshDebounceTimer) {
             clearTimeout(refreshDebounceTimer);
         }
-        
+
         // Debounce refresh to avoid multiple rapid calls
         refreshDebounceTimer = setTimeout(() => {
             // Check which sections are currently visible
@@ -1045,9 +1045,9 @@
             const retentionVisible = !document.getElementById('retentionResults')?.classList.contains('hidden');
             const journeyVisible = !document.getElementById('journeyResults')?.classList.contains('hidden');
             const recsVisible = !document.getElementById('recommendationsResults')?.classList.contains('hidden');
-            
+
             let refreshed = false;
-            
+
             // Refresh visible sections
             if (seoVisible) {
                 console.log('🔄 Auto-refreshing SEO analytics...');
@@ -1074,12 +1074,12 @@
                 runRecommendations();
                 refreshed = true;
             }
-            
+
             // If nothing is visible but comprehensive results is, refresh the last used module
             const comprehensiveVisible = !document.getElementById('comprehensiveResults')?.classList.contains('hidden');
             if (comprehensiveVisible && !refreshed && lastRefreshModule) {
                 console.log('🔄 Refreshing last used module:', lastRefreshModule);
-                switch(lastRefreshModule) {
+                switch (lastRefreshModule) {
                     case 'seo': runSEOAnalysis(); break;
                     case 'cart': runCartAnalysis(); break;
                     case 'retention': runRetentionAnalysis(); break;
@@ -1088,13 +1088,13 @@
                 }
                 refreshed = true;
             }
-            
+
             if (refreshed) {
                 showToast('✅ Analytics refreshed with latest data!', 2000);
             }
         }, 2000); // Wait 2 seconds after last data update
     });
-    
+
     // Setup Event Listeners
     function setupEventListeners() {
         // Run All Analytics
@@ -1109,7 +1109,7 @@
                 await runRecommendations();
             });
         }
-        
+
         // Individual Analytics Buttons
         const seoBtn = document.getElementById('seoAnalyticsBtn');
         if (seoBtn) {
@@ -1118,7 +1118,7 @@
                 runSEOAnalysis();
             });
         }
-        
+
         const cartBtn = document.getElementById('cartAnalyticsBtn');
         if (cartBtn) {
             cartBtn.addEventListener('click', () => {
@@ -1126,7 +1126,7 @@
                 runCartAnalysis();
             });
         }
-        
+
         const retentionBtn = document.getElementById('retentionAnalyticsBtn');
         if (retentionBtn) {
             retentionBtn.addEventListener('click', () => {
@@ -1134,7 +1134,7 @@
                 runRetentionAnalysis();
             });
         }
-        
+
         const journeyBtn = document.getElementById('journeyAnalyticsBtn');
         if (journeyBtn) {
             journeyBtn.addEventListener('click', () => {
@@ -1142,7 +1142,7 @@
                 runJourneyAnalysis();
             });
         }
-        
+
         const recsBtn = document.getElementById('recommendationsBtn');
         if (recsBtn) {
             recsBtn.addEventListener('click', () => {
@@ -1151,7 +1151,7 @@
             });
         }
     }
-    
+
     // Initialize on DOM ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
@@ -1167,5 +1167,5 @@
         initTabSwitching();
         setupEventListeners();
     }
-    
+
 })();

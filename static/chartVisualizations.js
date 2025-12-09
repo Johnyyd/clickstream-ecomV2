@@ -21,42 +21,42 @@ export function renderBounceRateGauge(bounceRate, options = {}) {
     const radius = (size - 20) / 2;
     const circumference = 2 * Math.PI * radius;
     const progress = bounceRate * circumference;
-    
+
     // Color based on bounce rate
     const color = bounceRate < 0.02 ? '#10b981' :  // Green (excellent)
-                  bounceRate < 0.05 ? '#3b82f6' :  // Blue (good)
-                  bounceRate < 0.10 ? '#f59e0b' :  // Yellow (fair)
-                  '#ef4444';  // Red (poor)
-    
+        bounceRate < 0.05 ? '#3b82f6' :  // Blue (good)
+            bounceRate < 0.10 ? '#f59e0b' :  // Yellow (fair)
+                '#ef4444';  // Red (poor)
+
     const status = bounceRate < 0.02 ? 'Excellent' :
-                   bounceRate < 0.05 ? 'Good' :
-                   bounceRate < 0.10 ? 'Fair' :
-                   'Needs Improvement';
-    
+        bounceRate < 0.05 ? 'Good' :
+            bounceRate < 0.10 ? 'Fair' :
+                'Needs Improvement';
+
     return `
         <div class="bounce-gauge" style="text-align: center;">
             <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
                 <!-- Background circle -->
                 <circle 
-                    cx="${size/2}" cy="${size/2}" r="${radius}"
+                    cx="${size / 2}" cy="${size / 2}" r="${radius}"
                     fill="none" 
                     stroke="rgba(255,255,255,0.1)" 
                     stroke-width="10"/>
                 
                 <!-- Progress circle -->
                 <circle 
-                    cx="${size/2}" cy="${size/2}" r="${radius}"
+                    cx="${size / 2}" cy="${size / 2}" r="${radius}"
                     fill="none" 
                     stroke="${color}" 
                     stroke-width="10"
                     stroke-dasharray="${progress} ${circumference}"
                     stroke-linecap="round"
-                    transform="rotate(-90 ${size/2} ${size/2})"
+                    transform="rotate(-90 ${size / 2} ${size / 2})"
                     style="transition: stroke-dasharray 1s ease;"/>
                 
                 <!-- Center text -->
                 <text 
-                    x="${size/2}" y="${size/2 - 10}" 
+                    x="${size / 2}" y="${size / 2 - 10}" 
                     text-anchor="middle" 
                     dominant-baseline="middle" 
                     font-size="24" 
@@ -65,7 +65,7 @@ export function renderBounceRateGauge(bounceRate, options = {}) {
                     ${percentage}%
                 </text>
                 <text 
-                    x="${size/2}" y="${size/2 + 15}" 
+                    x="${size / 2}" y="${size / 2 + 15}" 
                     text-anchor="middle" 
                     font-size="10" 
                     fill="var(--muted)">
@@ -73,7 +73,10 @@ export function renderBounceRateGauge(bounceRate, options = {}) {
                 </text>
             </svg>
             <div style="margin-top: 8px; color: var(--muted); font-size: 12px;">
-                Bounce Rate
+                Bounce Rate / Tỷ lệ thoát
+            </div>
+            <div style="font-size: 10px; color: var(--muted); margin-top: 4px;">
+                Users leaving after one page / Khách rời đi ngay sau 1 trang
             </div>
         </div>
     `;
@@ -105,19 +108,20 @@ export function renderConversionFunnel(funnels) {
             conversion: funnels.home_to_checkout?.conversion
         }
     ];
-    
+
     // Calculate percentages relative to first stage
     const maxCount = stages[0].count || 1;
     stages.forEach(stage => {
         stage.percentage = (stage.count / maxCount * 100).toFixed(1);
     });
-    
+
     let html = '<div class="funnel-chart" style="width: 100%; max-width: 600px; margin: 0 auto;">';
-    
+    html += '<div style="text-align: center; margin-bottom: 12px; font-size: 12px; color: var(--text); font-weight: 600;">Success rate between steps / Tỷ lệ thành công giữa các bước</div>';
+
     stages.forEach((stage, i) => {
         const width = stage.percentage;
-        const dropoff = i > 0 ? (stages[i-1].percentage - stage.percentage) : 0;
-        
+        const dropoff = i > 0 ? (stages[i - 1].percentage - stage.percentage) : 0;
+
         html += `
             <div class="funnel-stage" style="margin-bottom: 16px;">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 12px; color: var(--muted);">
@@ -147,7 +151,7 @@ export function renderConversionFunnel(funnels) {
             </div>
         `;
     });
-    
+
     html += '</div>';
     return html;
 }
@@ -161,7 +165,7 @@ export function renderUserSegmentation(segments) {
     if (!segments || segments.length === 0) {
         return '<p style="color: var(--muted);">No segmentation data available</p>';
     }
-    
+
     const colors = [
         '#3b82f6', // Blue
         '#10b981', // Green
@@ -171,13 +175,14 @@ export function renderUserSegmentation(segments) {
         '#06b6d4', // Cyan
         '#ec4899'  // Pink
     ];
-    
+
     let html = '<div class="segments-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px;">';
-    
+    html += '<div style="grid-column: 1 / -1; margin-bottom: 8px; font-size: 13px; color: var(--text); font-weight: 600;">Distinct customer behaviors / Các nhóm hành vi khách hàng</div>';
+
     segments.forEach((seg, i) => {
         const color = colors[i % colors.length];
         const clusterName = seg.cluster_name || `Cluster ${seg.cluster_id || i}`;
-        
+
         html += `
             <div class="segment-card" 
                  style="background: rgba(255,255,255,0.05); 
@@ -220,7 +225,7 @@ export function renderUserSegmentation(segments) {
             </div>
         `;
     });
-    
+
     html += '</div>';
     return html;
 }
@@ -234,20 +239,21 @@ export function renderDailyDistribution(dailyData) {
     if (!dailyData || Object.keys(dailyData).length === 0) {
         return '<p style="color: var(--muted);">No daily data available</p>';
     }
-    
+
     const dates = Object.keys(dailyData).sort();
     const counts = dates.map(d => dailyData[d]);
     const maxCount = Math.max(...counts, 1);
-    
+
     const width = 800;
     const height = 300;
     const padding = { top: 20, right: 20, bottom: 60, left: 60 };
     const chartWidth = width - padding.left - padding.right;
     const chartHeight = height - padding.top - padding.bottom;
     const barWidth = Math.max(8, chartWidth / dates.length - 4);
-    
-    let svg = `<svg width="100%" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" class="daily-chart">`;
-    
+
+    let svg = `<div style="margin-bottom: 10px; font-size: 13px; font-weight: 600; color: var(--text); text-align: center;">Busiest days / Những ngày đông khách nhất</div>`;
+    svg += `<svg width="100%" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" class="daily-chart">`;
+
     // Y-axis labels
     for (let i = 0; i <= 5; i++) {
         const y = padding.top + (chartHeight * i / 5);
@@ -262,17 +268,17 @@ export function renderDailyDistribution(dailyData) {
             </text>
         `;
     }
-    
+
     // Bars with hover effect
     dates.forEach((date, i) => {
         const count = counts[i];
         const barHeight = (count / maxCount) * chartHeight;
         const x = padding.left + (i * (chartWidth / dates.length)) + (chartWidth / dates.length - barWidth) / 2;
         const y = padding.top + chartHeight - barHeight;
-        
+
         const dateObj = new Date(date);
         const label = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        
+
         svg += `
             <g class="bar-group" data-date="${date}" data-count="${count}">
                 <rect x="${x}" y="${y}" 
@@ -286,7 +292,7 @@ export function renderDailyDistribution(dailyData) {
             </g>
         `;
     });
-    
+
     // X-axis labels (show every N days to avoid crowding)
     const labelFreq = Math.ceil(dates.length / 10);
     dates.forEach((date, i) => {
@@ -294,7 +300,7 @@ export function renderDailyDistribution(dailyData) {
             const x = padding.left + (i * (chartWidth / dates.length)) + (chartWidth / dates.length) / 2;
             const dateObj = new Date(date);
             const label = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            
+
             svg += `
                 <text x="${x}" y="${height - padding.bottom + 20}" 
                       text-anchor="middle" font-size="10" fill="var(--muted)">
@@ -303,7 +309,7 @@ export function renderDailyDistribution(dailyData) {
             `;
         }
     });
-    
+
     // Axis lines
     svg += `
         <line x1="${padding.left}" y1="${padding.top}" 
@@ -313,7 +319,7 @@ export function renderDailyDistribution(dailyData) {
               x2="${width - padding.right}" y2="${padding.top + chartHeight}" 
               stroke="var(--border)" stroke-width="2"/>
     `;
-    
+
     svg += '</svg>';
     return svg;
 }
@@ -333,7 +339,7 @@ export function renderTimeSeriesChart(data, options = {}) {
         showDots = true,
         yLabel = 'Value'
     } = options;
-    
+
     // Convert data to array format
     let dataPoints = [];
     if (Array.isArray(data)) {
@@ -341,26 +347,26 @@ export function renderTimeSeriesChart(data, options = {}) {
     } else {
         dataPoints = Object.entries(data).map(([x, y]) => ({ x: new Date(x), y }));
     }
-    
+
     if (dataPoints.length === 0) {
         return '<p style="color: var(--muted);">No time series data available</p>';
     }
-    
+
     dataPoints.sort((a, b) => new Date(a.x) - new Date(b.x));
-    
+
     const padding = { top: 20, right: 20, bottom: 60, left: 60 };
     const chartWidth = width - padding.left - padding.right;
     const chartHeight = height - padding.top - padding.bottom;
-    
+
     const yValues = dataPoints.map(d => d.y);
     const minY = Math.min(...yValues);
     const maxY = Math.max(...yValues);
     const yRange = maxY - minY || 1;
-    
+
     // Scale functions
     const scaleX = (i) => padding.left + (i / (dataPoints.length - 1)) * chartWidth;
     const scaleY = (y) => padding.top + chartHeight - ((y - minY) / yRange) * chartHeight;
-    
+
     // Generate path
     let pathData = '';
     dataPoints.forEach((d, i) => {
@@ -368,14 +374,14 @@ export function renderTimeSeriesChart(data, options = {}) {
         const y = scaleY(d.y);
         pathData += i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`;
     });
-    
+
     // Area fill path
-    const areaPath = pathData + 
+    const areaPath = pathData +
         ` L ${scaleX(dataPoints.length - 1)} ${padding.top + chartHeight}` +
         ` L ${scaleX(0)} ${padding.top + chartHeight} Z`;
-    
+
     let svg = `<svg width="100%" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">`;
-    
+
     // Y-axis
     for (let i = 0; i <= 5; i++) {
         const y = padding.top + (chartHeight * i / 5);
@@ -390,20 +396,20 @@ export function renderTimeSeriesChart(data, options = {}) {
             </text>
         `;
     }
-    
+
     // Area fill
     svg += `<path d="${areaPath}" fill="${color}" opacity="${fillOpacity}"/>`;
-    
+
     // Line
     svg += `<path d="${pathData}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>`;
-    
+
     // Data points
     if (showDots) {
         dataPoints.forEach((d, i) => {
             const x = scaleX(i);
             const y = scaleY(d.y);
             const label = d.x instanceof Date ? d.x.toLocaleString() : d.x;
-            
+
             svg += `
                 <circle cx="${x}" cy="${y}" r="4" fill="${color}" opacity="0.8"
                         style="cursor: pointer;"
@@ -414,7 +420,7 @@ export function renderTimeSeriesChart(data, options = {}) {
             `;
         });
     }
-    
+
     svg += '</svg>';
     return svg;
 }

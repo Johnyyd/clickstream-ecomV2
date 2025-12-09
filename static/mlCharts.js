@@ -124,10 +124,10 @@ window.MLCharts.createALSChart = function (container, data) {
     chartDiv.innerHTML = `
         <div class="ml-chart-title">
             <span>📊</span>
-            ALS Model Statistics
+            ALS Model Accuracy / Độ chính xác mô hình ALS
         </div>
         <div class="ml-chart-subtitle">
-            Overview of the Alternating Least Squares collaborative filtering model performance and coverage
+            How accurate are the product recommendations? / Độ chính xác của gợi ý sản phẩm?
         </div>
         <canvas id="alsChart"></canvas>
     `;
@@ -309,10 +309,10 @@ window.MLCharts.createKMeansChart = function (container, data) {
     chartDiv.innerHTML = `
         <div class="ml-chart-title">
             <span>📊</span>
-            Cluster Comparison
+            Customer Segments / Phân khúc khách hàng
         </div>
         <div class="ml-chart-subtitle">
-            Compare user distribution, engagement levels, and conversion rates across different behavioral segments
+            Differences between customer groups / Sự khác biệt giữa các nhóm khách hàng
         </div>
         <canvas id="kmeansChart"></canvas>
     `;
@@ -522,7 +522,11 @@ window.MLCharts.createSEOChart = function (container, data) {
     const chartDiv = document.createElement('div');
     chartDiv.className = 'chart-container';
     chartDiv.innerHTML = `
-        <div class="chart-title">📊 Traffic by Source</div>
+        <div class="chart-title">📊 Traffic Sources / Nguồn truy cập</div>
+        <div class="ml-chart-subtitle">Where do your users come from? / Khách hàng đến từ nguồn nào?</div>
+        <div class="ml-metric-explanation" style="margin-bottom: 10px; font-size: 12px;">
+            Shows which channels bring the most traffic. / Hiển thị kênh nào mang lại nhiều khách nhất.
+        </div>
         <canvas id="seoChart"></canvas>
     `;
     container.appendChild(chartDiv);
@@ -570,7 +574,11 @@ window.MLCharts.createConversionChart = function (container, data) {
     const chartDiv = document.createElement('div');
     chartDiv.className = 'chart-container';
     chartDiv.innerHTML = `
-        <div class="chart-title">📊 Conversion Funnel</div>
+        <div class="chart-title">📊 Conversion Funnel / Phễu chuyển đổi</div>
+        <div class="ml-chart-subtitle">Where do users drop off? / Khách hàng rời đi ở bước nào?</div>
+        <div class="ml-metric-explanation" style="margin-bottom: 10px; font-size: 12px;">
+             Shows the percentage of users continuously moving to the next step. / Tỉ lệ khách hàng đi tiếp vào bước sau.
+        </div>
         <canvas id="conversionChart"></canvas>
     `;
     container.appendChild(chartDiv);
@@ -624,7 +632,11 @@ window.MLCharts.createRetentionChart = function (container, data) {
     const chartDiv = document.createElement('div');
     chartDiv.className = 'chart-container';
     chartDiv.innerHTML = `
-        <div class="chart-title">📊 Cohort Retention Analysis</div>
+        <div class="chart-title">📊 Retention / Tỷ lệ giữ chân</div>
+        <div class="ml-chart-subtitle">Are users coming back? / Khách hàng có quay lại không?</div>
+        <div class="ml-metric-explanation" style="margin-bottom: 10px; font-size: 12px;">
+            Percentage of users returning after their first visit. / Phần trăm khách quay lại sau lần đầu.
+        </div>
         <canvas id="retentionChart"></canvas>
     `;
     container.appendChild(chartDiv);
@@ -809,10 +821,10 @@ window.MLCharts.createLogisticChart = function (container, data) {
     chartDiv.innerHTML = `
         <div class="ml-chart-title">
             <span>📊</span>
-            Model Performance Metrics
+            Prediction Accuracy / Độ chính xác dự đoán
         </div>
         <div class="ml-chart-subtitle">
-            Comparison of key classification metrics for conversion prediction
+           Measured by Accuracy, Precision, Recall / Đo lường bằng Độ chính xác, Tỷ lệ chuẩn xác, Độ phủ
         </div>
         <canvas id="logisticChart"></canvas>
     `;
@@ -1024,10 +1036,10 @@ window.MLCharts.createDecisionTreeChart = function (container, data) {
         chartDiv.innerHTML = `
             <div class="ml-chart-title">
                 <span>📊</span>
-                Feature Importance
+                Key Factors / Yếu tố chính
             </div>
             <div class="ml-chart-subtitle">
-                Which user behaviors most influence conversion predictions
+                Key factors predicting purchase / Yếu tố chính ảnh hưởng mua hàng
             </div>
             <canvas id="treeChart"></canvas>
         `;
@@ -1177,7 +1189,10 @@ window.MLCharts.createFPGrowthChart = function (container, data) {
             <div class="ml-metric-header">
                 <div class="ml-metric-title">
                     <span class="icon">⭐</span>
-                    Top Frequent Patterns
+                    Top Frequent Patterns / Các mẫu phổ biến
+                </div>
+                <div style="font-size: 12px; color: var(--muted); margin-bottom: 8px;">
+                     Products often bought together / Các sản phẩm thường mua cùng nhau
                 </div>
                 <span class="ml-metric-help ml-tooltip" title="Most common combinations">ℹ️
                     <span class="tooltiptext">Products frequently purchased together. Use these for cross-selling and bundle recommendations.</span>

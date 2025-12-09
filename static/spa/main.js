@@ -513,7 +513,7 @@ async function renderML() {
           top: 55,
           textStyle: { fontSize: 11 }
         },
-        grid: { left: 60, right: 30, bottom: 60, top: 100 },
+        grid: { left: 60, right: 80, bottom: 60, top: 100 },
         xAxis: {
           type: 'category',
           data: cats.map(c => `Cluster ${c}`),
@@ -526,16 +526,27 @@ async function renderML() {
           {
             type: 'value',
             name: 'User Count',
-            nameLocation: 'middle',
-            nameGap: 45,
-            position: 'left'
+            position: 'left',
+            axisLine: { show: true, lineStyle: { color: '#0891b2' } },
+            axisLabel: { color: '#0891b2' }
           },
           {
             type: 'value',
-            name: 'Metrics / Chỉ số',
-            nameLocation: 'middle',
-            nameGap: 45,
-            position: 'right'
+            name: 'Avg Events',
+            position: 'right',
+            offset: 0,
+            axisLine: { show: true, lineStyle: { color: '#f59e0b' } },
+            axisLabel: { color: '#f59e0b' },
+            splitLine: { show: false }
+          },
+          {
+            type: 'value',
+            name: 'Conv Rate (%)',
+            position: 'right',
+            offset: 50,
+            axisLine: { show: true, lineStyle: { color: '#10b981' } },
+            axisLabel: { formatter: '{value}%', color: '#10b981' },
+            splitLine: { show: false }
           }
         ],
         series: [
@@ -570,7 +581,7 @@ async function renderML() {
             type: 'line',
             name: 'Conversion Rate (%)',
             data: convRates,
-            yAxisIndex: 1,
+            yAxisIndex: 2,
             smooth: true,
             itemStyle: { color: '#10b981' },
             lineStyle: { width: 2 }

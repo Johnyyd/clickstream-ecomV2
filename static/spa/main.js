@@ -2516,10 +2516,10 @@ function initNav() {
   nav.addEventListener('click', (e) => {
     const btn = e.target.closest('.tab');
     if (!btn) return;
-    setActiveTab(btn.dataset.tab);
+    switchTab(btn.dataset.tab);
   });
-  // default active (render will be called after filters and migration)
-  setActiveTab('overview');
+  // default active - switchTab triggers render + data load
+  switchTab('overview');
 }
 
 function initFilters() {

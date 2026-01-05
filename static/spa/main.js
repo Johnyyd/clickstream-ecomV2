@@ -2600,4 +2600,6 @@ function init() {
   } catch { }
 }
 
-window.addEventListener('DOMContentLoaded', init);
+// ES6 modules are deferred by default, so DOM is ready when this executes
+init();
+

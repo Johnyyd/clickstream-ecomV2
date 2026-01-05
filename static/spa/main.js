@@ -637,21 +637,16 @@ async function renderML() {
   el('#ml-refresh').addEventListener('click', () => { clearSnapshotForTabCurrentFilter('ml'); run(true); });
   if (!snapGet('ml')) { await run(false); }
 }
-// Cache management functions imported from lib/cache.js
 const view = el('#view');
 
-// Override setActiveTab to update state and trigger render
-function setActiveTab(name) {
+// Wrapper for setActiveTab (imported from utils) that also updates state
+function switchTab(name) {
   state.tab = name;
-  for (const b of document.querySelectorAll('.tab')) {
-    b.classList.toggle('active', b.dataset.tab === name);
-  }
+  setActiveTab(name); // From utils.js - handles UI
   // Expose for debugging
   window.journeyRun = (typeof run === 'function') ? run : undefined;
   render();
 }
-
-// Date and formatter functions imported from lib/utils.js
 
 async function safeGet(url) {
   try {

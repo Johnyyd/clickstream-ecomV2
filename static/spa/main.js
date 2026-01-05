@@ -42,6 +42,9 @@ const state = {
   },
 };
 
+// Expose state to window for cache module access
+window.__spaState = state;
+
 // Cache functions imported from lib/cache.js
 
 

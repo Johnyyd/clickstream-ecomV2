@@ -35,19 +35,25 @@ export function lsDel(url) {
 }
 
 // === Filter Signature ===
-export function filterSig(state) {
+// Access state from global window object (set by main.js)
+function getState() {
+    return window.__spaState || { filters: {} };
+}
+
+export function filterSig() {
+    const state = getState();
     const { range, from, to, segment, channel } = state?.filters || {};
     return `r=${range || ''}|f=${from || ''}|t=${to || ''}|s=${segment || ''}|c=${channel || ''}`;
 }
 
 // === Snapshot Management ===
-export function snapKey(tab, state) {
-    return SNAP_NS + tab + '|' + filterSig(state);
+export function snapKey(tab) {
+    return SNAP_NS + tab + '|' + filterSig();
 }
 
-export function snapSet(tab, payload, state) {
+export function snapSet(tab, payload) {
     try {
-        const key = snapKey(tab, state);
+        const key = snapKey(tab);
         const data = { ts: Date.now(), payload };
         localStorage.setItem(key, JSON.stringify(data));
         console.debug(`[Cache] snapSet('${tab}') - Saved to ${key}`, {
@@ -59,31 +65,31 @@ export function snapSet(tab, payload, state) {
     }
 }
 
-export function snapGet(tab, state) {
+export function snapGet(tab) {
     try {
-        const s = localStorage.getItem(snapKey(tab, state));
+        const s = localStorage.getItem(snapKey(tab));
         return s ? JSON.parse(s).payload : null;
     } catch { return null; }
 }
 
-export function snapRaw(tab, state) {
+export function snapRaw(tab) {
     try {
-        const s = localStorage.getItem(snapKey(tab, state));
+        const s = localStorage.getItem(snapKey(tab));
         return s ? JSON.parse(s) : null;
     } catch { return null; }
 }
 
-export function snapAgeMs(tab, state) {
+export function snapAgeMs(tab) {
     try {
-        const r = snapRaw(tab, state);
+        const r = snapRaw(tab);
         return r && typeof r.ts === 'number' ? (Date.now() - r.ts) : Infinity;
     } catch { return Infinity; }
 }
 
 // === Snapshot Clear Functions ===
-export function clearSnapshotForTabCurrentFilter(tab, state) {
+export function clearSnapshotForTabCurrentFilter(tab) {
     try {
-        localStorage.removeItem(snapKey(tab, state));
+        localStorage.removeItem(snapKey(tab));
     } catch { }
     if (tab === 'journey') {
         try { delete window.__jnSankeyHash; } catch { }
@@ -102,9 +108,9 @@ export function clearSnapshotsForTab(tab) {
     } catch { }
 }
 
-export function clearSnapshotsForCurrentFilters(state) {
+export function clearSnapshotsForCurrentFilters() {
     try {
-        const suffix = '|' + filterSig(state);
+        const suffix = '|' + filterSig();
         for (let i = localStorage.length - 1; i >= 0; i--) {
             const k = localStorage.key(i);
             if (!k) continue;
@@ -139,26 +145,26 @@ export function hasAnyData(obj) {
     return false;
 }
 
-export function snapMaybe(tab, payload, state) {
-    if (hasAnyData(payload)) snapSet(tab, payload, state);
+export function snapMaybe(tab, payload) {
+    if (hasAnyData(payload)) snapSet(tab, payload);
 }
 
-export function snapUpdate(tab, payload, state) {
+export function snapUpdate(tab, payload) {
     if (!hasAnyData(payload)) {
         console.debug(`[Cache] snapUpdate('${tab}') - Skipped (no data)`);
         return;
     }
     try {
-        const prev = snapGet(tab, state);
+        const prev = snapGet(tab);
         const same = prev && JSON.stringify(prev) === JSON.stringify(payload);
         if (!same) {
-            snapSet(tab, payload, state);
+            snapSet(tab, payload);
             console.debug(`[Cache] snapUpdate('${tab}') - Updated (data changed)`);
         } else {
             console.debug(`[Cache] snapUpdate('${tab}') - Skipped (data unchanged)`);
         }
     } catch {
-        snapSet(tab, payload, state);
+        snapSet(tab, payload);
         console.debug(`[Cache] snapUpdate('${tab}') - Saved (error comparing)`);
     }
 }
@@ -171,7 +177,7 @@ function snapGetLegacyRaw(tab) {
     } catch { return null; }
 }
 
-export function migrateOldSnapshots(state) {
+export function migrateOldSnapshots() {
     try {
         const prefix = SNAP_NS;
         for (let i = 0; i < localStorage.length; i++) {
@@ -183,7 +189,7 @@ export function migrateOldSnapshots(state) {
             const payload = raw && raw.payload;
             if (hasAnyData(payload)) {
                 try {
-                    localStorage.setItem(snapKey(tab, state), JSON.stringify({ ts: Date.now(), payload }));
+                    localStorage.setItem(snapKey(tab), JSON.stringify({ ts: Date.now(), payload }));
                 } catch { }
             }
         }

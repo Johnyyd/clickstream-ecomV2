@@ -1,3 +1,17 @@
+import {
+  el,
+  debounce,
+  requestIdle,
+  withBypass,
+  showToast,
+  setActiveTab,
+  toISO,
+  presetToDates,
+  fmt,
+  fmtCurrency,
+  fmtShort
+} from './lib/utils.js';
+
 const state = {
   tab: 'overview',
   filters: {
@@ -9,7 +23,6 @@ const state = {
   },
 };
 
-const el = (sel) => document.querySelector(sel);
 const httpCache = new Map();
 function cacheKey(url) { return url; }
 // Remove snapshot only for a specific tab under the current filter signature
@@ -751,28 +764,10 @@ async function getWithTTL(url, ttlMs = 600000) {
   lsSet(key, json);
   return json;
 }
-// Simple debounce helper
-function debounce(fn, ms) { let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn.apply(null, args), ms); }; }
-function requestIdle(cb) {
-  if (window.requestIdleCallback) { return window.requestIdleCallback(cb, { timeout: 1500 }); }
-  return setTimeout(cb, 300);
-}
-// Build a fresh URL that bypasses caches; also return the original clean URL for invalidation
-function withBypass(url) {
-  const join = url.includes('?') ? '&' : '?';
-  return { clean: url, fresh: `${url}${join}bypass_cache=true&_ts=${Date.now()}` };
-}
-function showToast(message, kind = 'info', timeout = 2600) {
-  const t = el('#toast');
-  if (!t) return;
-  t.textContent = message;
-  t.style.display = 'block';
-  t.style.background = kind === 'error' ? '#b91c1c' : (kind === 'success' ? '#065f46' : '#111827');
-  clearTimeout(showToast._timer);
-  showToast._timer = setTimeout(() => { t.style.display = 'none'; }, timeout);
-}
+// Utility functions imported from lib/utils.js
 const view = el('#view');
 
+// Override setActiveTab to update state and trigger render
 function setActiveTab(name) {
   state.tab = name;
   for (const b of document.querySelectorAll('.tab')) {
@@ -783,51 +778,7 @@ function setActiveTab(name) {
   render();
 }
 
-function toISO(dt) {
-  try { return new Date(dt).toISOString(); } catch { return null; }
-}
-
-function presetToDates(range) {
-  const now = new Date();
-  const end = new Date(now);
-  const start = new Date(now);
-  switch (range) {
-    case '7d': start.setDate(start.getDate() - 7); break;
-    case '30d': start.setDate(start.getDate() - 30); break;
-    case 'mtd': start.setDate(1); break;
-    case 'qtd': {
-      const m = start.getMonth();
-      const qStartMonth = m - (m % 3);
-      start.setMonth(qStartMonth, 1);
-      start.setHours(0, 0, 0, 0);
-      break;
-    }
-    case 'ytd': start.setMonth(0, 1); break;
-    default: return { start: null, end: null };
-  }
-  return { start: toISO(start), end: toISO(end) };
-}
-
-function fmt(n, digits = 0) {
-  if (n == null || isNaN(n)) return '—';
-  return Intl.NumberFormat(undefined, { maximumFractionDigits: digits }).format(n);
-}
-function fmtCurrency(n) {
-  if (n == null || isNaN(n)) return '$0.00';
-  try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(Number(n));
-  } catch {
-    return `$${fmt(Number(n), 2)}`;
-  }
-}
-function fmtShort(n) {
-  if (!isFinite(n)) return '0';
-  const abs = Math.abs(n);
-  if (abs >= 1e9) return (n / 1e9).toFixed(1) + 'B';
-  if (abs >= 1e6) return (n / 1e6).toFixed(1) + 'M';
-  if (abs >= 1e3) return (n / 1e3).toFixed(1) + 'K';
-  return String(Math.round(n));
-}
+// Date and formatter functions imported from lib/utils.js
 
 async function safeGet(url) {
   try {

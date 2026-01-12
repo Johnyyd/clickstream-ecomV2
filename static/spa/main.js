@@ -17,6 +17,7 @@ import {
   cacheKey,
   lsGet,
   lsSet,
+  lsData,
   lsDel,
   filterSig,
   snapKey,

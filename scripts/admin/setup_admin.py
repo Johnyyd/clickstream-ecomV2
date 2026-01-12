@@ -3,8 +3,8 @@ from app.services.auth import hash_password
 from datetime import datetime
 from bson import ObjectId
 import pytz
-def setup_test_user():
-    # Create test user
+def setup_admin_user():
+    # Create admin user
     user = {
         "_id": ObjectId(),
         "username": "admin",
@@ -17,11 +17,11 @@ def setup_test_user():
     # Check if user exists
     existing = users_col().find_one({"username": "admin"})
     if existing:
-        print("Test user already exists")
+        print("Admin user already exists")
         return existing
     
     result = users_col().insert_one(user)
-    print(f"Created test user with ID: {result.inserted_id}")
+    print(f"Created admin user with ID: {result.inserted_id}")
     
     # Add API key
     api_key = {
@@ -37,9 +37,9 @@ def setup_test_user():
     return user
 
 if __name__ == "__main__":
-    print("\n=== Setting up test data ===")
-    user = setup_test_user()
-    print("\nTest user credentials:")
+    print("\n=== Setting up admin user ===")
+    user = setup_admin_user()
+    print("\nAdmin user credentials:")
     print("Username: admin")
     print("Password: admin123")
     print("\nYou can now login with these credentials on the dashboard.")

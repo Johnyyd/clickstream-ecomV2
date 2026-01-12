@@ -17,8 +17,18 @@ os.environ["PYSPARK_PYTHON"] = python_exe
 os.environ["PYSPARK_DRIVER_PYTHON"] = python_exe
 
 from app.spark.session import get_spark_session
-from pyspark.sql.functions import col, count, avg, sum as spark_sum, when, lit, countDistinct
+from pyspark.sql.functions import (
+    col,
+    count,
+    avg,
+    sum as spark_sum,
+    when,
+    lit,
+    countDistinct,
+)
 from app.core.db_sync import events_col
+from app.core.spark import spark_manager
+from app.spark.mongo_helpers import load_events_filtered
 from bson import ObjectId
 
 
@@ -32,42 +42,33 @@ def get_spark():
     return get_spark_session()
 
 
-def load_events_to_spark(spark, limit=None, username=None):
+def load_events_to_spark(
+    spark,
+    limit=None,
+    username=None,
+    date_from=None,
+    date_to=None,
+    segment=None,
+    channel=None,
+):
     """Load events from MongoDB to Spark DataFrame with robust source mapping
     - Normalizes referrer using properties.referrer, then falls back to utm_source or properties.source
     - Preserves original properties.source for additional heuristics (e.g., 'ads')
     """
     try:
-        pipeline = []
-        
-        if username:
-            user = events_col().database.users.find_one({"username": username})
-            if user:
-                pipeline.append({"$match": {"user_id": user["_id"]}})
-        
-        pipeline.append({
-            "$match": {
-                "flag.noisy": {"$ne": True},
-                "$or": [
-                    {"properties.source": {"$exists": False}},
-                    {"properties.source": {"$nin": ["simulation", "basic_sim", "seed_demo"]}}
-                ]
-            }
-        })
-        
         if limit:
             pipeline.append({"$limit": limit})
-        
+
         events = list(events_col().aggregate(pipeline))
-        
+
         if not events:
             return None
-        
+
         spark_data = []
         for e in events:
             props = e.get("properties", {}) or {}
             # Normalize referrer and source for SEO attribution
-            referrer = (props.get("referrer") or props.get("utm_source") or "")
+            referrer = props.get("referrer") or props.get("utm_source") or ""
             if isinstance(referrer, str):
                 referrer = referrer.strip().lower()
             else:
@@ -78,25 +79,37 @@ def load_events_to_spark(spark, limit=None, username=None):
             else:
                 source = str(source)
 
-            spark_data.append((
-                str(e.get("_id")),
-                str(e.get("user_id", "")),
-                str(e.get("session_id", "")),
-                e.get("timestamp"),
-                str(e.get("page", "")),
-                str(e.get("event_type", "pageview")),
-                referrer,
-                source,
-                str((props.get("category") or ""))
-            ))
-        
-        df = spark.createDataFrame(spark_data, [
-            "event_id", "user_id", "session_id", "timestamp", "page", 
-            "event_type", "referrer", "source", "category"
-        ])
-        
+            spark_data.append(
+                (
+                    str(e.get("_id")),
+                    str(e.get("user_id", "")),
+                    str(e.get("session_id", "")),
+                    e.get("timestamp"),
+                    str(e.get("page", "")),
+                    str(e.get("event_type", "pageview")),
+                    referrer,
+                    source,
+                    str((props.get("category") or "")),
+                )
+            )
+
+        df = spark.createDataFrame(
+            spark_data,
+            [
+                "event_id",
+                "user_id",
+                "session_id",
+                "timestamp",
+                "page",
+                "event_type",
+                "referrer",
+                "source",
+                "category",
+            ],
+        )
+
         return df
-        
+
     except Exception as e:
         print(f"Error loading events: {e}")
         return None
@@ -114,19 +127,22 @@ def analyze_traffic_sources(username=None):
         logger.info("[SEO] Start analyze_traffic_sources (username=%s)", username)
         spark = get_spark()
         if spark is None:
-            return {"error": "Spark not available. Install Java 8/11 and set JAVA_HOME."}
-        
+            return {
+                "error": "Spark not available. Install Java 8/11 and set JAVA_HOME."
+            }
+
         df = load_events_to_spark(spark, username=username)
-        
+
         if df is None or df.count() == 0:
             return {"error": "No data available"}
         logger.info("[SEO] Events DF count=%d", df.count())
-        
+
         df.createOrReplaceTempView("events")
-        
+
         # 1. Traffic by source
         logger.info("[SEO] Computing traffic by source ...")
-        traffic_by_source = spark.sql("""
+        traffic_by_source = spark.sql(
+            """
             SELECT 
                 CASE 
                     WHEN referrer LIKE '%google%' OR referrer LIKE '%bing%' THEN 'organic_search'
@@ -142,11 +158,13 @@ def analyze_traffic_sources(username=None):
             FROM events
             GROUP BY traffic_source
             ORDER BY sessions DESC
-        """).collect()
-        
+        """
+        ).collect()
+
         # 2. Landing pages analysis
         logger.info("[SEO] Computing landing pages ...")
-        landing_pages = spark.sql("""
+        landing_pages = spark.sql(
+            """
             SELECT 
                 first_page,
                 COUNT(*) as sessions,
@@ -166,11 +184,13 @@ def analyze_traffic_sources(username=None):
             GROUP BY first_page
             ORDER BY sessions DESC
             LIMIT 20
-        """).collect()
-        
+        """
+        ).collect()
+
         # 3. Conversion rate by source
         logger.info("[SEO] Computing conversion by source ...")
-        conversion_by_source = spark.sql("""
+        conversion_by_source = spark.sql(
+            """
             SELECT 
                 traffic_source,
                 total_sessions,
@@ -190,11 +210,13 @@ def analyze_traffic_sources(username=None):
                 FROM events
                 GROUP BY traffic_source
             )
-        """).collect()
-        
+        """
+        ).collect()
+
         # 4. Peak traffic hours
         logger.info("[SEO] Computing hourly traffic ...")
-        hourly_traffic = spark.sql("""
+        hourly_traffic = spark.sql(
+            """
             SELECT 
                 hour,
                 source,
@@ -213,9 +235,14 @@ def analyze_traffic_sources(username=None):
             )
             GROUP BY hour, source
             ORDER BY hour, sessions DESC
-        """).collect()
-        
-        logger.info("[SEO] Done. sources=%d, landing=%d", len(traffic_by_source), len(landing_pages))
+        """
+        ).collect()
+
+        logger.info(
+            "[SEO] Done. sources=%d, landing=%d",
+            len(traffic_by_source),
+            len(landing_pages),
+        )
         return {
             "algorithm": "SEO & Traffic Source Analysis",
             "traffic_by_source": [
@@ -223,7 +250,7 @@ def analyze_traffic_sources(username=None):
                     "source": row["traffic_source"],
                     "sessions": int(row["sessions"]),
                     "events": int(row["events"]),
-                    "unique_users": int(row["unique_users"])
+                    "unique_users": int(row["unique_users"]),
                 }
                 for row in traffic_by_source
             ],
@@ -233,7 +260,7 @@ def analyze_traffic_sources(username=None):
                     "sessions": int(row["sessions"]),
                     "avg_events": round(float(row["avg_events"]), 2),
                     "conversion_rate": round(float(row["conversion_rate"]), 4),
-                    "bounce_rate": round(float(row["bounce_rate"]), 4)
+                    "bounce_rate": round(float(row["bounce_rate"]), 4),
                 }
                 for row in landing_pages
             ],
@@ -242,7 +269,7 @@ def analyze_traffic_sources(username=None):
                     "source": row["traffic_source"],
                     "total_sessions": int(row["total_sessions"]),
                     "conversion_sessions": int(row["conversion_sessions"]),
-                    "conversion_rate_pct": float(row["conversion_rate_pct"])
+                    "conversion_rate_pct": float(row["conversion_rate_pct"]),
                 }
                 for row in conversion_by_source
             ],
@@ -250,12 +277,12 @@ def analyze_traffic_sources(username=None):
                 {
                     "hour": int(row["hour"]),
                     "source": row["source"],
-                    "sessions": int(row["sessions"])
+                    "sessions": int(row["sessions"]),
                 }
                 for row in hourly_traffic
-            ]
+            ],
         }
-        
+
     except Exception as e:
         logger.exception("[SEO] Error: %s", e)
         traceback.print_exc()

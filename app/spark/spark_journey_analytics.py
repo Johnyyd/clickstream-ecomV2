@@ -8,53 +8,75 @@ import logging
 import traceback
 from datetime import datetime
 
-from pyspark.sql.functions import col, count, first, last, avg, sum as spark_sum, lit, collect_list, struct
+from pyspark.sql.functions import (
+    col,
+    count,
+    first,
+    last,
+    avg,
+    sum as spark_sum,
+    lit,
+    collect_list,
+    struct,
+)
 from pyspark.sql.window import Window
 from bson import ObjectId
 
 from app.core.spark import spark_manager
-from app.core.db_sync import events_col, users_col
+from app.core.db_sync import events_col, db
+from app.spark.mongo_helpers import load_events_filtered
 
 logger = logging.getLogger(__name__)
 if os.getenv("ANALYTICS_VERBOSE", "1") == "1":
     logging.basicConfig(level=logging.INFO)
+
 
 def get_spark():
     """Get shared Spark session"""
     return spark_manager.get_session()
 
 
-def load_events_to_spark(spark, username=None):
+def load_events_to_spark(
+    spark,
+    username=None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    segment: str | None = None,
+    channel: str | None = None,
+):
     """Load events from MongoDB with referrer/source normalization
     - Adds normalized referrer (properties.referrer -> utm_source -> properties.source)
     - Keeps original source for heuristics. Extra columns ignored by existing queries.
     """
     try:
-        pipeline = []
-        if username:
-            user = users_col().find_one({"username": username})
-            if user:
-                pipeline.append({"$match": {"user_id": user["_id"]}})
-        
-        pipeline.append({
-            "$match": {
+        # Use optimized batch loading with filters
+        events = load_events_filtered(
+            username=username,
+            date_from=date_from,
+            date_to=date_to,
+            segment=segment,
+            channel=channel,
+            additional_filters={
                 "flag.noisy": {"$ne": True},
                 "$or": [
                     {"properties.source": {"$exists": False}},
-                    {"properties.source": {"$nin": ["simulation", "basic_sim", "seed_demo"]}}
-                ]
-            }
-        })
-        
-        events = list(events_col().aggregate(pipeline))
-        
+                    {
+                        "properties.source": {
+                            "$nin": ["simulation", "basic_sim", "seed_demo"]
+                        }
+                    },
+                ],
+            },
+            batch_size=5000,
+        )
+
         if not events:
             return None
-        
+
         spark_data = []
         for e in events:
             props = e.get("properties", {}) or {}
-            ref = (props.get("referrer") or props.get("utm_source") or "")
+            ref = props.get("referrer") or props.get("utm_source") or ""
             if isinstance(ref, str):
                 ref = ref.strip().lower()
             else:
@@ -64,18 +86,23 @@ def load_events_to_spark(spark, username=None):
                 src = src.strip().lower()
             else:
                 src = str(src)
-            spark_data.append((
-                str(e.get("session_id", "")),
-                e.get("timestamp"),
-                str(e.get("page", "")),
-                str(e.get("event_type", "pageview")),
-                ref,
-                src,
-            ))
-        
-        df = spark.createDataFrame(spark_data, ["session_id", "timestamp", "page", "event_type", "referrer", "source"])
+            spark_data.append(
+                (
+                    str(e.get("session_id", "")),
+                    e.get("timestamp"),
+                    str(e.get("page", "")),
+                    str(e.get("event_type", "pageview")),
+                    ref,
+                    src,
+                )
+            )
+
+        df = spark.createDataFrame(
+            spark_data,
+            ["session_id", "timestamp", "page", "event_type", "referrer", "source"],
+        )
         return df
-        
+
     except Exception as e:
         print(f"Error loading events: {e}")
         return None
@@ -93,17 +120,20 @@ def analyze_customer_journey(username=None):
         logger.info("[Journey] Start analyze_customer_journey (username=%s)", username)
         spark = get_spark()
         if spark is None:
-            return {"error": "Spark not available. Install Java 8/11 and set JAVA_HOME."}
-        
+            return {
+                "error": "Spark not available. Install Java 8/11 and set JAVA_HOME."
+            }
+
         df = load_events_to_spark(spark, username=username)
-        
+
         if df is None or df.count() == 0:
             return {"error": "No data available"}
         logger.info("[Journey] Events DF count=%d", df.count())
-        
+
         df.createOrReplaceTempView("events")
         # Enrich with consistent traffic_source mapping for optional source-based metrics
-        spark.sql("""
+        spark.sql(
+            """
             CREATE OR REPLACE TEMP VIEW events_enriched AS
             SELECT 
                 *,
@@ -116,11 +146,13 @@ def analyze_customer_journey(username=None):
                     ELSE 'unknown'
                 END AS traffic_source
             FROM events
-        """)
-        
+        """
+        )
+
         # 1. Identify conversion paths (sessions that led to purchase)
         logger.info("[Journey] Computing conversion paths ...")
-        conversion_paths = spark.sql("""
+        conversion_paths = spark.sql(
+            """
             SELECT 
                 session_id,
                 CONCAT_WS(' -> ', COLLECT_LIST(page_simplified)) as path,
@@ -146,11 +178,13 @@ def analyze_customer_journey(username=None):
             HAVING converted = 1
             ORDER BY path_length
             LIMIT 50
-        """).collect()
-        
+        """
+        ).collect()
+
         # 2. Common drop-off points
         logger.info("[Journey] Computing drop-off points ...")
-        dropoff_analysis = spark.sql("""
+        dropoff_analysis = spark.sql(
+            """
             SELECT 
                 last_page,
                 COUNT(*) as dropout_count,
@@ -180,11 +214,13 @@ def analyze_customer_journey(username=None):
             GROUP BY last_page
             ORDER BY dropout_count DESC
             LIMIT 10
-        """).collect()
-        
+        """
+        ).collect()
+
         # 3. Average path length to conversion
         logger.info("[Journey] Computing path statistics ...")
-        path_stats = spark.sql("""
+        path_stats = spark.sql(
+            """
             SELECT 
                 AVG(path_length) as avg_path_length,
                 MIN(path_length) as min_path_length,
@@ -202,11 +238,13 @@ def analyze_customer_journey(username=None):
                 )
                 GROUP BY session_id
             )
-        """).collect()[0]
-        
+        """
+        ).collect()[0]
+
         # 4. Most common page sequences (n-grams)
         logger.info("[Journey] Computing common page sequences ...")
-        page_sequences = spark.sql("""
+        page_sequences = spark.sql(
+            """
             SELECT 
                 CONCAT(page1, ' -> ', page2) as sequence,
                 COUNT(*) as frequency
@@ -233,11 +271,13 @@ def analyze_customer_journey(username=None):
             GROUP BY page1, page2
             ORDER BY frequency DESC
             LIMIT 20
-        """).collect()
+        """
+        ).collect()
 
         # 5. Optional: Conversion by Source (using enriched mapping)
         logger.info("[Journey] Computing conversion by source (optional) ...")
-        conv_by_source = spark.sql("""
+        conv_by_source = spark.sql(
+            """
             SELECT 
                 traffic_source,
                 COUNT(DISTINCT session_id) as total_sessions,
@@ -246,16 +286,21 @@ def analyze_customer_journey(username=None):
                       NULLIF(COUNT(DISTINCT session_id), 0), 2) as conversion_rate_pct
             FROM events_enriched
             GROUP BY traffic_source
-        """).collect()
-        
-        logger.info("[Journey] Done. conv_paths=%d, dropoffs=%d", len(conversion_paths), len(dropoff_analysis))
+        """
+        ).collect()
+
+        logger.info(
+            "[Journey] Done. conv_paths=%d, dropoffs=%d",
+            len(conversion_paths),
+            len(dropoff_analysis),
+        )
         return {
             "algorithm": "Customer Journey Path Analysis",
             "conversion_paths": [
                 {
                     "session_id": row["session_id"][:16] + "...",
                     "path": row["path"],
-                    "path_length": int(row["path_length"])
+                    "path_length": int(row["path_length"]),
                 }
                 for row in conversion_paths[:20]
             ],
@@ -263,7 +308,7 @@ def analyze_customer_journey(username=None):
                 {
                     "page": row["last_page"],
                     "dropout_count": int(row["dropout_count"]),
-                    "avg_events_before": round(float(row["avg_events_before"]), 2)
+                    "avg_events_before": round(float(row["avg_events_before"]), 2),
                 }
                 for row in dropoff_analysis
             ],
@@ -271,13 +316,10 @@ def analyze_customer_journey(username=None):
                 "avg_path_length": round(float(path_stats["avg_path_length"]), 2),
                 "min_path_length": int(path_stats["min_path_length"]),
                 "max_path_length": int(path_stats["max_path_length"]),
-                "median_path_length": round(float(path_stats["median_path_length"]), 2)
+                "median_path_length": round(float(path_stats["median_path_length"]), 2),
             },
             "common_sequences": [
-                {
-                    "sequence": row["sequence"],
-                    "frequency": int(row["frequency"])
-                }
+                {"sequence": row["sequence"], "frequency": int(row["frequency"])}
                 for row in page_sequences
             ],
             "conversion_by_source": [
@@ -285,12 +327,16 @@ def analyze_customer_journey(username=None):
                     "source": row["traffic_source"],
                     "total_sessions": int(row["total_sessions"]),
                     "conversion_sessions": int(row["conversion_sessions"]),
-                    "conversion_rate_pct": float(row["conversion_rate_pct"]) if row["conversion_rate_pct"] is not None else 0.0
+                    "conversion_rate_pct": (
+                        float(row["conversion_rate_pct"])
+                        if row["conversion_rate_pct"] is not None
+                        else 0.0
+                    ),
                 }
                 for row in conv_by_source
-            ]
+            ],
         }
-        
+
     except Exception as e:
         logger.exception("[Journey] Error: %s", e)
         traceback.print_exc()
@@ -312,7 +358,13 @@ def save_journey_summary(username: str | None = None) -> dict:
             "summary": res,
         }
         col_out.insert_one(doc)
-        logger.info("[Journey] Summary saved to analytics_journey id=%s", str(doc.get("_id")))
-        return {"status": "ok", "collection": "analytics_journey", "id": str(doc.get("_id"))}
+        logger.info(
+            "[Journey] Summary saved to analytics_journey id=%s", str(doc.get("_id"))
+        )
+        return {
+            "status": "ok",
+            "collection": "analytics_journey",
+            "id": str(doc.get("_id")),
+        }
     except Exception as e:
         return {"error": str(e)}

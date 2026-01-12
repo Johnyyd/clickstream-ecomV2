@@ -8,11 +8,20 @@ import logging
 import traceback
 from datetime import datetime
 
-from pyspark.sql.functions import col, count, countDistinct, datediff, first, last, to_date
+from pyspark.sql.functions import (
+    col,
+    count,
+    countDistinct,
+    datediff,
+    first,
+    last,
+    to_date,
+)
 from bson import ObjectId
 
 from app.core.spark import spark_manager
-from app.core.db_sync import users_col, events_col
+from app.core.db_sync import events_col
+from app.spark.mongo_helpers import load_events_filtered
 
 logger = logging.getLogger(__name__)
 if os.getenv("ANALYTICS_VERBOSE", "1") == "1":
@@ -24,37 +33,42 @@ def get_spark():
     return spark_manager.get_session()
 
 
-def load_events_to_spark(spark, username=None):
+def load_events_to_spark(
+    spark, username=None, date_from=None, date_to=None, segment=None, channel=None
+):
     """Load events from MongoDB with referrer/source normalization for robust analytics
     - Adds normalized referrer (properties.referrer -> utm_source -> properties.source)
     - Keeps original source for additional heuristics. Extra columns are ignored by existing queries.
     """
     try:
-        pipeline = []
-        if username:
-            user = users_col().find_one({"username": username})
-            if user:
-                pipeline.append({"$match": {"user_id": user["_id"]}})
-        
-        pipeline.append({
-            "$match": {
+        # Use optimized batch loading with filters
+        events = load_events_filtered(
+            username=username,
+            date_from=date_from,
+            date_to=date_to,
+            segment=segment,
+            channel=channel,
+            additional_filters={
                 "flag.noisy": {"$ne": True},
                 "$or": [
                     {"properties.source": {"$exists": False}},
-                    {"properties.source": {"$nin": ["simulation", "basic_sim", "seed_demo"]}}
-                ]
-            }
-        })
-        
-        events = list(events_col().aggregate(pipeline))
-        
+                    {
+                        "properties.source": {
+                            "$nin": ["simulation", "basic_sim", "seed_demo"]
+                        }
+                    },
+                ],
+            },
+            batch_size=5000,
+        )
+
         if not events:
             return None
-        
+
         spark_data = []
         for e in events:
             props = e.get("properties", {}) or {}
-            ref = (props.get("referrer") or props.get("utm_source") or "")
+            ref = props.get("referrer") or props.get("utm_source") or ""
             if isinstance(ref, str):
                 ref = ref.strip().lower()
             else:
@@ -64,18 +78,23 @@ def load_events_to_spark(spark, username=None):
                 src = src.strip().lower()
             else:
                 src = str(src)
-            spark_data.append((
-                str(e.get("user_id", "")),
-                str(e.get("session_id", "")),
-                e.get("timestamp"),
-                str(e.get("event_type", "pageview")),
-                ref,
-                src,
-            ))
-        
-        df = spark.createDataFrame(spark_data, ["user_id", "session_id", "timestamp", "event_type", "referrer", "source"])
+            spark_data.append(
+                (
+                    str(e.get("user_id", "")),
+                    str(e.get("session_id", "")),
+                    e.get("timestamp"),
+                    str(e.get("event_type", "pageview")),
+                    ref,
+                    src,
+                )
+            )
+
+        df = spark.createDataFrame(
+            spark_data,
+            ["user_id", "session_id", "timestamp", "event_type", "referrer", "source"],
+        )
         return df
-        
+
     except Exception as e:
         print(f"Error loading events: {e}")
         return None
@@ -89,33 +108,38 @@ def analyze_cohort_retention(username=None):
     - User segments by activity
     """
     try:
-        logger.info("[Retention] Start analyze_cohort_retention (username=%s)", username)
+        logger.info(
+            "[Retention] Start analyze_cohort_retention (username=%s)", username
+        )
         spark = get_spark()
         if spark is None:
-            return {"error": "Spark not available. Install Java 8/11 and set JAVA_HOME."}
-        
+            return {
+                "error": "Spark not available. Install Java 8/11 and set JAVA_HOME."
+            }
+
         # Load user data
         query = {}
         if username:
             user = users_col().find_one({"username": username})
             if user:
                 query["_id"] = user["_id"]
-        
+
         users = list(users_col().find(query, {"_id": 1, "created_at": 1}))
         logger.info("[Retention] Loaded %d users", len(users))
-        
+
         if not users:
             return {"error": "No user data available"}
-        
+
         # Load events
         df_events = load_events_to_spark(spark, username=username)
         if df_events is None:
             return {"error": "No event data available"}
         logger.info("[Retention] Events DF count=%d", df_events.count())
-        
+
         df_events.createOrReplaceTempView("events")
         # Enrich with consistent traffic_source for optional source KPIs
-        spark.sql("""
+        spark.sql(
+            """
             CREATE OR REPLACE TEMP VIEW events_enriched AS
             SELECT 
                 *,
@@ -128,8 +152,9 @@ def analyze_cohort_retention(username=None):
                     ELSE 'unknown'
                 END AS traffic_source
             FROM events
-        """)
-        
+        """
+        )
+
         # Create user cohorts
         user_data = []
         for user in users:
@@ -137,24 +162,27 @@ def analyze_cohort_retention(username=None):
             created_at = user.get("created_at")
             if not created_at:
                 continue
-            
-            cohort_date = created_at.strftime("%Y-%m-%d") if isinstance(created_at, datetime) else str(created_at)[:10]
-            
-            user_data.append((
-                user_id,
-                cohort_date,
-                created_at
-            ))
-        
+
+            cohort_date = (
+                created_at.strftime("%Y-%m-%d")
+                if isinstance(created_at, datetime)
+                else str(created_at)[:10]
+            )
+
+            user_data.append((user_id, cohort_date, created_at))
+
         if not user_data:
             return {"error": "No valid user data with signup dates"}
-        
-        df_users = spark.createDataFrame(user_data, ["user_id", "cohort_date", "signup_timestamp"])
+
+        df_users = spark.createDataFrame(
+            user_data, ["user_id", "cohort_date", "signup_timestamp"]
+        )
         df_users.createOrReplaceTempView("users")
-        
+
         # Calculate retention
         logger.info("[Retention] Computing cohort retention ...")
-        retention_data = spark.sql("""
+        retention_data = spark.sql(
+            """
             SELECT 
                 u.cohort_date,
                 COUNT(DISTINCT u.user_id) as cohort_size,
@@ -175,30 +203,52 @@ def analyze_cohort_retention(username=None):
             GROUP BY u.cohort_date
             ORDER BY u.cohort_date DESC
             LIMIT 10
-        """).collect()
-        
+        """
+        ).collect()
+
         cohorts = []
         for row in retention_data:
             cohort_size = int(row["cohort_size"])
             if cohort_size > 0:
-                cohorts.append({
-                    "cohort_date": row["cohort_date"],
-                    "cohort_size": cohort_size,
-                    "retention_week1": round(int(row["retained_week1"]) / cohort_size * 100, 2),
-                    "retention_week2": round(int(row["retained_week2"]) / cohort_size * 100, 2),
-                    "retention_month1": round(int(row["retained_month1"]) / cohort_size * 100, 2)
-                })
-        
+                cohorts.append(
+                    {
+                        "cohort_date": row["cohort_date"],
+                        "cohort_size": cohort_size,
+                        "retention_week1": round(
+                            int(row["retained_week1"]) / cohort_size * 100, 2
+                        ),
+                        "retention_week2": round(
+                            int(row["retained_week2"]) / cohort_size * 100, 2
+                        ),
+                        "retention_month1": round(
+                            int(row["retained_month1"]) / cohort_size * 100, 2
+                        ),
+                    }
+                )
+
         # Calculate average retention
         avg_retention = {
-            "week1": round(sum(c["retention_week1"] for c in cohorts) / len(cohorts), 2) if cohorts else 0,
-            "week2": round(sum(c["retention_week2"] for c in cohorts) / len(cohorts), 2) if cohorts else 0,
-            "month1": round(sum(c["retention_month1"] for c in cohorts) / len(cohorts), 2) if cohorts else 0
+            "week1": (
+                round(sum(c["retention_week1"] for c in cohorts) / len(cohorts), 2)
+                if cohorts
+                else 0
+            ),
+            "week2": (
+                round(sum(c["retention_week2"] for c in cohorts) / len(cohorts), 2)
+                if cohorts
+                else 0
+            ),
+            "month1": (
+                round(sum(c["retention_month1"] for c in cohorts) / len(cohorts), 2)
+                if cohorts
+                else 0
+            ),
         }
-        
+
         # User activity segments
         logger.info("[Retention] Computing user activity segments ...")
-        user_segments = spark.sql("""
+        user_segments = spark.sql(
+            """
             SELECT 
                 CASE 
                     WHEN days_since_last_activity <= 7 THEN 'Active'
@@ -214,11 +264,13 @@ def analyze_cohort_retention(username=None):
                 GROUP BY user_id
             )
             GROUP BY segment
-        """).collect()
+        """
+        ).collect()
 
         # Optional: Engagement by traffic source
         logger.info("[Retention] Computing engagement by source (optional) ...")
-        engagement_by_source = spark.sql("""
+        engagement_by_source = spark.sql(
+            """
             SELECT 
                 traffic_source,
                 COUNT(*) as events,
@@ -227,18 +279,16 @@ def analyze_cohort_retention(username=None):
             FROM events_enriched
             GROUP BY traffic_source
             ORDER BY sessions DESC
-        """).collect()
-        
+        """
+        ).collect()
+
         logger.info("[Retention] Done. Cohorts=%d", len(cohorts))
         return {
             "algorithm": "Cohort & Retention Analysis",
             "cohorts": cohorts,
             "average_retention": avg_retention,
             "user_segments": [
-                {
-                    "segment": row["segment"],
-                    "user_count": int(row["user_count"])
-                }
+                {"segment": row["segment"], "user_count": int(row["user_count"])}
                 for row in user_segments
             ],
             "engagement_by_source": [
@@ -249,9 +299,9 @@ def analyze_cohort_retention(username=None):
                     "unique_users": int(row["unique_users"]),
                 }
                 for row in engagement_by_source
-            ]
+            ],
         }
-        
+
     except Exception as e:
         logger.exception("[Retention] Error: %s", e)
         traceback.print_exc()
@@ -273,7 +323,14 @@ def save_retention_summary(username: str | None = None) -> dict:
             "summary": res,
         }
         col_out.insert_one(doc)
-        logger.info("[Retention] Summary saved to analytics_retention id=%s", str(doc.get("_id")))
-        return {"status": "ok", "collection": "analytics_retention", "id": str(doc.get("_id"))}
+        logger.info(
+            "[Retention] Summary saved to analytics_retention id=%s",
+            str(doc.get("_id")),
+        )
+        return {
+            "status": "ok",
+            "collection": "analytics_retention",
+            "id": str(doc.get("_id")),
+        }
     except Exception as e:
         return {"error": str(e)}

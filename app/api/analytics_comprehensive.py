@@ -64,7 +64,13 @@ async def get_seo_analysis(
 
 
 @router.get("/cart-abandonment")
-async def get_cart_abandonment(username: Optional[str] = None):
+async def get_cart_abandonment(
+    username: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    segment: Optional[str] = "all",
+    channel: Optional[str] = "all",
+):
     """
     Cart Abandonment Analysis
     - Abandonment rate
@@ -85,7 +91,13 @@ async def get_cart_abandonment(username: Optional[str] = None):
 
 
 @router.get("/retention")
-async def get_retention_analysis(username: Optional[str] = None):
+async def get_retention_analysis(
+    username: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    segment: Optional[str] = "all",
+    channel: Optional[str] = "all",
+):
     """
     Cohort & Retention Analysis
     - Cohorts by signup date
@@ -106,7 +118,13 @@ async def get_retention_analysis(username: Optional[str] = None):
 
 
 @router.get("/customer-journey")
-async def get_customer_journey(username: Optional[str] = None):
+async def get_customer_journey(
+    username: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    segment: Optional[str] = "all",
+    channel: Optional[str] = "all",
+):
     """
     Customer Journey Path Analysis
     - Conversion paths

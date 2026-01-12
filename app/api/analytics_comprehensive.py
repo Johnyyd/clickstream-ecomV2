@@ -17,10 +17,21 @@ class AnalyticsRequest(BaseModel):
     modules: List[str] = ["all"]  # seo, cart, retention, journey, recommendations, ml
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+    # Filter parameters for Spark optimization
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    segment: Optional[str] = "all"
+    channel: Optional[str] = "all"
 
 
 @router.get("/seo")
-async def get_seo_analysis(username: Optional[str] = None):
+async def get_seo_analysis(
+    username: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    segment: Optional[str] = "all",
+    channel: Optional[str] = "all",
+):
     """
     SEO & Traffic Source Analysis
     - Traffic by source
@@ -29,10 +40,23 @@ async def get_seo_analysis(username: Optional[str] = None):
     """
     try:
         from app.spark.seo_analytics import analyze_traffic_sources
+        from datetime import datetime
+
         # Handle 'undefined' username from frontend
-        if username and username.lower() == 'undefined':
+        if username and username.lower() == "undefined":
             username = None
-        result = analyze_traffic_sources(username=username)
+
+        # Parse date filters
+        dt_from = datetime.fromisoformat(date_from) if date_from else None
+        dt_to = datetime.fromisoformat(date_to) if date_to else None
+
+        result = analyze_traffic_sources(
+            username=username,
+            date_from=dt_from,
+            date_to=dt_to,
+            segment=segment,
+            channel=channel,
+        )
         return result
     except Exception as e:
         traceback.print_exc()
@@ -49,8 +73,9 @@ async def get_cart_abandonment(username: Optional[str] = None):
     """
     try:
         from app.spark.spark_cart_analytics import analyze_cart_abandonment
+
         # Handle 'undefined' username from frontend
-        if username and username.lower() == 'undefined':
+        if username and username.lower() == "undefined":
             username = None
         result = analyze_cart_abandonment(username=username)
         return result
@@ -69,8 +94,9 @@ async def get_retention_analysis(username: Optional[str] = None):
     """
     try:
         from app.spark.spark_retention_analytics import analyze_cohort_retention
+
         # Handle 'undefined' username from frontend
-        if username and username.lower() == 'undefined':
+        if username and username.lower() == "undefined":
             username = None
         result = analyze_cohort_retention(username=username)
         return result
@@ -89,8 +115,9 @@ async def get_customer_journey(username: Optional[str] = None):
     """
     try:
         from app.spark.spark_journey_analytics import analyze_customer_journey
+
         # Handle 'undefined' username from frontend
-        if username and username.lower() == 'undefined':
+        if username and username.lower() == "undefined":
             username = None
         result = analyze_customer_journey(username=username)
         return result
@@ -101,8 +128,7 @@ async def get_customer_journey(username: Optional[str] = None):
 
 @router.get("/recommendations/{username}")
 async def get_product_recommendations(
-    username: str,
-    top_n: int = Query(default=5, ge=1, le=20)
+    username: str, top_n: int = Query(default=5, ge=1, le=20)
 ):
     """
     Product Recommendations using ALS - For Specific User
@@ -111,8 +137,9 @@ async def get_product_recommendations(
     """
     try:
         from app.spark.recommendation_als import ml_product_recommendations_als
+
         # Handle 'undefined' username from frontend
-        if username and username.lower() == 'undefined':
+        if username and username.lower() == "undefined":
             result = ml_product_recommendations_als(username=None, top_n=top_n)
         else:
             result = ml_product_recommendations_als(username=username, top_n=top_n)
@@ -123,9 +150,7 @@ async def get_product_recommendations(
 
 
 @router.get("/recommendations")
-async def get_all_recommendations(
-    top_n: int = Query(default=5, ge=1, le=20)
-):
+async def get_all_recommendations(top_n: int = Query(default=5, ge=1, le=20)):
     """
     Product Recommendations using ALS - For All Users
     - Sample recommendations from all users
@@ -133,6 +158,7 @@ async def get_all_recommendations(
     """
     try:
         from app.spark.recommendation_als import ml_product_recommendations_als
+
         result = ml_product_recommendations_als(username=None, top_n=top_n)
         return result
     except Exception as e:
@@ -149,8 +175,9 @@ async def get_user_segmentation(username: Optional[str] = None):
     """
     try:
         from app.spark.ml import ml_user_segmentation_kmeans
+
         # Handle 'undefined' username from frontend
-        if username and username.lower() == 'undefined':
+        if username and username.lower() == "undefined":
             username = None
         result = ml_user_segmentation_kmeans(username=username)
         return result
@@ -168,8 +195,9 @@ async def get_conversion_prediction(username: Optional[str] = None):
     """
     try:
         from app.spark.ml import ml_conversion_prediction_tree
+
         # Handle 'undefined' username from frontend
-        if username and username.lower() == 'undefined':
+        if username and username.lower() == "undefined":
             username = None
         result = ml_conversion_prediction_tree(username=username)
         return result
@@ -187,8 +215,9 @@ async def get_purchase_probability(username: Optional[str] = None):
     """
     try:
         from app.spark.ml import ml_purchase_prediction_logistic
+
         # Handle 'undefined' username from frontend
-        if username and username.lower() == 'undefined':
+        if username and username.lower() == "undefined":
             username = None
         result = ml_purchase_prediction_logistic(username=username)
         return result
@@ -206,8 +235,9 @@ async def get_pattern_mining(username: Optional[str] = None):
     """
     try:
         from app.spark.ml import ml_pattern_mining_fpgrowth
+
         # Handle 'undefined' username from frontend
-        if username and username.lower() == 'undefined':
+        if username and username.lower() == "undefined":
             username = None
         result = ml_pattern_mining_fpgrowth(username=username)
         return result
@@ -224,64 +254,108 @@ async def run_comprehensive_analysis(request: AnalyticsRequest):
     """
     try:
         # Handle 'undefined' username from frontend
-        if request.username and request.username.lower() == 'undefined':
+        if request.username and request.username.lower() == "undefined":
             request.username = None
 
         results = {
             "username": request.username,
             "modules_requested": request.modules,
-            "results": {}
+            "results": {},
         }
-        
-        modules = request.modules if request.modules != ["all"] else [
-            "seo", "cart", "retention", "journey", "recommendations", 
-            "segmentation", "conversion", "purchase", "patterns"
-        ]
-        
+
+        modules = (
+            request.modules
+            if request.modules != ["all"]
+            else [
+                "seo",
+                "cart",
+                "retention",
+                "journey",
+                "recommendations",
+                "segmentation",
+                "conversion",
+                "purchase",
+                "patterns",
+            ]
+        )
+
         for module in modules:
             try:
                 if module == "seo":
                     from app.spark.seo_analytics import analyze_traffic_sources
-                    results["results"]["seo"] = analyze_traffic_sources(username=request.username)
-                
+
+                    results["results"]["seo"] = analyze_traffic_sources(
+                        username=request.username
+                    )
+
                 elif module == "cart":
                     from app.spark.spark_cart_analytics import analyze_cart_abandonment
-                    results["results"]["cart"] = analyze_cart_abandonment(username=request.username)
-                
-                elif module == "retention":
-                    from app.spark.spark_retention_analytics import analyze_cohort_retention
-                    results["results"]["retention"] = analyze_cohort_retention(username=request.username)
-                
-                elif module == "journey":
-                    from app.spark.spark_journey_analytics import analyze_customer_journey
-                    results["results"]["journey"] = analyze_customer_journey(username=request.username)
-                
-                elif module == "recommendations" and request.username:
-                    from app.spark.recommendation_als import ml_product_recommendations_als
-                    results["results"]["recommendations"] = ml_product_recommendations_als(
-                        username=request.username, top_n=50
+
+                    results["results"]["cart"] = analyze_cart_abandonment(
+                        username=request.username
                     )
-                
+
+                elif module == "retention":
+                    from app.spark.spark_retention_analytics import (
+                        analyze_cohort_retention,
+                    )
+
+                    results["results"]["retention"] = analyze_cohort_retention(
+                        username=request.username
+                    )
+
+                elif module == "journey":
+                    from app.spark.spark_journey_analytics import (
+                        analyze_customer_journey,
+                    )
+
+                    results["results"]["journey"] = analyze_customer_journey(
+                        username=request.username
+                    )
+
+                elif module == "recommendations" and request.username:
+                    from app.spark.recommendation_als import (
+                        ml_product_recommendations_als,
+                    )
+
+                    results["results"]["recommendations"] = (
+                        ml_product_recommendations_als(
+                            username=request.username, top_n=50
+                        )
+                    )
+
                 elif module == "segmentation":
                     from app.spark.ml import ml_user_segmentation_kmeans
-                    results["results"]["segmentation"] = ml_user_segmentation_kmeans(username=request.username)
-                
+
+                    results["results"]["segmentation"] = ml_user_segmentation_kmeans(
+                        username=request.username
+                    )
+
                 elif module == "conversion":
                     from app.spark.ml import ml_conversion_prediction_tree
-                    results["results"]["conversion"] = ml_conversion_prediction_tree(username=request.username)
-                
+
+                    results["results"]["conversion"] = ml_conversion_prediction_tree(
+                        username=request.username
+                    )
+
                 elif module == "purchase":
                     from app.spark.ml import ml_purchase_prediction_logistic
-                    results["results"]["purchase"] = ml_purchase_prediction_logistic(username=request.username)
-                
+
+                    results["results"]["purchase"] = ml_purchase_prediction_logistic(
+                        username=request.username
+                    )
+
                 elif module == "patterns":
                     from app.spark.ml import ml_pattern_mining_fpgrowth
-                    results["results"]["patterns"] = ml_pattern_mining_fpgrowth(username=request.username)
-                
+
+                    results["results"]["patterns"] = ml_pattern_mining_fpgrowth(
+                        username=request.username
+                    )
+
             except Exception as e:
                 results["results"][module] = {"error": str(e)}
                 print(f"Error in module {module}: {e}")
-        
+
         return results
     except Exception as e:
         traceback.print_exc()
@@ -291,11 +365,8 @@ async def run_comprehensive_analysis(request: AnalyticsRequest):
 @router.get("/health")
 async def analytics_health():
     """Check analytics modules health"""
-    health = {
-        "status": "healthy",
-        "modules": {}
-    }
-    
+    health = {"status": "healthy", "modules": {}}
+
     # Check each module
     modules_to_check = [
         ("spark_seo_analytics", "SEO Analytics"),
@@ -303,9 +374,9 @@ async def analytics_health():
         ("spark_retention_analytics", "Retention Analytics"),
         ("spark_journey_analytics", "Journey Analytics"),
         ("spark_recommendation_als", "ALS Recommendations"),
-        ("spark_ml", "ML Models")
+        ("spark_ml", "ML Models"),
     ]
-    
+
     for module_name, display_name in modules_to_check:
         try:
             __import__(module_name)
@@ -313,5 +384,5 @@ async def analytics_health():
         except Exception as e:
             health["modules"][display_name] = f"error: {str(e)}"
             health["status"] = "degraded"
-    
+
     return health

@@ -56,10 +56,31 @@ def load_events_to_spark(
     - Preserves original properties.source for additional heuristics (e.g., 'ads')
     """
     try:
-        if limit:
-            pipeline.append({"$limit": limit})
+        # Use optimized batch loading
+        additional_filters = {
+            "flag.noisy": {"$ne": True},
+            "$or": [
+                {"properties.source": {"$exists": False}},
+                {
+                    "properties.source": {
+                        "$nin": ["simulation", "basic_sim", "seed_demo"]
+                    }
+                },
+            ],
+        }
 
-        events = list(events_col().aggregate(pipeline))
+        events = load_events_filtered(
+            username=username,
+            date_from=date_from,
+            date_to=date_to,
+            segment=segment,
+            channel=channel,
+            additional_filters=additional_filters,
+            batch_size=1000,  # Smaller batch for cursor stability
+        )
+
+        if limit and len(events) > limit:
+            events = events[:limit]
 
         if not events:
             return None

@@ -84,7 +84,7 @@ def analyze_traffic_sources(
             # Categorize source
             source = "direct"
             if referrer:
-                if "google" in referrer or "bing" in refer or "search" in referrer:
+                if "google" in referrer or "bing" in referrer or "search" in referrer:
                     source = "organic"
                 elif (
                     "facebook" in referrer
@@ -272,3 +272,4 @@ def analyze_traffic_sources(
 
         traceback.print_exc()
         return {"error": str(e)}
+

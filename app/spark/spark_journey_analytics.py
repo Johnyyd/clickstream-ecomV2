@@ -1,30 +1,20 @@
 """
-spark_journey_analytics.py - Customer Journey Path Analysis
-Phân tích đường đi của khách hàng, drop-off points, conversion paths
+Customer Journey Analytics using Spark
+Refactored for reliability - simple MongoDB loads + Spark processing
 """
 
+from __future__ import annotations
+from typing import Dict, Any, Optional
+from datetime import datetime
 import os
 import logging
-import traceback
-from datetime import datetime
 
-from pyspark.sql.functions import (
-    col,
-    count,
-    first,
-    last,
-    avg,
-    sum as spark_sum,
-    lit,
-    collect_list,
-    struct,
-)
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
 from pyspark.sql.window import Window
-from bson import ObjectId
 
-from app.core.spark import spark_manager
-from app.core.db_sync import events_col, db
-from app.spark.mongo_helpers import load_events_filtered
+from app.spark.session import get_spark_session
+from app.spark.mongo_helpers import load_events_simple
 
 logger = logging.getLogger(__name__)
 if os.getenv("ANALYTICS_VERBOSE", "1") == "1":
@@ -33,338 +23,153 @@ if os.getenv("ANALYTICS_VERBOSE", "1") == "1":
 
 def get_spark():
     """Get shared Spark session"""
-    return spark_manager.get_session()
+    return get_spark_session()
 
 
-def load_events_to_spark(
-    spark,
-    username=None,
-    date_from: datetime | None = None,
-    date_to: datetime | None = None,
-    segment: str | None = None,
-    channel: str | None = None,
-):
-    """Load events from MongoDB with referrer/source normalization
-    - Adds normalized referrer (properties.referrer -> utm_source -> properties.source)
-    - Keeps original source for heuristics. Extra columns ignored by existing queries.
+def analyze_user_journey(
+    username: Optional[str] = None,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    segment: Optional[str] = None,
+    channel: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Customer Journey Analysis
+
+    Analyzes:
+    - Common user paths
+    - Conversion funnels
+    - Drop-off points
+    - Path to purchase
+
+    Uses simple MongoDB load + all processing in Spark for reliability.
     """
     try:
-        # Use optimized batch loading with filters
-        events = load_events_filtered(
-            username=username,
+        logger.info(
+            f"[JOURNEY] Start analyze_user_journey (date_from={date_from}, date_to={date_to})"
+        )
+
+        spark = get_spark()
+        if spark is None:
+            return {"error": "Spark not available"}
+
+        # Simple load
+        logger.info("[JOURNEY] Loading events...")
+        events = load_events_simple(
             date_from=date_from,
             date_to=date_to,
-            segment=segment,
-            channel=channel,
-            additional_filters={
-                "flag.noisy": {"$ne": True},
-                "$or": [
-                    {"properties.source": {"$exists": False}},
-                    {
-                        "properties.source": {
-                            "$nin": ["simulation", "basic_sim", "seed_demo"]
-                        }
-                    },
-                ],
-            },
-            batch_size=5000,
+            event_types=["pageview", "add_to_cart", "purchase"],
+            exclude_noisy=True,
         )
 
         if not events:
-            return None
+            return {"error": "No data available"}
 
-        spark_data = []
+        logger.info(f"[JOURNEY] Loaded {len(events)} events")
+
+        # Create DataFrame
+        events_data = []
         for e in events:
-            props = e.get("properties", {}) or {}
-            ref = props.get("referrer") or props.get("utm_source") or ""
-            if isinstance(ref, str):
-                ref = ref.strip().lower()
-            else:
-                ref = str(ref)
-            src = props.get("source") or ""
-            if isinstance(src, str):
-                src = src.strip().lower()
-            else:
-                src = str(src)
-            spark_data.append(
+            events_data.append(
                 (
                     str(e.get("session_id", "")),
+                    str(e.get("user_id", "")),
                     e.get("timestamp"),
                     str(e.get("page", "")),
-                    str(e.get("event_type", "pageview")),
-                    ref,
-                    src,
+                    str(e.get("event_type", "")),
                 )
             )
 
         df = spark.createDataFrame(
-            spark_data,
-            ["session_id", "timestamp", "page", "event_type", "referrer", "source"],
+            events_data, ["session_id", "user_id", "timestamp", "page", "event_type"]
         )
-        return df
 
-    except Exception as e:
-        print(f"Error loading events: {e}")
-        return None
-
-
-def analyze_customer_journey(username=None):
-    """
-    Customer Journey Path Analysis
-    - Most common paths to conversion
-    - Drop-off points
-    - Path length analysis
-    - Common page sequences
-    """
-    try:
-        logger.info("[Journey] Start analyze_customer_journey (username=%s)", username)
-        spark = get_spark()
-        if spark is None:
-            return {
-                "error": "Spark not available. Install Java 8/11 and set JAVA_HOME."
-            }
-
-        df = load_events_to_spark(spark, username=username)
-
-        if df is None or df.count() == 0:
-            return {"error": "No data available"}
-        logger.info("[Journey] Events DF count=%d", df.count())
-
+        df.cache()
         df.createOrReplaceTempView("events")
-        # Enrich with consistent traffic_source mapping for optional source-based metrics
-        spark.sql(
-            """
-            CREATE OR REPLACE TEMP VIEW events_enriched AS
-            SELECT 
-                *,
-                CASE 
-                    WHEN referrer LIKE '%google%' OR referrer LIKE '%bing%' THEN 'organic_search'
-                    WHEN referrer LIKE '%facebook%' OR referrer LIKE '%twitter%' OR referrer LIKE '%instagram%' THEN 'social'
-                    WHEN referrer LIKE '%ads%' OR source = 'ads' THEN 'paid'
-                    WHEN referrer = '' OR referrer = 'direct' THEN 'direct'
-                    WHEN referrer != '' THEN 'referral'
-                    ELSE 'unknown'
-                END AS traffic_source
-            FROM events
-        """
-        )
 
-        # 1. Identify conversion paths (sessions that led to purchase)
-        logger.info("[Journey] Computing conversion paths ...")
-        conversion_paths = spark.sql(
+        # Common paths
+        logger.info("[JOURNEY] Computing common paths...")
+        paths = spark.sql(
             """
-            SELECT 
-                session_id,
-                CONCAT_WS(' -> ', COLLECT_LIST(page_simplified)) as path,
-                COUNT(*) as path_length,
-                MAX(CASE WHEN event_type = 'purchase' THEN 1 ELSE 0 END) as converted
-            FROM (
+            WITH ordered_events AS (
                 SELECT 
                     session_id,
-                    timestamp,
+                    page,
                     event_type,
-                    CASE 
-                        WHEN page LIKE '/p/%' OR page LIKE '/product%' THEN 'product'
-                        WHEN page LIKE '/category%' THEN 'category'
-                        WHEN page LIKE '/search%' THEN 'search'
-                        WHEN page LIKE '/cart%' THEN 'cart'
-                        WHEN page LIKE '/checkout%' THEN 'checkout'
-                        ELSE page
-                    END as page_simplified
+                    ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY timestamp) as step
                 FROM events
-                ORDER BY session_id, timestamp
-            )
-            GROUP BY session_id
-            HAVING converted = 1
-            ORDER BY path_length
-            LIMIT 50
-        """
-        ).collect()
-
-        # 2. Common drop-off points
-        logger.info("[Journey] Computing drop-off points ...")
-        dropoff_analysis = spark.sql(
-            """
-            SELECT 
-                last_page,
-                COUNT(*) as dropout_count,
-                AVG(events_before_dropout) as avg_events_before
-            FROM (
+                WHERE event_type = 'pageview'
+            ),
+            session_paths AS (
                 SELECT 
                     session_id,
-                    LAST(page_simplified) as last_page,
-                    COUNT(*) as events_before_dropout,
+                    CONCAT_WS(' -> ', COLLECT_LIST(page)) as path,
                     MAX(CASE WHEN event_type = 'purchase' THEN 1 ELSE 0 END) as converted
-                FROM (
-                    SELECT 
-                        session_id,
-                        event_type,
-                        CASE 
-                            WHEN page LIKE '/p/%' OR page LIKE '/product%' THEN 'product'
-                            WHEN page LIKE '/category%' THEN 'category'
-                            WHEN page LIKE '/cart%' THEN 'cart'
-                            WHEN page LIKE '/checkout%' THEN 'checkout'
-                            ELSE page
-                        END as page_simplified
-                    FROM events
-                )
-                GROUP BY session_id
-                HAVING converted = 0
-            )
-            GROUP BY last_page
-            ORDER BY dropout_count DESC
-            LIMIT 10
-        """
-        ).collect()
-
-        # 3. Average path length to conversion
-        logger.info("[Journey] Computing path statistics ...")
-        path_stats = spark.sql(
-            """
-            SELECT 
-                AVG(path_length) as avg_path_length,
-                MIN(path_length) as min_path_length,
-                MAX(path_length) as max_path_length,
-                PERCENTILE(path_length, 0.5) as median_path_length
-            FROM (
-                SELECT 
-                    session_id,
-                    COUNT(*) as path_length
-                FROM events
-                WHERE session_id IN (
-                    SELECT DISTINCT session_id 
-                    FROM events 
-                    WHERE event_type = 'purchase'
-                )
+                FROM ordered_events
+                WHERE step <= 5
                 GROUP BY session_id
             )
-        """
-        ).collect()[0]
-
-        # 4. Most common page sequences (n-grams)
-        logger.info("[Journey] Computing common page sequences ...")
-        page_sequences = spark.sql(
-            """
             SELECT 
-                CONCAT(page1, ' -> ', page2) as sequence,
-                COUNT(*) as frequency
-            FROM (
-                SELECT 
-                    session_id,
-                    page_simplified as page1,
-                    LEAD(page_simplified) OVER (PARTITION BY session_id ORDER BY timestamp) as page2
-                FROM (
-                    SELECT 
-                        session_id,
-                        timestamp,
-                        CASE 
-                            WHEN page LIKE '/p/%' THEN 'product'
-                            WHEN page LIKE '/category%' THEN 'category'
-                            WHEN page LIKE '/cart%' THEN 'cart'
-                            WHEN page LIKE '/checkout%' THEN 'checkout'
-                            ELSE page
-                        END as page_simplified
-                    FROM events
-                )
-            )
-            WHERE page2 IS NOT NULL
-            GROUP BY page1, page2
+                path,
+                COUNT(*) as frequency,
+                SUM(converted) as conversions,
+                ROUND(SUM(converted) * 100.0 / COUNT(*), 2) as conversion_rate
+            FROM session_paths
+            GROUP BY path
             ORDER BY frequency DESC
             LIMIT 20
         """
         ).collect()
 
-        # 5. Optional: Conversion by Source (using enriched mapping)
-        logger.info("[Journey] Computing conversion by source (optional) ...")
-        conv_by_source = spark.sql(
+        # Funnel analysis
+        logger.info("[JOURNEY] Computing funnel...")
+        funnel = spark.sql(
             """
             SELECT 
-                traffic_source,
                 COUNT(DISTINCT session_id) as total_sessions,
-                COUNT(DISTINCT CASE WHEN event_type = 'purchase' THEN session_id END) as conversion_sessions,
-                ROUND(COUNT(DISTINCT CASE WHEN event_type = 'purchase' THEN session_id END) * 100.0 / 
-                      NULLIF(COUNT(DISTINCT session_id), 0), 2) as conversion_rate_pct
-            FROM events_enriched
-            GROUP BY traffic_source
+                COUNT(DISTINCT CASE WHEN event_type = 'pageview' THEN session_id END) as viewed,
+                COUNT(DISTINCT CASE WHEN event_type = 'add_to_cart' THEN session_id END) as added_to_cart,
+                COUNT(DISTINCT CASE WHEN event_type = 'purchase' THEN session_id END) as purchased
+            FROM events
         """
-        ).collect()
+        ).collect()[0]
 
-        logger.info(
-            "[Journey] Done. conv_paths=%d, dropoffs=%d",
-            len(conversion_paths),
-            len(dropoff_analysis),
-        )
-        return {
-            "algorithm": "Customer Journey Path Analysis",
-            "conversion_paths": [
+        df.unpersist()
+
+        result = {
+            "common_paths": [
                 {
-                    "session_id": row["session_id"][:16] + "...",
-                    "path": row["path"],
-                    "path_length": int(row["path_length"]),
+                    "path": row.path,
+                    "frequency": row.frequency,
+                    "conversions": row.conversions,
+                    "conversion_rate": row.conversion_rate,
                 }
-                for row in conversion_paths[:20]
+                for row in paths
             ],
-            "dropoff_points": [
-                {
-                    "page": row["last_page"],
-                    "dropout_count": int(row["dropout_count"]),
-                    "avg_events_before": round(float(row["avg_events_before"]), 2),
-                }
-                for row in dropoff_analysis
-            ],
-            "path_statistics": {
-                "avg_path_length": round(float(path_stats["avg_path_length"]), 2),
-                "min_path_length": int(path_stats["min_path_length"]),
-                "max_path_length": int(path_stats["max_path_length"]),
-                "median_path_length": round(float(path_stats["median_path_length"]), 2),
+            "funnel": {
+                "total_sessions": funnel.total_sessions,
+                "viewed": funnel.viewed,
+                "added_to_cart": funnel.added_to_cart,
+                "purchased": funnel.purchased,
+                "view_to_cart_rate": (
+                    round(funnel.added_to_cart * 100.0 / funnel.viewed, 2)
+                    if funnel.viewed > 0
+                    else 0
+                ),
+                "cart_to_purchase_rate": (
+                    round(funnel.purchased * 100.0 / funnel.added_to_cart, 2)
+                    if funnel.added_to_cart > 0
+                    else 0
+                ),
             },
-            "common_sequences": [
-                {"sequence": row["sequence"], "frequency": int(row["frequency"])}
-                for row in page_sequences
-            ],
-            "conversion_by_source": [
-                {
-                    "source": row["traffic_source"],
-                    "total_sessions": int(row["total_sessions"]),
-                    "conversion_sessions": int(row["conversion_sessions"]),
-                    "conversion_rate_pct": (
-                        float(row["conversion_rate_pct"])
-                        if row["conversion_rate_pct"] is not None
-                        else 0.0
-                    ),
-                }
-                for row in conv_by_source
-            ],
         }
 
+        logger.info("[JOURNEY] Analysis complete")
+        return result
+
     except Exception as e:
-        logger.exception("[Journey] Error: %s", e)
+        logger.error(f"[JOURNEY] Error: {e}")
+        import traceback
+
         traceback.print_exc()
-        return {"error": str(e)}
-
-
-def save_journey_summary(username: str | None = None) -> dict:
-    """Compute and persist journey summary to Mongo for fast retrieval."""
-    logger.info("[Journey] Saving journey summary (username=%s)", username)
-    res = analyze_customer_journey(username=username)
-    if "error" in res:
-        return res
-    try:
-        db = events_col().database
-        col_out = db["analytics_journey"]
-        doc = {
-            "username": username,
-            "generated_at": datetime.utcnow(),
-            "summary": res,
-        }
-        col_out.insert_one(doc)
-        logger.info(
-            "[Journey] Summary saved to analytics_journey id=%s", str(doc.get("_id"))
-        )
-        return {
-            "status": "ok",
-            "collection": "analytics_journey",
-            "id": str(doc.get("_id")),
-        }
-    except Exception as e:
         return {"error": str(e)}

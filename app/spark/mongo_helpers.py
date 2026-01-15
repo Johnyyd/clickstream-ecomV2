@@ -11,6 +11,63 @@ from app.core.db_sync import events_col, users_col
 logger = logging.getLogger(__name__)
 
 
+
+def load_events_simple(
+    date_from = None,
+    date_to = None,
+    event_types = None,
+    exclude_noisy = True,
+    limit = None,
+    projection = None
+):
+    """
+    Simple, reliable event loading from MongoDB.
+    NO complex aggregations - just basic filtering.
+    """
+    from datetime import datetime
+    try:
+        query = {}
+        
+        # Date range filter
+        if date_from or date_to:
+            query["timestamp"] = {}
+            if date_from:
+                query["timestamp"]["$gte"] = int(date_from.timestamp()) if isinstance(date_from, datetime) else date_from
+            if date_to:
+                query["timestamp"]["$lte"] = int(date_to.timestamp()) if isinstance(date_to, datetime) else date_to
+        
+        # Event type filter
+        if event_types:
+            query["event_type"] = {"$in": event_types}
+        
+        # Exclude noisy test data
+        if exclude_noisy:
+            query["$and"] = [
+                {"flag.noisy": {"$ne": True}},
+                {
+                    "$or": [
+                        {"properties.source": {"$exists": False}},
+                        {"properties.source": {"$nin": ["simulation", "basic_sim", "seed_demo"]}}
+                    ]
+                }
+            ]
+        
+        logger.info(f"[MongoHelper] Simple load with query keys: {list(query.keys())}")
+        
+        # Simple find() - fast and reliable
+        cursor = events_col().find(query, projection)
+        
+        if limit:
+            cursor = cursor.limit(limit)
+        
+        events = list(cursor)
+        
+        logger.info(f"[MongoHelper] Loaded {len(events)} events")
+        return events
+        
+    except Exception as e:
+        logger.error(f"[MongoHelper] Error in simple load: {e}")
+        raise
 def load_events_batch(
     pipeline: List[Dict], batch_size: int = 5000, max_time_ms: int = 300000  # 5 minutes
 ) -> List[Dict]:
@@ -262,3 +319,4 @@ def add_incremental_filter(pipeline: List[Dict], module_name: str) -> List[Dict]
         )
 
     return pipeline
+

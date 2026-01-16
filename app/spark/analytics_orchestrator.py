@@ -280,9 +280,9 @@ class AnalyticsOrchestrator:
         self, username: Optional[str], limit: Optional[int]
     ) -> Dict[str, Any]:
         """Run SEO and traffic analysis"""
-        from app.spark.seo_analytics import analyze_seo_performance
+        from app.spark.seo_analytics import analyze_traffic_sources
 
-        return analyze_seo_performance(username=username, limit=limit)
+        return analyze_traffic_sources(username=username)
 
     def _run_cart_analysis(
         self, username: Optional[str], limit: Optional[int]

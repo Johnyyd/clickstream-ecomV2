@@ -34,6 +34,12 @@ def analyze_traffic_sources(
     segment: Optional[str] = None,
     channel: Optional[str] = None,
 ) -> Dict[str, Any]:
+    # Default to last 90 days if no date range specified
+    if date_from is None and date_to is None:
+        from datetime import timedelta
+
+        date_to = datetime.now()
+        date_from = date_to - timedelta(days=90)
     """
     SEO & Traffic Source Analysis
 
@@ -272,4 +278,3 @@ def analyze_traffic_sources(
 
         traceback.print_exc()
         return {"error": str(e)}
-

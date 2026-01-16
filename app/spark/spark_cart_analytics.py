@@ -34,6 +34,10 @@ def analyze_cart_abandonment(
     segment: Optional[str] = None,
     channel: Optional[str] = None,
 ) -> Dict[str, Any]:
+    # Default to last 90 days if no date range specified
+    if date_from is None and date_to is None:
+        date_to = datetime.now()
+        date_from = date_to - timedelta(days=90)
     """
     Cart Abandonment Analysis
 

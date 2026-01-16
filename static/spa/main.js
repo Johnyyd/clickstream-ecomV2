@@ -727,8 +727,8 @@ function buildQuery() {
     const pr = presetToDates(range);
     startISO = pr.start; endISO = pr.end;
   }
-  if (startISO) p.set('start_date', startISO);
-  if (endISO) p.set('end_date', endISO);
+  if (startISO) p.set('date_from', startISO);
+  if (endISO) p.set('date_to', endISO);
   if (segment && segment !== 'all') p.set('segment', segment);
   if (channel && channel !== 'all') p.set('channel', channel);
   return p.toString();

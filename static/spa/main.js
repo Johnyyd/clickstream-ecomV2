@@ -2548,7 +2548,8 @@ function initFilters() {
         state.filters.channel = fCh.value;
         // Clear existing snapshots for the new filter set to avoid showing stale data
         clearSnapshotsForCurrentFilters();
-        render();
+        // Auto-reload current tab with new filters
+        switchTab(state.tab);
       }, 250);
     }
     applyDebounced();

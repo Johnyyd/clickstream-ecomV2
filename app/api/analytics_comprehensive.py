@@ -15,8 +15,6 @@ class AnalyticsRequest(BaseModel):
     username: Optional[str] = None
     limit: Optional[int] = None
     modules: List[str] = ["all"]  # seo, cart, retention, journey, recommendations, ml
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
     # Filter parameters for Spark optimization
     date_from: Optional[str] = None
     date_to: Optional[str] = None
